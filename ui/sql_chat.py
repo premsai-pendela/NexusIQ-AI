@@ -13,6 +13,7 @@ import time
 import random
 import threading
 import sys
+from datetime import datetime
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -22,19 +23,19 @@ from agents.sql_agent import SQLAgent
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════════
 
-QUERY_TIPS = [
-    "💡 **Tip:** Ask 'top 5' or 'top 10' for ranked results",
-    "🎯 **Tip:** Include time periods like 'last month' or 'Q3 2024'",
-    "📊 **Tip:** Try 'compare X and Y' for side-by-side analysis",
-    "⚡ **Tip:** Simple queries (SUM, COUNT) run in seconds",
-    "🔒 **Tip:** All queries are read-only — your data is safe",
-    "🧠 **Tip:** Complex queries use our smartest AI model",
-    "📈 **Tip:** You can download results as CSV",
-    "🌐 **Tip:** We analyze 100,000 transactions across 5 regions",
-    "💰 **Tip:** Ask about revenue, products, regions, or customers",
-    "🔍 **Tip:** Be specific: 'West region' vs 'best region'",
-    "⏱️ **Tip:** First query may be slower (model warm-up)",
-    "🔄 **Tip:** We auto-switch models if one hits quota limits",
+INSIGHTS = [
+    "💡 **Did You Know?** We analyze 100,000 transactions across 5 regions",
+    "🧠 **Did You Know?** Complex queries use Gemini 2.5 Pro — our smartest model",
+    "⚡ **Did You Know?** Simple queries complete in under 5 seconds",
+    "🔄 **Did You Know?** We auto-switch models if one hits quota limits",
+    "🔒 **Did You Know?** All queries are read-only — your data stays safe",
+    "📊 **Did You Know?** You can download results as CSV with one click",
+    "🎯 **Did You Know?** Adding time ranges makes queries more precise",
+    "🚀 **Did You Know?** Our circuit breaker skips failed models instantly",
+    "💰 **Did You Know?** The database tracks $139M+ in total revenue",
+    "🌐 **Did You Know?** We support 5 regions: East, West, North, South, Central",
+    "🛒 **Did You Know?** Products span 5 categories: Electronics, Clothing, Food, Home, Sports",
+    "⏱️ **Did You Know?** First query may be slower due to model warm-up",
 ]
 
 # ═══════════════════════════════════════════════════════════
@@ -69,11 +70,6 @@ def format_time(seconds: float) -> str:
         return result
 
 
-def get_random_tip(exclude: str = None) -> str:
-    """Get a random tip, excluding the current one"""
-    available_tips = [t for t in QUERY_TIPS if t != exclude]
-    return random.choice(available_tips)
-
 
 # ═══════════════════════════════════════════════════════════
 #  INITIALIZE AGENT
@@ -84,6 +80,57 @@ def get_agent():
     return SQLAgent(mode="development")
 
 agent = get_agent()
+
+# ═══════════════════════════════════════════════════════════
+#  QUERY HISTORY STATE
+# ═══════════════════════════════════════════════════════════
+
+if "query_history" not in st.session_state:
+    st.session_state.query_history = []
+
+if "selected_history" not in st.session_state:
+    st.session_state.selected_history = None
+
+if "rerun_question" not in st.session_state:
+    st.session_state.rerun_question = None
+
+def add_to_history(question: str, result: dict, execution_time: float):
+    """Add query to history (max 10 items)"""
+    st.session_state.query_history.insert(0, {
+        "question": question,
+        "query": result.get("query", ""),
+        "answer": result.get("answer", ""),
+        "explanation": result.get("explanation", ""),
+        "results": result.get("results", []),
+        "row_count": result.get("row_count", 0),
+        "success": result.get("success", False),
+        "error": result.get("error", ""),
+        "model_used": result.get("model_used", ""),
+        "time": execution_time,
+        "timestamp": datetime.now()
+    })
+    # Keep only last 10
+    st.session_state.query_history = st.session_state.query_history[:10]
+
+    # Keep only last 10
+    st.session_state.query_history = st.session_state.query_history[:10]
+
+def time_ago(timestamp: datetime) -> str:
+    """Convert timestamp to human-readable 'time ago'"""
+    diff = datetime.now() - timestamp
+    seconds = diff.total_seconds()
+    
+    if seconds < 60:
+        return "just now"
+    elif seconds < 3600:
+        mins = int(seconds // 60)
+        return f"{mins}m ago"
+    elif seconds < 86400:
+        hours = int(seconds // 3600)
+        return f"{hours}h ago"
+    else:
+        days = int(seconds // 86400)
+        return f"{days}d ago"
 
 # ═══════════════════════════════════════════════════════════
 #  PAGE LAYOUT
@@ -147,13 +194,45 @@ with st.sidebar:
         agent.reset_quota_tracking()
         st.success("Reset complete!")
         st.rerun()
+    st.markdown("---")
+    
+    # Query History Section
+    st.subheader("📜 Query History")
+    
+    if st.session_state.query_history:
+        for i, item in enumerate(st.session_state.query_history):
+            status_icon = "✅" if item["success"] else "❌"
+            time_str = time_ago(item["timestamp"])
+            
+            # Truncate long questions
+            short_question = item["question"][:30] + "..." if len(item["question"]) > 30 else item["question"]
+            
+            if st.button(f"{status_icon} {short_question}", key=f"history_{i}", use_container_width=True):
+                st.session_state.selected_history = item
+                st.rerun()
+            
+            st.caption(f"⏱️ {item['time']:.1f}s • {time_str}")
+        
+        # Clear history button
+        if st.button("🗑️ Clear History", use_container_width=True):
+            st.session_state.query_history = []
+            st.rerun()
+    else:
+        st.caption("No queries yet")
 
 # ═══════════════════════════════════════════════════════════
 #  MAIN CHAT INTERFACE
 # ═══════════════════════════════════════════════════════════
 
+# Check if we're re-running from history
+if "rerun_question" in st.session_state and st.session_state.rerun_question:
+    question = st.session_state.rerun_question
+    st.session_state.rerun_question = None  # Clear it
+else:
+    question = None
 question = st.text_input(
     "💬 Ask a question:",
+    value=question if question else "",
     placeholder="e.g., What was total revenue last month?",
     key="user_question"
 )
@@ -162,12 +241,76 @@ col1, col2 = st.columns([1, 5])
 with col1:
     ask_button = st.button("🔍 Ask", type="primary", use_container_width=True)
 
+
+# ═══════════════════════════════════════════════════════════
+#  DISPLAY SELECTED HISTORY ITEM
+# ═══════════════════════════════════════════════════════════
+
+if "selected_history" in st.session_state and st.session_state.selected_history:
+    item = st.session_state.selected_history
+    
+    st.info(f"📜 **Showing saved result for:** {item['question']}")
+    
+    if item["success"]:
+        # Success display
+        time_display = format_time(item["time"])
+        st.success(f"✅ Query completed in **{time_display}** (cached)")
+        
+        # Answer
+        st.markdown("---")
+        st.markdown("### 💬 Answer")
+        st.markdown(item.get("answer", "No answer available"))
+        
+        # SQL Query
+        if item.get("query"):
+            with st.expander("🔍 View SQL Query"):
+                st.code(item["query"], language="sql")
+        
+        # Explanation
+        if item.get("explanation"):
+            with st.expander("📖 How This Query Works"):
+                st.markdown(item["explanation"])
+        
+        # Data Table
+        if item.get("results"):
+            with st.expander(f"📊 View Data ({item.get('row_count', 0)} rows)"):
+                df = pd.DataFrame(item["results"])
+                st.dataframe(df, use_container_width=True)
+                
+                csv = df.to_csv(index=False)
+                st.download_button(
+                    "📥 Download CSV",
+                    data=csv,
+                    file_name=f"query_{int(time.time())}.csv",
+                    mime="text/csv"
+                )
+    else:
+        # Error display
+        st.error(f"❌ This query failed")
+        st.markdown(f"**Error:** {item.get('error', 'Unknown error')}")
+    
+    # Button to clear selection and ask new question
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🔄 Re-run This Query", use_container_width=True):
+            st.session_state.rerun_question = item["question"]
+            st.session_state.selected_history = None
+            st.rerun()
+    with col2:
+        if st.button("❌ Close & Ask New", use_container_width=True):
+            st.session_state.selected_history = None
+            st.rerun()
+    
+    # Stop here - don't show the normal query interface
+    st.stop()
+
 # ═══════════════════════════════════════════════════════════
 #  QUERY PROCESSING
 # ═══════════════════════════════════════════════════════════
 
 if ask_button and question:
-    
+    # Clear any selected history when asking new question
+    st.session_state.selected_history = None
     start_time = time.time()
     result = None
     
@@ -177,11 +320,11 @@ if ask_button and question:
     with progress_container:
         progress_bar = st.progress(0)
         status_text = st.empty()
-        tip_box = st.empty()
+        insight_box = st.empty()
         
         # Initial tip
-        current_tip = get_random_tip()
-        tip_box.info(current_tip)
+        current_insight = random.choice(INSIGHTS)
+        insight_box.info(current_insight)
         
         # ─────────────────────────────────────
         # STEP 1: Analyze (5%)
@@ -212,8 +355,8 @@ if ask_button and question:
         progress_bar.progress(35)
         
         # Independent tip rotation during API call
-        last_tip_time = time.time()
-        tip_interval = 6  # Change tip every 6 seconds
+        last_insight_time = time.time()
+        insight_interval = 5  # Change tip every 6 seconds
         
         # Execute query with tip rotation
         query_start = time.time()
@@ -223,10 +366,10 @@ if ask_button and question:
         
         while not query_done:
             # Update tip independently every 6 seconds
-            if time.time() - last_tip_time > tip_interval:
-                current_tip = get_random_tip(current_tip)
-                tip_box.info(current_tip)
-                last_tip_time = time.time()
+            if time.time() - last_insight_time > insight_interval:
+                current_insight = random.choice([i for i in INSIGHTS if i != current_insight])
+                insight_box.info(current_insight)
+                last_insight_time = time.time()
             
             # Simulate progress (35% -> 70%)
             elapsed = time.time() - query_start
@@ -258,7 +401,8 @@ if ask_button and question:
     # ═══════════════════════════════════════════════════════════
     
     if result["success"]:
-        
+        # Save to history
+        add_to_history(question, result, total_time)
         # ─────────────────────────────────────
         # SUCCESS HEADER WITH TIME
         # ─────────────────────────────────────
@@ -320,6 +464,10 @@ if ask_button and question:
         # ─────────────────────────────────────
         with st.expander("🔍 View SQL Query"):
             st.code(result["query"], language="sql")
+            # Show query explanation
+        if result.get("explanation"):
+            with st.expander("📖 How This Query Works", expanded=False):
+                st.markdown(result["explanation"])
         
         # ─────────────────────────────────────
         # DATA TABLE
@@ -338,6 +486,8 @@ if ask_button and question:
                 )
     
     else:
+        # Save failed query to history too
+        add_to_history(question, result, total_time)
         # ─────────────────────────────────────
         # ERROR DISPLAY
         # ─────────────────────────────────────

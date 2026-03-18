@@ -435,6 +435,7 @@ SQL QUERY:"""
             logger.error(f"❌ Query error (rolled back): {str(e)}")
             return {"success": False, "error": str(e), "results": None}
     
+    
     def _format_answer(self, question: str, query: str, results: list, complexity: str) -> Dict[str, Any]:
         """Format results as natural language"""
         
@@ -478,15 +479,97 @@ ANSWER:"""
             return {
                 "success": True,
                 "answer": simple_answer,
+                "models_tried": result.get("models_tried", [])
+            }
+    
+    
+    def _explain_query(self, sql_query: str, question: str) -> Dict[str, Any]:
+        """Generate plain English explanation of SQL query"""
+        
+        explanation_prompt = f"""You are a SQL teacher explaining a query to a beginner.
+
+ORIGINAL QUESTION: {question}
+
+SQL QUERY:
+{sql_query}
+
+Explain this query in simple terms. Break it down step-by-step.
+
+FORMAT YOUR RESPONSE EXACTLY LIKE THIS:
+
+**Overview:** [One sentence summary of what the query does]
+
+**Step-by-step breakdown:**
+1. **FROM [table]** → [What data source we're using and why]
+2. **WHERE [condition]** → [What filters are applied and why]
+3. **GROUP BY [column]** → [How data is grouped, if applicable]
+4. **SELECT [columns]** → [What data we're retrieving]
+5. **ORDER BY [column]** → [How results are sorted, if applicable]
+6. **LIMIT [n]** → [Why we're limiting results, if applicable]
+
+**Key insight:** [One sentence about what makes this query effective]
+
+Only include steps that are actually in the query. Be concise but clear.
+
+EXPLANATION:"""
+
+        result = self._invoke_with_fallback(explanation_prompt, "simple")
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "explanation": result["response"],
                 "models_tried": result["models_tried"]
             }
+        else:
+            return {
+                "success": True,
+                "explanation": self._generate_basic_explanation(sql_query),
+                "models_tried": result.get("models_tried", [])
+            }
+    
+    
+    def _generate_basic_explanation(self, sql_query: str) -> str:
+        """Generate basic explanation without LLM (fallback)"""
+        
+        explanation_parts = ["**Query breakdown:**\n"]
+        sql_upper = sql_query.upper()
+        
+        if "SELECT" in sql_upper:
+            if "SUM(" in sql_upper:
+                explanation_parts.append("• **Aggregation:** Calculating totals using SUM()")
+            if "COUNT(" in sql_upper:
+                explanation_parts.append("• **Counting:** Counting records using COUNT()")
+            if "AVG(" in sql_upper:
+                explanation_parts.append("• **Average:** Calculating averages using AVG()")
+        
+        if "FROM SALES_TRANSACTIONS" in sql_upper:
+            explanation_parts.append("• **Data source:** Using the sales transactions table (100K records)")
+        
+        if "WHERE" in sql_upper:
+            explanation_parts.append("• **Filtering:** Applying conditions to narrow down results")
+        
+        if "GROUP BY" in sql_upper:
+            explanation_parts.append("• **Grouping:** Organizing results into categories")
+        
+        if "ORDER BY" in sql_upper:
+            if "DESC" in sql_upper:
+                explanation_parts.append("• **Sorting:** Ordering results from highest to lowest")
+            else:
+                explanation_parts.append("• **Sorting:** Ordering results from lowest to highest")
+        
+        if "LIMIT" in sql_upper:
+            explanation_parts.append("• **Limiting:** Restricting to top N results")
+        
+        if "JOIN" in sql_upper:
+            explanation_parts.append("• **Joining:** Combining data from multiple tables")
+        
+        return "\n".join(explanation_parts)
     
     
     @rate_limit(calls_per_minute=20)
     def ask(self, question: str) -> Dict[str, Any]:
-        """
-        Main method: Ask a question, get complete answer with execution history.
-        """
+        """Main method: Ask a question, get complete answer with execution history."""
         
         start_time = time.time()
         all_models_tried = []
@@ -531,6 +614,13 @@ ANSWER:"""
         )
         all_models_tried.extend(format_result.get("models_tried", []))
         
+        # Step 4: Generate query explanation
+        explain_result = self._explain_query(
+            sql_query=query_result["query"],
+            question=question
+        )
+        all_models_tried.extend(explain_result.get("models_tried", []))
+        
         total_time = time.time() - start_time
         
         return {
@@ -540,6 +630,7 @@ ANSWER:"""
             "results": execution_result["results"],
             "row_count": execution_result["row_count"],
             "answer": format_result["answer"],
+            "explanation": explain_result.get("explanation", ""),
             "complexity": query_result.get("complexity", "simple"),
             "model_used": query_result.get("model_used"),
             "models_tried": all_models_tried,
@@ -601,7 +692,6 @@ if __name__ == "__main__":
         
         time.sleep(1)
     
-    # Show quota status
     print("\n📊 QUOTA STATUS:")
     print(agent.get_quota_status())
     

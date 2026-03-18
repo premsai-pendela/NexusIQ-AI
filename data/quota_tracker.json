@@ -3,7 +3,7 @@
     "status": "failed",
     "error_type": "quota_exceeded",
     "error_message": "Error calling model 'gemini-2.5-pro' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For ",
-    "failed_at": 1773780974.8289332,
-    "failed_at_human": "2026-03-17 16:56:14"
+    "failed_at": 1773862386.1056168,
+    "failed_at_human": "2026-03-18 15:33:06"
   }
 }

@@ -82,6 +82,8 @@ Traditional analytics workflow:
 
 ## ⚙️ System Architecture
 
+## ⚙️ System Architecture
+
 ```mermaid
 graph LR
     A[User Query] --> B[Gemini 2.0 Flash]
@@ -97,17 +99,20 @@ graph LR
     J -->|Visualize| K[Charts]
     J -->|Export| L[Files]
 
-🧱 Tech Stack
-| Layer         | Technology                 |
-| ------------- | -------------------------- |
-| LLM           | Gemini 2.0 Flash / 1.5 Pro |
-| Query Engine  | DuckDB                     |
-| Backend       | Python                     |
-| Frontend      | Streamlit                  |
-| Visualization | Plotly                     |
-| Data Handling | Pandas                     |
+    ## 🧱 Tech Stack
 
-📦 Setup (Run Locally)
+| Layer | Technology |
+|------|-----------|
+| LLM | Gemini 2.0 Flash / 1.5 Pro |
+| Query Engine | DuckDB |
+| Backend | Python |
+| Frontend | Streamlit |
+| Visualization | Plotly |
+| Data Handling | Pandas |
+
+## 📦 Setup (Run Locally)
+
+```bash
 git clone https://github.com/premsai-pendela/NexusIQ-AI.git
 cd NexusIQ-AI
 
@@ -118,96 +123,80 @@ pip install -r requirements.txt
 
 cp .env.example .env
 
-Add in .env:
-
-GOOGLE_API_KEY=your_key
-DATABASE_PATH=data/sales.db
-
 Run:
 
 python database/generate_data.py
 streamlit run app.py
-🎯 Example Queries
+
+```markdown
+## 🎯 Example Queries
+
+
 "What is total revenue?"
 "Top 10 customers by revenue"
 "Monthly sales trend"
 "Compare Q1 vs Q2 performance"
 "Best performing product category"
-📊 Dataset Overview
 
-100,000 transactions
+## 📊 Dataset Overview
 
-$139M total revenue
+- 100,000 transactions  
+- $139M total revenue  
+- 5 regions  
+- 5 product categories  
+- 2+ years of data  
 
-5 regions
+## 📈 Performance Metrics
 
-5 product categories
+| Metric | Value |
+|------|------|
+| Simple Queries | 2–3 sec |
+| Complex Queries | 5–8 sec |
+| Chart Rendering | ~0.5 sec |
+| Export (10K rows) | ~1 sec |
 
-2+ years of data
+## 🧪 Testing
 
-📈 Performance Metrics
-Metric	Value
-Simple Queries	2–3 sec
-Complex Queries	5–8 sec
-Chart Rendering	~0.5 sec
-Export (10K rows)	~1 sec
-🧪 Testing
+```bash
 pytest tests/ -v
 pytest --cov=agents tests/
-🗺️ Roadmap
-✅ Completed
 
-SQL AI Agent
+```markdown
+## 🗺️ Roadmap
 
-Chat Interface
+### ✅ Completed
+- SQL AI Agent  
+- Chat Interface  
+- Visualization Engine  
+- Export System  
 
-Visualization Engine
+### 🚧 In Progress
+- RAG Document Agent  
+- Web Data Agent  
+- Multi-agent orchestration  
 
-Export System
+### 🔮 Future
+- Voice-based analytics  
+- Scheduled reports  
+- Multi-database support  
+- REST API layer  
 
-🚧 In Progress
+## 💼 Real-World Use Cases
 
-RAG Document Agent
+- 📊 Sales → Top customers & revenue insights  
+- 📈 Marketing → Campaign performance analysis  
+- 💰 Finance → Revenue trends & forecasting  
+- 🎯 Product → Category performance tracking  
 
-Web Data Agent
+## 🤝 Contributing
 
-Multi-agent orchestration
-
-🔮 Future
-
-Voice-based analytics
-
-Scheduled reports
-
-Multi-database support
-
-REST API layer
-
-💼 Real-World Use Cases
-
-📊 Sales → Top customers & revenue insights
-
-📈 Marketing → Campaign performance analysis
-
-💰 Finance → Revenue trends & forecasting
-
-🎯 Product → Category performance tracking
-
-🤝 Contributing
+```bash
 git checkout -b feature/your-feature
 git commit -m "Add feature"
 git push origin feature/your-feature
-📝 License
 
-MIT License
+## 👤 Author
 
-👤 Author
+**Prem Sai Pendela**  
+🔗 GitHub: https://github.com/premsai-pendela  
 
-Prem Sai Pendela
-🔗 GitHub: https://github.com/premsai-pendela
-
-<div align="center">
-
-⭐ If this project impressed you, give it a star
-
-</div> ```

@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from config.settings import settings
 from utils.quota_tracker import get_tracker
+from utils.validators import validate_question
 from typing import Dict, Any, List
 import logging
 import time
@@ -577,6 +578,18 @@ EXPLANATION:"""
         logger.info(f"\n{'='*60}")
         logger.info(f"📊 SQL AGENT — Processing Question")
         logger.info(f"{'='*60}")
+
+        # Step 0: Validate question for common issues
+        validation = validate_question(question)
+        if not validation["valid"]:
+            return {
+                "success": False,
+                "question": question,
+                "error": "Question validation failed",
+                "validation_issues": validation["issues"],
+                "suggestions": validation["suggestions"],
+                "execution_time": time.time() - start_time
+            }
         
         # Step 1: Generate SQL
         query_result = self.generate_query(question)

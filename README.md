@@ -127,13 +127,6 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Add the following in `.env`:
-
-```env
-GOOGLE_API_KEY=your_key
-DATABASE_PATH=data/sales.db
-```
-
 Run the application:
 
 ```bash

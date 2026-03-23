@@ -1,5 +1,6 @@
 """
 NexusIQ AI — SQL Agent Chat Interface
+With User-Controlled Visualizations
 """
 
 import streamlit as st
@@ -7,8 +8,12 @@ import pandas as pd
 import time
 import random
 import sys
+import io
 from datetime import datetime
 from pathlib import Path
+import plotly.express as px
+import plotly.graph_objects as go
+
 sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.sql_agent import SQLAgent
@@ -17,11 +22,11 @@ from utils.validators import VALID_REGIONS, VALID_CATEGORIES
 
 def run_sql_chat():
     """Main function for SQL Chat interface"""
-    
+
     # ═══════════════════════════════════════════════════════
     #  CONFIGURATION
     # ═══════════════════════════════════════════════════════
-    
+
     INSIGHTS = [
         "💡 **Did You Know?** We analyze 100,000 transactions across 5 regions",
         "🧠 **Did You Know?** Complex queries use Gemini 2.5 Pro — our smartest model",
@@ -36,11 +41,20 @@ def run_sql_chat():
         "🛒 **Did You Know?** Products span 5 categories: Electronics, Clothing, Food, Home, Sports",
         "⏱️ **Did You Know?** First query may be slower due to model warm-up",
     ]
-    
+
+    CHART_TYPES = {
+        "bar": {"icon": "📊", "name": "Bar Chart", "description": "Compare categories"},
+        "bar_horizontal": {"icon": "📊", "name": "Horizontal Bar", "description": "Ranking/Top N"},
+        "line": {"icon": "📈", "name": "Line Chart", "description": "Trends over time"},
+        "pie": {"icon": "🥧", "name": "Pie Chart", "description": "Show proportions"},
+        "scatter": {"icon": "🔵", "name": "Scatter Plot", "description": "Find patterns"},
+        "area": {"icon": "📉", "name": "Area Chart", "description": "Cumulative trends"},
+    }
+
     # ═══════════════════════════════════════════════════════
     #  HELPER FUNCTIONS
     # ═══════════════════════════════════════════════════════
-    
+
     def format_time(seconds: float) -> str:
         if seconds < 60:
             return f"{int(seconds)} seconds"
@@ -61,7 +75,7 @@ def run_sql_chat():
             if secs > 0:
                 result += f" {secs} seconds"
             return result
-    
+
     def time_ago(timestamp: datetime) -> str:
         diff = datetime.now() - timestamp
         seconds = diff.total_seconds()
@@ -73,38 +87,422 @@ def run_sql_chat():
             return f"{int(seconds // 3600)}h ago"
         else:
             return f"{int(seconds // 86400)}d ago"
-    
+
+    def can_visualize(df) -> dict:
+        """
+        Check if dataframe can be visualized and return available options.
+        Returns dict with 'can_chart', 'reason', 'numeric_cols', 'text_cols', 'date_cols'
+        """
+        if df is None or df.empty:
+            return {
+                "can_chart": False,
+                "reason": "No data to visualize",
+                "numeric_cols": [],
+                "text_cols": [],
+                "date_cols": []
+            }
+
+        if len(df) < 1:
+            return {
+                "can_chart": False,
+                "reason": "Need at least 1 row of data",
+                "numeric_cols": [],
+                "text_cols": [],
+                "date_cols": []
+            }
+
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        text_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        date_cols = [
+            col for col in df.columns
+            if 'date' in col.lower() or 'month' in col.lower() 
+            or 'year' in col.lower() or 'time' in col.lower()
+        ]
+
+        if not numeric_cols:
+            return {
+                "can_chart": False,
+                "reason": "No numeric columns to plot",
+                "numeric_cols": [],
+                "text_cols": text_cols,
+                "date_cols": date_cols
+            }
+
+        return {
+            "can_chart": True,
+            "reason": "Ready to visualize!",
+            "numeric_cols": numeric_cols,
+            "text_cols": text_cols,
+            "date_cols": date_cols,
+            "row_count": len(df)
+        }
+
+    def generate_chart(df, chart_type: str, x_col: str, y_col: str, color_col: str = None) -> go.Figure:
+        """Generate a Plotly chart based on user selections."""
+        
+        try:
+            title = f"{y_col} by {x_col}"
+            
+            if chart_type == "bar":
+                fig = px.bar(
+                    df, x=x_col, y=y_col,
+                    color=color_col if color_col and color_col != "None" else None,
+                    title=f"📊 {title}",
+                    text_auto=True
+                )
+                
+            elif chart_type == "bar_horizontal":
+                fig = px.bar(
+                    df, x=y_col, y=x_col,
+                    color=color_col if color_col and color_col != "None" else None,
+                    title=f"📊 {title}",
+                    orientation='h',
+                    text_auto=True
+                )
+                fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+                
+            elif chart_type == "line":
+                fig = px.line(
+                    df, x=x_col, y=y_col,
+                    color=color_col if color_col and color_col != "None" else None,
+                    title=f"📈 {title}",
+                    markers=True
+                )
+                
+            elif chart_type == "pie":
+                fig = px.pie(
+                    df, names=x_col, values=y_col,
+                    title=f"🥧 {title}",
+                    hole=0.4
+                )
+                
+            elif chart_type == "scatter":
+                fig = px.scatter(
+                    df, x=x_col, y=y_col,
+                    color=color_col if color_col and color_col != "None" else None,
+                    title=f"🔵 {title}",
+                    size=y_col if len(df) > 1 else None
+                )
+                
+            elif chart_type == "area":
+                fig = px.area(
+                    df, x=x_col, y=y_col,
+                    color=color_col if color_col and color_col != "None" else None,
+                    title=f"📉 {title}"
+                )
+            
+            else:
+                # Default to bar
+                fig = px.bar(df, x=x_col, y=y_col, title=title)
+
+            # Common styling
+            fig.update_layout(
+                template="plotly_white",
+                height=400,
+                showlegend=bool(color_col and color_col != "None"),
+                margin=dict(t=50, b=50, l=50, r=50)
+            )
+            
+            return fig
+            
+        except Exception as e:
+            # Return error figure
+            fig = go.Figure()
+            fig.add_annotation(
+                text=f"⚠️ Chart Error: {str(e)}",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=16, color="red")
+            )
+            fig.update_layout(height=200)
+            return fig
+
+    def build_validation_content(question: str, validation_issues: list, error_msg: str) -> str:
+        """Convert validation_issues list into a rich Markdown string."""
+        parts = ["⚠️ **Question needs clarification**\n"]
+
+        for issue in validation_issues:
+            issue_type = issue.get("type", "")
+            details = issue.get("details", {})
+
+            if issue_type == "typo":
+                typo_word = details.get("typo", "")
+                suggestion = details.get("suggestion", "")
+                corrected = question.replace(typo_word, suggestion)
+                parts.append(
+                    f"**🔤 Typo detected:** `{typo_word}` → Did you mean **`{suggestion}`**?\n\n"
+                    f"✅ **Try:** *{corrected}*"
+                )
+
+            elif issue_type == "date_range":
+                parts.append(
+                    f"**📅 Date issue:** {details.get('issue', 'Invalid date range')}\n\n"
+                    f"📆 **Available range:** {details.get('data_range', 'Unknown')}"
+                )
+
+            elif issue_type == "ambiguous":
+                options_text = "\n".join(
+                    [f"  - ✅ *{question} by {opt.split('(')[0].strip().lower().replace('by ', '')}*"
+                     for opt in details.get("options", [])]
+                )
+                parts.append(
+                    f"**🤔 Ambiguous question:** {details.get('question', question)}\n\n"
+                    f"Which metric did you mean?\n{options_text}"
+                )
+
+            elif issue_type == "invalid_region":
+                valid = ", ".join(details.get("valid_regions", VALID_REGIONS))
+                parts.append(
+                    f"**🌐 Invalid region:** `{details.get('region', '')}`\n\n"
+                    f"✅ **Valid regions:** {valid}"
+                )
+
+            elif issue_type == "invalid_category":
+                valid = ", ".join(details.get("valid_categories", VALID_CATEGORIES))
+                parts.append(
+                    f"**🏷️ Invalid category:** `{details.get('category', '')}`\n\n"
+                    f"✅ **Valid categories:** {valid}"
+                )
+
+            else:
+                parts.append(f"**ℹ️ {issue_type}:** {details}")
+
+        return "\n\n---\n\n".join(parts)
+
+    # ─────────────────────────────────────────────────────
+    #  RENDER CHART BUILDER UI
+    # ─────────────────────────────────────────────────────
+
+    def render_chart_builder(msg_id: str, df: pd.DataFrame):
+        """Render the chart builder interface for a message."""
+        
+        viz_info = can_visualize(df)
+        
+        if not viz_info["can_chart"]:
+            st.warning(f"📊 Cannot visualize: {viz_info['reason']}")
+            return None
+
+        st.markdown("**🎨 Build Your Chart**")
+        
+        # Chart type selection with icons
+        chart_cols = st.columns(6)
+        selected_chart = st.session_state.get(f"chart_type_{msg_id}", "bar")
+        
+        for i, (chart_key, chart_info) in enumerate(CHART_TYPES.items()):
+            with chart_cols[i]:
+                is_selected = selected_chart == chart_key
+                btn_type = "primary" if is_selected else "secondary"
+                if st.button(
+                    f"{chart_info['icon']}",
+                    key=f"chart_btn_{msg_id}_{chart_key}",
+                    help=f"{chart_info['name']}: {chart_info['description']}",
+                    type=btn_type,
+                    use_container_width=True
+                ):
+                    st.session_state[f"chart_type_{msg_id}"] = chart_key
+                    st.rerun()
+        
+        # Show selected chart type name
+        st.caption(f"Selected: **{CHART_TYPES[selected_chart]['name']}** - {CHART_TYPES[selected_chart]['description']}")
+        
+        st.markdown("---")
+        
+        # Column selection
+        all_cols = df.columns.tolist()
+        numeric_cols = viz_info["numeric_cols"]
+        text_cols = viz_info["text_cols"]
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # X-axis: prefer text/category columns
+            x_options = text_cols + numeric_cols if text_cols else all_cols
+            x_col = st.selectbox(
+                "📍 X-Axis (Categories)",
+                options=x_options,
+                key=f"x_col_{msg_id}",
+                help="Usually categories, dates, or labels"
+            )
+        
+        with col2:
+            # Y-axis: prefer numeric columns
+            y_options = numeric_cols if numeric_cols else all_cols
+            y_col = st.selectbox(
+                "📊 Y-Axis (Values)",
+                options=y_options,
+                key=f"y_col_{msg_id}",
+                help="Usually numbers to measure"
+            )
+        
+        with col3:
+            # Color by (optional)
+            color_options = ["None"] + text_cols
+            color_col = st.selectbox(
+                "🎨 Color By (Optional)",
+                options=color_options,
+                key=f"color_col_{msg_id}",
+                help="Add color grouping"
+            )
+        
+        # Generate button
+        if st.button("✨ Generate Chart", key=f"gen_btn_{msg_id}", type="primary", use_container_width=True):
+            chart_type = st.session_state.get(f"chart_type_{msg_id}", "bar")
+            color = color_col if color_col != "None" else None
+            
+            fig = generate_chart(df, chart_type, x_col, y_col, color)
+            
+            # Save to session state
+            st.session_state[f"generated_chart_{msg_id}"] = fig
+            st.rerun()
+        
+        # Display generated chart if exists
+        if f"generated_chart_{msg_id}" in st.session_state:
+            fig = st.session_state[f"generated_chart_{msg_id}"]
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Download chart button
+            dl_col1, dl_col2 = st.columns(2)
+            with dl_col1:
+                # Download as HTML
+                html_buffer = io.StringIO()
+                fig.write_html(html_buffer)
+                st.download_button(
+                    "📥 Download Chart (HTML)",
+                    data=html_buffer.getvalue(),
+                    file_name=f"chart_{msg_id}.html",
+                    mime="text/html",
+                    key=f"dl_html_{msg_id}",
+                    use_container_width=True
+                )
+            with dl_col2:
+                if st.button("🗑️ Clear Chart", key=f"clear_chart_{msg_id}", use_container_width=True):
+                    del st.session_state[f"generated_chart_{msg_id}"]
+                    st.rerun()
+        
+        return None
+
+    # ─────────────────────────────────────────────────────
+    #  RENDER ASSISTANT MESSAGE
+    # ─────────────────────────────────────────────────────
+
+    def render_assistant_message(msg: dict, is_latest: bool = False):
+        """Render a single assistant chat message with all its components."""
+
+        # Main content
+        st.markdown(msg["content"])
+
+        # SQL Query expander
+        if msg.get("query"):
+            with st.expander("🔍 View SQL Query"):
+                st.code(msg["query"], language="sql")
+
+        # Explanation expander
+        if msg.get("explanation"):
+            with st.expander("📖 How This Query Works"):
+                st.markdown(msg["explanation"])
+
+        # Data table + exports + CHART BUILDER
+        if msg.get("results"):
+            msg_id = msg.get("id", "0")
+            df = pd.DataFrame(msg["results"])
+            
+            # Data expander
+            with st.expander(f"📊 View Data ({msg.get('row_count', len(df))} rows)"):
+                st.dataframe(df, use_container_width=True)
+
+                st.markdown("**📥 Export Data:**")
+                e1, e2, e3, e4 = st.columns(4)
+
+                with e1:
+                    st.download_button(
+                        "📄 CSV", data=df.to_csv(index=False),
+                        file_name=f"query_{msg_id}.csv", mime="text/csv",
+                        use_container_width=True, key=f"csv_{msg_id}"
+                    )
+
+                with e2:
+                    st.download_button(
+                        "📋 JSON",
+                        data=df.to_json(orient="records", indent=2),
+                        file_name=f"query_{msg_id}.json",
+                        mime="application/json",
+                        use_container_width=True, key=f"json_{msg_id}"
+                    )
+
+                with e3:
+                    from openpyxl.utils import get_column_letter
+                    buf = io.BytesIO()
+                    with pd.ExcelWriter(buf, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Results')
+                        ws = writer.sheets['Results']
+                        for ci, col_name in enumerate(df.columns, 1):
+                            ml = max(
+                                len(str(col_name)),
+                                max((len(str(v)) for v in df[col_name]), default=0)
+                            )
+                            ws.column_dimensions[get_column_letter(ci)].width = min(ml + 3, 50)
+                    st.download_button(
+                        "📊 Excel", data=buf.getvalue(),
+                        file_name=f"query_{msg_id}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True, key=f"excel_{msg_id}"
+                    )
+
+                with e4:
+                    st.download_button(
+                        "📝 MD", data=df.to_markdown(index=False),
+                        file_name=f"query_{msg_id}.md", mime="text/markdown",
+                        use_container_width=True, key=f"md_{msg_id}"
+                    )
+            
+            # ═══════════════════════════════════════════════
+            #  📊 VISUALIZATION SECTION — User Controlled!
+            # ═══════════════════════════════════════════════
+            
+            viz_info = can_visualize(df)
+            
+            if viz_info["can_chart"]:
+                with st.expander("📊 Visualize This Data?", expanded=is_latest):
+                    render_chart_builder(msg_id, df)
+            else:
+                st.caption(f"📊 {viz_info['reason']}")
+
+        # Suggested corrections — clickable buttons
+        if msg.get("suggestions"):
+            st.markdown("---")
+            st.markdown("**💡 Did you mean:**")
+            for i, suggestion in enumerate(msg["suggestions"]):
+                sug_key = f"sug_{msg.get('id', '0')}_{i}"
+                if st.button(f"✅ {suggestion}", key=sug_key, use_container_width=True):
+                    st.session_state.pending_suggestion = suggestion
+                    st.rerun()
+
+        # Timing info
+        if msg.get("time"):
+            model_info = f" • 🤖 {msg['model']}" if msg.get("model") else ""
+            st.caption(f"⏱️ {format_time(msg['time'])}{model_info}")
+
     # ═══════════════════════════════════════════════════════
     #  INITIALIZE
     # ═══════════════════════════════════════════════════════
-    
+
     @st.cache_resource
     def get_agent():
         return SQLAgent(mode="development")
-    
+
     agent = get_agent()
-    
+
     # ═══════════════════════════════════════════════════════
     #  SESSION STATE
     # ═══════════════════════════════════════════════════════
-    
+
     if "query_history" not in st.session_state:
         st.session_state.query_history = []
-    if "selected_history" not in st.session_state:
-        st.session_state.selected_history = None
-    if "next_question" not in st.session_state:
-        st.session_state.next_question = ""
-    if "input_key" not in st.session_state:
-        st.session_state.input_key = 0
-    if "auto_run" not in st.session_state:
-        st.session_state.auto_run = False
-    if "last_result" not in st.session_state:
-        st.session_state.last_result = None
-    if "last_question" not in st.session_state:
-        st.session_state.last_question = None
-    if "last_time" not in st.session_state:
-        st.session_state.last_time = None
-    
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+    if "pending_suggestion" not in st.session_state:
+        st.session_state.pending_suggestion = None
+
     def add_to_history(question, result, execution_time):
         st.session_state.query_history.insert(0, {
             "question": question,
@@ -120,31 +518,50 @@ def run_sql_chat():
             "timestamp": datetime.now()
         })
         st.session_state.query_history = st.session_state.query_history[:10]
-    
+
     # ═══════════════════════════════════════════════════════
     #  PAGE LAYOUT
     # ═══════════════════════════════════════════════════════
-    
+
     st.title("🗄️ SQL Agent — Database Query Interface")
     st.markdown("*Ask questions about your sales data in plain English*")
-    
+
     # ═══════════════════════════════════════════════════════
     #  SIDEBAR
     # ═══════════════════════════════════════════════════════
-    
+
     with st.sidebar:
         st.header("📊 Database Schema")
-        
+
         with st.expander("📋 sales_transactions"):
-            st.code("• transaction_date\n• region (5 regions)\n• store_id\n• product_category\n• product_name\n• quantity, unit_price\n• total_amount\n• customer_id\n• payment_method")
-        
+            st.code(
+                "• transaction_date\n• region (5 regions)\n• store_id\n"
+                "• product_category\n• product_name\n• quantity, unit_price\n"
+                "• total_amount\n• customer_id\n• payment_method"
+            )
+
         with st.expander("👥 customers"):
-            st.code("• customer_id\n• name, email, region\n• signup_date\n• total_purchases")
-        
+            st.code(
+                "• customer_id\n• name, email, region\n"
+                "• signup_date\n• total_purchases"
+            )
+
         st.markdown("---")
-        st.subheader("💡 Examples")
-        st.info("**Simple:**\n- Total revenue?\n- Sales in West region?\n\n**Complex:**\n- Top 5 products?\n- Compare regions?")
+        st.subheader("💡 Example Questions")
         
+        example_questions = [
+            "What is the total revenue?",
+            "Show sales by region",
+            "Top 5 products by revenue",
+            "Monthly sales trend",
+            "Compare payment methods"
+        ]
+        
+        for eq in example_questions:
+            if st.button(f"💬 {eq}", key=f"ex_{eq}", use_container_width=True):
+                st.session_state.pending_suggestion = eq
+                st.rerun()
+
         st.markdown("---")
         st.subheader("📊 Model Status")
         quota_status = agent.get_quota_status()
@@ -153,442 +570,269 @@ def run_sql_chat():
                 st.caption(f"{status['status']} {model.split('-')[0]}")
         else:
             st.caption("🟢 All models available")
-        
+
         if st.button("🔄 Reset Quota Tracking"):
             agent.reset_quota_tracking()
             st.rerun()
-        
+
         st.markdown("---")
         st.subheader("📜 Query History")
-        
+
         if st.session_state.query_history:
-            for i, item in enumerate(st.session_state.query_history):
+            for i, item in enumerate(st.session_state.query_history[:5]):
                 icon = "✅" if item["success"] else "❌"
-                short = item["question"][:30] + "..." if len(item["question"]) > 30 else item["question"]
-                if st.button(f"{icon} {short}", key=f"history_{i}", use_container_width=True):
-                    st.session_state.selected_history = item
+                short = item["question"][:25] + ("..." if len(item["question"]) > 25 else "")
+                if st.button(f"{icon} {short}", key=f"hist_{i}", use_container_width=True):
+                    st.session_state.pending_suggestion = item["question"]
                     st.rerun()
                 st.caption(f"⏱️ {item['time']:.1f}s • {time_ago(item['timestamp'])}")
-            
-            if st.button("🗑️ Clear History", use_container_width=True):
+
+            if st.button("🗑️ Clear All", use_container_width=True):
                 st.session_state.query_history = []
+                st.session_state.chat_messages = []
+                # Clear all chart-related session state
+                keys_to_clear = [k for k in st.session_state.keys() 
+                                if k.startswith(('chart_', 'generated_chart_', 'x_col_', 'y_col_', 'color_col_'))]
+                for k in keys_to_clear:
+                    del st.session_state[k]
                 st.rerun()
         else:
             st.caption("No queries yet")
-    
+
     # ═══════════════════════════════════════════════════════
-    #  TEXT INPUT WITH DYNAMIC KEY (THE FIX!)
+    #  REPLAY CHAT HISTORY
     # ═══════════════════════════════════════════════════════
+
+    total_messages = len(st.session_state.chat_messages)
     
-    # Check if we have a corrected/prefilled question
-    prefill = ""
-    if st.session_state.next_question:
-        prefill = st.session_state.next_question
-        st.session_state.next_question = ""
-        st.session_state.auto_run = True
-    
-    # DYNAMIC KEY forces Streamlit to create a NEW widget
-    # New widget = value= parameter is respected!
-    question = st.text_input(
-        "💬 Ask a question:",
-        value=prefill,
-        placeholder="e.g., What was total revenue last month?",
-        key=f"q_input_{st.session_state.input_key}"
-    )
-    
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        ask_button = st.button("🔍 Ask", type="primary", use_container_width=True)
-    
-    # Determine if we should run
-    should_run = (ask_button and question) or (st.session_state.auto_run and question)
-    if st.session_state.auto_run:
-        st.session_state.auto_run = False
-    
-    # ═══════════════════════════════════════════════════════
-    #  DISPLAY SELECTED HISTORY
-    # ═══════════════════════════════════════════════════════
-    
-    if st.session_state.selected_history:
-        item = st.session_state.selected_history
-        st.info(f"📜 **Showing saved result for:** {item['question']}")
+    for idx, msg in enumerate(st.session_state.chat_messages):
+        is_latest = (idx == total_messages - 1) and msg["role"] == "assistant"
         
-        if item["success"]:
-            st.success(f"✅ Completed in **{format_time(item['time'])}** (cached)")
-            st.markdown("---")
-            st.markdown("### 💬 Answer")
-            st.markdown(item.get("answer", "No answer available"))
-            
-            if item.get("query"):
-                with st.expander("🔍 View SQL Query"):
-                    st.code(item["query"], language="sql")
-            if item.get("explanation"):
-                with st.expander("📖 How This Query Works"):
-                    st.markdown(item["explanation"])
-            if item.get("results"):
-                with st.expander(f"📊 View Data ({item.get('row_count', 0)} rows)"):
-                    df = pd.DataFrame(item["results"])
-                    st.dataframe(df, use_container_width=True)
-                    st.markdown("**📥 Export:**")
-                    h_col1, h_col2, h_col3 = st.columns(3)
-                    with h_col1:
-                        st.download_button("📄 CSV", data=df.to_csv(index=False), file_name="history_export.csv", mime="text/csv", use_container_width=True, key=f"h_csv_{time.time()}")
-                    with h_col2:
-                        st.download_button("📋 JSON", data=df.to_json(orient="records", indent=2), file_name="history_export.json", mime="application/json", use_container_width=True, key=f"h_json_{time.time()}")
-                    with h_col3:
-                        import io
-                        buf = io.BytesIO()
-                        df.to_excel(buf, index=False, engine='openpyxl')
-                        st.download_button("📊 Excel", data=buf.getvalue(), file_name="history_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"h_excel_{time.time()}")
+        if msg["role"] == "user":
+            with st.chat_message("user"):
+                st.markdown(msg["content"])
         else:
-            st.error(f"❌ This query failed: {item.get('error', '')}")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("🔄 Re-run This Query"):
-                st.session_state.next_question = item["question"]
-                st.session_state.input_key += 1
-                st.session_state.selected_history = None
-                st.rerun()
-        with col2:
-            if st.button("❌ Close & Ask New"):
-                st.session_state.selected_history = None
-                st.rerun()
-        
-        st.stop()
-    
+            with st.chat_message("assistant", avatar="🧠"):
+                render_assistant_message(msg, is_latest=is_latest)
+
     # ═══════════════════════════════════════════════════════
-    #  QUERY PROCESSING
+    #  HANDLE SUGGESTION CLICKS / CHAT INPUT
     # ═══════════════════════════════════════════════════════
-    
-    if should_run:
-        st.session_state.selected_history = None
-        start_time = time.time()
-        result = None
-        
-        # Progress UI
-        progress_container = st.container()
-        with progress_container:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+
+    if st.session_state.pending_suggestion:
+        question = st.session_state.pending_suggestion
+        st.session_state.pending_suggestion = None
+    else:
+        question = st.chat_input("💬 Ask a question about your data...")
+
+    # ═══════════════════════════════════════════════════════
+    #  PROCESS NEW QUESTION
+    # ═══════════════════════════════════════════════════════
+
+    if question:
+        # Add user message
+        st.session_state.chat_messages.append({
+            "role": "user",
+            "content": question
+        })
+
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        # Process query
+        with st.chat_message("assistant", avatar="🧠"):
+            status = st.empty()
             insight_box = st.empty()
-            
-            current_insight = random.choice(INSIGHTS)
-            insight_box.info(current_insight)
-            
-            status_text.markdown("### 🔍 Step 1/5: Analyzing question...")
-            progress_bar.progress(5)
-            time.sleep(0.3)
-            
-            status_text.markdown("### 🧠 Step 2/5: Detecting complexity...")
-            progress_bar.progress(15)
-            time.sleep(0.3)
-            
-            status_text.markdown("### 🤖 Step 3/5: Selecting AI model...")
-            progress_bar.progress(25)
-            time.sleep(0.3)
-            
-            status_text.markdown("### ⚡ Step 4/5: Generating SQL query...")
-            progress_bar.progress(35)
-            
-            last_insight_time = time.time()
-            insight_interval = 5
-            query_start = time.time()
-            query_done = False
-            
-            while not query_done:
-                if time.time() - last_insight_time > insight_interval:
-                    current_insight = random.choice([i for i in INSIGHTS if i != current_insight])
-                    insight_box.info(current_insight)
-                    last_insight_time = time.time()
-                
-                elapsed = time.time() - query_start
-                simulated = min(70, 35 + int(elapsed * 0.5))
-                progress_bar.progress(simulated)
-                
-                if result is None:
-                    result = agent.ask(question)
-                    query_done = True
-                
-                time.sleep(0.3)
-            
-            status_text.markdown("### ✅ Step 5/5: Formatting results...")
-            progress_bar.progress(100)
-            time.sleep(0.2)
-        
-        total_time = time.time() - start_time
-        progress_container.empty()
-        
-        # ═══════════════════════════════════════════════════
-        #  DISPLAY RESULTS
-        # ═══════════════════════════════════════════════════
-        
-        if result["success"]:
-            add_to_history(question, result, total_time)
 
-            # Store last result for persistence
-            st.session_state.last_result = result
-            st.session_state.last_question = question
-            st.session_state.last_time = total_time
+            insight_box.info(random.choice(INSIGHTS))
 
-            
-            time_display = format_time(total_time)
-            st.success(f"✅ Query completed in **{time_display}**")
-            
-            if total_time > 20 and result.get("models_tried"):
-                with st.expander("⏱️ Why did it take this long?", expanded=True):
-                    st.markdown("**📋 Model Execution Journey:**")
-                    for i, m in enumerate(result["models_tried"], 1):
-                        status = m["status"]
-                        desc = m.get("description", m["model"])
-                        err = m.get("error", "")
-                        model_time = m.get("time", 0)
-                        if "SUCCESS" in status:
-                            st.markdown(f"**Step {i}:** {status} **{desc}** — ⏱️ {model_time}s")
-                        elif "SKIPPED" in status:
-                            st.markdown(f"**Step {i}:** {status} **{desc}** — ↳ {err}")
-                        else:
-                            st.markdown(f"**Step {i}:** {status} **{desc}** — ↳ {err[:100]}... ({model_time}s)")
-                    st.markdown(f"---\n**Total:** {len(result['models_tried'])} models | **Used:** {result.get('model_used', 'Unknown')} | **Time:** {time_display}")
-            
-            st.markdown("---")
-            st.markdown("### 💬 Answer")
-            st.markdown(result["answer"])
-            
-            if total_time <= 20:
-                st.caption(f"🤖 Model: {result.get('model_used', 'Unknown')}")
-            
-            with st.expander("🔍 View SQL Query"):
-                st.code(result["query"], language="sql")
-            
-            if result.get("explanation"):
-                with st.expander("📖 How This Query Works"):
-                    st.markdown(result["explanation"])
-            
-            if result["results"]:
-                with st.expander(f"📊 View Data ({result['row_count']} rows)", expanded=False):
+            status.markdown("🔍 Analyzing question...")
+            time.sleep(0.3)
+
+            status.markdown("🧠 Detecting complexity...")
+            time.sleep(0.3)
+
+            status.markdown("⚡ Generating SQL query...")
+
+            start_time = time.time()
+            result = agent.ask(question)
+            total_time = time.time() - start_time
+
+            status.empty()
+            insight_box.empty()
+
+            msg_id = str(int(time.time() * 1000))
+
+            # ─────────────────────────────────────
+            #  SUCCESS
+            # ─────────────────────────────────────
+            if result["success"]:
+                st.markdown(result["answer"])
+
+                with st.expander("🔍 View SQL Query"):
+                    st.code(result["query"], language="sql")
+
+                if result.get("explanation"):
+                    with st.expander("📖 How This Query Works"):
+                        st.markdown(result["explanation"])
+
+                if result.get("results"):
                     df = pd.DataFrame(result["results"])
-                    st.dataframe(df, use_container_width=True)
                     
-                    # ─────────────────────────────────────
-                    # EXPORT OPTIONS
-                    # ─────────────────────────────────────
-                    st.markdown("**📥 Export Options:**")
+                    with st.expander(f"📊 View Data ({result['row_count']} rows)"):
+                        st.dataframe(df, use_container_width=True)
                     
-                    export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+                    # Check if visualization is possible
+                    viz_info = can_visualize(df)
                     
-                    # CSV Export
-                    with export_col1:
-                        csv_data = df.to_csv(index=False)
-                        st.download_button(
-                            "📄 CSV",
-                            data=csv_data,
-                            file_name=f"nexusiq_query_{int(time.time())}.csv",
-                            mime="text/csv",
-                            use_container_width=True
-                        )
-                    
-                    # JSON Export
-                    with export_col2:
-                        json_data = df.to_json(orient="records", indent=2)
-                        st.download_button(
-                            "📋 JSON",
-                            data=json_data,
-                            file_name=f"nexusiq_query_{int(time.time())}.json",
-                            mime="application/json",
-                            use_container_width=True
-                        )
-                    
-                    # Excel Export
-                    with export_col3:
-                        import io
-                        from openpyxl.utils import get_column_letter
-    
-                        excel_buffer = io.BytesIO()
-                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Query Results')
-                            
-                            # Auto-adjust column widths
-                            worksheet = writer.sheets['Query Results']
-                            for col_idx, column in enumerate(df.columns, 1):
-                                # Calculate max width needed
-                                max_length = len(str(column))  # Header width
-                                for value in df[column]:
-                                    max_length = max(max_length, len(str(value)))
-                                
-                                # Set width with padding
-                                adjusted_width = min(max_length + 3, 50)  # Cap at 50
-                                worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
-                        excel_data = excel_buffer.getvalue()
-                        st.download_button(
-                            "📊 Excel",
-                            data=excel_data,
-                            file_name=f"nexusiq_query_{int(time.time())}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            use_container_width=True
-                        )
-                    
-                    # Copy to Clipboard (Markdown Table)
-                    with export_col4:
-                        markdown_table = df.to_markdown(index=False)
-                        st.download_button(
-                            "📝 Markdown",
-                            data=markdown_table,
-                            file_name=f"nexusiq_query_{int(time.time())}.md",
-                            mime="text/markdown",
-                            use_container_width=True
-                        )
-        
-        else:
-            add_to_history(question, result, total_time)
-            
-            # VALIDATION ERRORS
-            if result.get("validation_issues"):
-                st.warning("⚠️ Question needs clarification")
-                
-                for issue in result["validation_issues"]:
-                    issue_type = issue["type"]
-                    details = issue["details"]
-                    
-                    if issue_type == "typo":
-                        corrected = question.replace(details['typo'], details['suggestion'])
-                        st.markdown(f"""
-**Possible typo in {issue['field']}:**
-- You wrote: `{details['typo']}`
-- Did you mean: `{details['suggestion']}`?
+                    if viz_info["can_chart"]:
+                        with st.expander("📊 Visualize This Data?", expanded=True):
+                            render_chart_builder(msg_id, df)
+                    else:
+                        st.info(f"📊 {viz_info['reason']}")
 
-**Available {issue['field']}s:** {', '.join(details['available'])}
-                        """)
-                        
-                        st.success(f"✅ Try this: **{corrected}**")
-                    
-                    elif issue_type == "date_range":
-                        st.markdown(f"""
-**Date range issue:**
-- {details['issue']}
-- Available data: {details['data_range']}
-- {details['suggestion']}
-                        """)
-                    
+                st.caption(f"⏱️ {format_time(total_time)} • 🤖 {result.get('model_used', 'Unknown')}")
+
+                # Save to chat history
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": result["answer"],
+                    "query": result.get("query", ""),
+                    "explanation": result.get("explanation", ""),
+                    "results": result.get("results", []),
+                    "row_count": result.get("row_count", 0),
+                    "time": total_time,
+                    "model": result.get("model_used", "Unknown"),
+                    "id": msg_id
+                })
+
+                add_to_history(question, result, total_time)
+
+            # ─────────────────────────────────────
+            #  FAILURE — WITH VALIDATION ISSUES
+            # ─────────────────────────────────────
+            elif result.get("validation_issues"):
+                validation_issues = result["validation_issues"]
+
+                content = build_validation_content(
+                    question, validation_issues, result.get("error", "")
+                )
+
+                st.markdown(content)
+
+                # Build clickable suggestions
+                suggestions = []
+                for issue in validation_issues:
+                    issue_type = issue.get("type", "")
+                    details = issue.get("details", {})
+
+                    if issue_type == "typo":
+                        corrected = question.replace(
+                            details.get("typo", ""),
+                            details.get("suggestion", "")
+                        )
+                        suggestions.append(corrected)
+
                     elif issue_type == "ambiguous":
-                        st.markdown(f"**Ambiguous question:** {details['question']}")
-                        
-                        for i, option in enumerate(details['options']):
-                            metric = option.split("(")[0].strip().lower().replace("by ", "")
-                            st.success(f"✅ Try: **{question} by {metric}**")
-                
-                if result.get("suggestions"):
-                    st.info("💡 **Suggestions:**\n\n" + "\n".join([f"• {s}" for s in result["suggestions"]]))
-            
+                        for opt in details.get("options", []):
+                            metric = opt.split("(")[0].strip().lower().replace("by ", "")
+                            suggestions.append(f"{question} by {metric}")
+
+                if suggestions:
+                    st.markdown("---")
+                    st.markdown("**💡 Click to try:**")
+                    for i, sug in enumerate(suggestions):
+                        if st.button(f"✅ {sug}", key=f"sug_live_{msg_id}_{i}", use_container_width=True):
+                            st.session_state.pending_suggestion = sug
+                            st.rerun()
+
+                st.caption(f"⏱️ {format_time(total_time)}")
+
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": content,
+                    "suggestions": suggestions,
+                    "time": total_time,
+                    "id": msg_id
+                })
+
+                add_to_history(question, result, total_time)
+
+            # ─────────────────────────────────────
+            #  FAILURE — GENERIC ERROR
+            # ─────────────────────────────────────
             else:
-                st.error(f"❌ Query failed after {format_time(total_time)}")
-                st.markdown(f"**Error:** {result.get('error', 'Unknown error')}")
-            
-            if result.get("models_tried"):
-                with st.expander("📋 Model Journey"):
-                    for m in result["models_tried"]:
-                        st.markdown(f"• {m['status']} {m['model']}")
-            
-            st.info("💡 Try rephrasing or simplifying your question")
-    
-    elif ask_button and not question:
-        st.warning("⚠️ Please enter a question")
+                error_content = f"❌ **Error:** {result.get('error', 'Unknown error occurred')}"
+                
+                error_msg = result.get("error", "").lower()
+                if "region" in error_msg or "region" in question.lower():
+                    error_content += f"\n\n🌐 **Valid regions:** {', '.join(VALID_REGIONS)}"
+                if "category" in error_msg or "category" in question.lower():
+                    error_content += f"\n\n🏷️ **Valid categories:** {', '.join(VALID_CATEGORIES)}"
+
+                st.error(error_content)
+                st.caption(f"⏱️ {format_time(total_time)}")
+
+                st.session_state.chat_messages.append({
+                    "role": "assistant",
+                    "content": error_content,
+                    "time": total_time,
+                    "id": msg_id
+                })
+
+                add_to_history(question, result, total_time)
+
+        st.rerun()
+
+    # ─────────────────────────────────────────────────────
+    #  EMPTY STATE / WELCOME
+    # ─────────────────────────────────────────────────────
+    if not st.session_state.chat_messages:
+        st.markdown("---")
         
-    # ═══════════════════════════════════════════════════════
-    #  SHOW LAST RESULT (persists after download clicks)
-    # ═══════════════════════════════════════════════════════
-    
-    elif not ask_button and st.session_state.last_result and not st.session_state.selected_history:
-        result = st.session_state.last_result
-        question = st.session_state.last_question
-        total_time = st.session_state.last_time
+        st.markdown(
+            """
+            <div style='text-align:center; padding:40px;'>
+                <h2>👋 Welcome to NexusIQ SQL Agent</h2>
+                <p style='color:#888; font-size:1.1em;'>
+                    Ask questions about your sales database in plain English.<br>
+                    I'll translate them to SQL and show you the results!
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
         
-        time_display = format_time(total_time)
-        st.success(f"✅ Query completed in **{time_display}**")
+        st.markdown("### 🚀 Quick Start")
         
-        if total_time > 20 and result.get("models_tried"):
-            with st.expander("⏱️ Why did it take this long?", expanded=True):
-                for i, m in enumerate(result["models_tried"], 1):
-                    st.markdown(f"**Step {i}:** {m['status']} {m.get('description', m['model'])} ({m['time']}s)")
+        qs1, qs2, qs3 = st.columns(3)
+        
+        with qs1:
+            st.markdown("**📈 Analytics**")
+            if st.button("💰 Total revenue?", use_container_width=True, key="qs1"):
+                st.session_state.pending_suggestion = "What is the total revenue?"
+                st.rerun()
+            if st.button("📅 Monthly trend?", use_container_width=True, key="qs2"):
+                st.session_state.pending_suggestion = "Show monthly sales trend"
+                st.rerun()
+        
+        with qs2:
+            st.markdown("**🏆 Rankings**")
+            if st.button("🥇 Top 5 products?", use_container_width=True, key="qs3"):
+                st.session_state.pending_suggestion = "What are the top 5 products by revenue?"
+                st.rerun()
+            if st.button("🌟 Best region?", use_container_width=True, key="qs4"):
+                st.session_state.pending_suggestion = "Which region has the highest sales?"
+                st.rerun()
+        
+        with qs3:
+            st.markdown("**📊 Comparisons**")
+            if st.button("🌐 By region?", use_container_width=True, key="qs5"):
+                st.session_state.pending_suggestion = "Compare sales by region"
+                st.rerun()
+            if st.button("💳 By payment?", use_container_width=True, key="qs6"):
+                st.session_state.pending_suggestion = "Sales breakdown by payment method"
+                st.rerun()
         
         st.markdown("---")
-        st.markdown("### 💬 Answer")
-        st.markdown(result["answer"])
-        
-        if total_time <= 20:
-            st.caption(f"🤖 Model: {result.get('model_used', 'Unknown')}")
-        
-        with st.expander("🔍 View SQL Query"):
-            st.code(result["query"], language="sql")
-        
-        if result.get("explanation"):
-            with st.expander("📖 How This Query Works"):
-                st.markdown(result["explanation"])
-        
-        if result["results"]:
-            with st.expander(f"📊 View Data ({result['row_count']} rows)", expanded=False):
-                df = pd.DataFrame(result["results"])
-                st.dataframe(df, use_container_width=True)
-                
-                st.markdown("**📥 Export Options:**")
-                export_col1, export_col2, export_col3, export_col4 = st.columns(4)
-                
-                with export_col1:
-                    csv_data = df.to_csv(index=False)
-                    st.download_button(
-                        "📄 CSV",
-                        data=csv_data,
-                        file_name=f"nexusiq_query_{int(time.time())}.csv",
-                        mime="text/csv",
-                        use_container_width=True,
-                        key="persist_csv"
-                    )
-                
-                with export_col2:
-                    json_data = df.to_json(orient="records", indent=2)
-                    st.download_button(
-                        "📋 JSON",
-                        data=json_data,
-                        file_name=f"nexusiq_query_{int(time.time())}.json",
-                        mime="application/json",
-                        use_container_width=True,
-                        key="persist_json"
-                    )
-                
-                with export_col3:
-                    import io
-                    from openpyxl.utils import get_column_letter
-                    
-                    excel_buffer = io.BytesIO()
-                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                        df.to_excel(writer, index=False, sheet_name='Query Results')
-                        worksheet = writer.sheets['Query Results']
-                        for col_idx, column in enumerate(df.columns, 1):
-                            max_length = len(str(column))
-                            for value in df[column]:
-                                max_length = max(max_length, len(str(value)))
-                            adjusted_width = min(max_length + 3, 50)
-                            worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
-                    
-                    st.download_button(
-                        "📊 Excel",
-                        data=excel_buffer.getvalue(),
-                        file_name=f"nexusiq_query_{int(time.time())}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="persist_excel"
-                    )
-                
-                with export_col4:
-                    markdown_table = df.to_markdown(index=False)
-                    st.download_button(
-                        "📝 Markdown",
-                        data=markdown_table,
-                        file_name=f"nexusiq_query_{int(time.time())}.md",
-                        mime="text/markdown",
-                        use_container_width=True,
-                        key="persist_md"
-                    )
-    
-    st.markdown("---")
-    st.caption("🧠 NexusIQ AI | Intelligent multi-model fallback with quota tracking")
+        st.info("💡 **Tip:** After getting results, you can create custom visualizations using the chart builder!")

@@ -98,6 +98,12 @@ def run_sql_chat():
         st.session_state.input_key = 0
     if "auto_run" not in st.session_state:
         st.session_state.auto_run = False
+    if "last_result" not in st.session_state:
+        st.session_state.last_result = None
+    if "last_question" not in st.session_state:
+        st.session_state.last_question = None
+    if "last_time" not in st.session_state:
+        st.session_state.last_time = None
     
     def add_to_history(question, result, execution_time):
         st.session_state.query_history.insert(0, {
@@ -223,6 +229,17 @@ def run_sql_chat():
                 with st.expander(f"📊 View Data ({item.get('row_count', 0)} rows)"):
                     df = pd.DataFrame(item["results"])
                     st.dataframe(df, use_container_width=True)
+                    st.markdown("**📥 Export:**")
+                    h_col1, h_col2, h_col3 = st.columns(3)
+                    with h_col1:
+                        st.download_button("📄 CSV", data=df.to_csv(index=False), file_name="history_export.csv", mime="text/csv", use_container_width=True, key=f"h_csv_{time.time()}")
+                    with h_col2:
+                        st.download_button("📋 JSON", data=df.to_json(orient="records", indent=2), file_name="history_export.json", mime="application/json", use_container_width=True, key=f"h_json_{time.time()}")
+                    with h_col3:
+                        import io
+                        buf = io.BytesIO()
+                        df.to_excel(buf, index=False, engine='openpyxl')
+                        st.download_button("📊 Excel", data=buf.getvalue(), file_name="history_export.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key=f"h_excel_{time.time()}")
         else:
             st.error(f"❌ This query failed: {item.get('error', '')}")
         
@@ -308,6 +325,12 @@ def run_sql_chat():
         
         if result["success"]:
             add_to_history(question, result, total_time)
+
+            # Store last result for persistence
+            st.session_state.last_result = result
+            st.session_state.last_question = question
+            st.session_state.last_time = total_time
+
             
             time_display = format_time(total_time)
             st.success(f"✅ Query completed in **{time_display}**")
@@ -343,11 +366,78 @@ def run_sql_chat():
                     st.markdown(result["explanation"])
             
             if result["results"]:
-                with st.expander(f"📊 View Data ({result['row_count']} rows)"):
+                with st.expander(f"📊 View Data ({result['row_count']} rows)", expanded=False):
                     df = pd.DataFrame(result["results"])
                     st.dataframe(df, use_container_width=True)
-                    csv = df.to_csv(index=False)
-                    st.download_button("📥 Download CSV", data=csv, file_name=f"query_{int(time.time())}.csv", mime="text/csv")
+                    
+                    # ─────────────────────────────────────
+                    # EXPORT OPTIONS
+                    # ─────────────────────────────────────
+                    st.markdown("**📥 Export Options:**")
+                    
+                    export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+                    
+                    # CSV Export
+                    with export_col1:
+                        csv_data = df.to_csv(index=False)
+                        st.download_button(
+                            "📄 CSV",
+                            data=csv_data,
+                            file_name=f"nexusiq_query_{int(time.time())}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    
+                    # JSON Export
+                    with export_col2:
+                        json_data = df.to_json(orient="records", indent=2)
+                        st.download_button(
+                            "📋 JSON",
+                            data=json_data,
+                            file_name=f"nexusiq_query_{int(time.time())}.json",
+                            mime="application/json",
+                            use_container_width=True
+                        )
+                    
+                    # Excel Export
+                    with export_col3:
+                        import io
+                        from openpyxl.utils import get_column_letter
+    
+                        excel_buffer = io.BytesIO()
+                        with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                            df.to_excel(writer, index=False, sheet_name='Query Results')
+                            
+                            # Auto-adjust column widths
+                            worksheet = writer.sheets['Query Results']
+                            for col_idx, column in enumerate(df.columns, 1):
+                                # Calculate max width needed
+                                max_length = len(str(column))  # Header width
+                                for value in df[column]:
+                                    max_length = max(max_length, len(str(value)))
+                                
+                                # Set width with padding
+                                adjusted_width = min(max_length + 3, 50)  # Cap at 50
+                                worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+                        excel_data = excel_buffer.getvalue()
+                        st.download_button(
+                            "📊 Excel",
+                            data=excel_data,
+                            file_name=f"nexusiq_query_{int(time.time())}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True
+                        )
+                    
+                    # Copy to Clipboard (Markdown Table)
+                    with export_col4:
+                        markdown_table = df.to_markdown(index=False)
+                        st.download_button(
+                            "📝 Markdown",
+                            data=markdown_table,
+                            file_name=f"nexusiq_query_{int(time.time())}.md",
+                            mime="text/markdown",
+                            use_container_width=True
+                        )
         
         else:
             add_to_history(question, result, total_time)
@@ -403,6 +493,102 @@ def run_sql_chat():
     
     elif ask_button and not question:
         st.warning("⚠️ Please enter a question")
+        
+    # ═══════════════════════════════════════════════════════
+    #  SHOW LAST RESULT (persists after download clicks)
+    # ═══════════════════════════════════════════════════════
+    
+    elif not ask_button and st.session_state.last_result and not st.session_state.selected_history:
+        result = st.session_state.last_result
+        question = st.session_state.last_question
+        total_time = st.session_state.last_time
+        
+        time_display = format_time(total_time)
+        st.success(f"✅ Query completed in **{time_display}**")
+        
+        if total_time > 20 and result.get("models_tried"):
+            with st.expander("⏱️ Why did it take this long?", expanded=True):
+                for i, m in enumerate(result["models_tried"], 1):
+                    st.markdown(f"**Step {i}:** {m['status']} {m.get('description', m['model'])} ({m['time']}s)")
+        
+        st.markdown("---")
+        st.markdown("### 💬 Answer")
+        st.markdown(result["answer"])
+        
+        if total_time <= 20:
+            st.caption(f"🤖 Model: {result.get('model_used', 'Unknown')}")
+        
+        with st.expander("🔍 View SQL Query"):
+            st.code(result["query"], language="sql")
+        
+        if result.get("explanation"):
+            with st.expander("📖 How This Query Works"):
+                st.markdown(result["explanation"])
+        
+        if result["results"]:
+            with st.expander(f"📊 View Data ({result['row_count']} rows)", expanded=False):
+                df = pd.DataFrame(result["results"])
+                st.dataframe(df, use_container_width=True)
+                
+                st.markdown("**📥 Export Options:**")
+                export_col1, export_col2, export_col3, export_col4 = st.columns(4)
+                
+                with export_col1:
+                    csv_data = df.to_csv(index=False)
+                    st.download_button(
+                        "📄 CSV",
+                        data=csv_data,
+                        file_name=f"nexusiq_query_{int(time.time())}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        key="persist_csv"
+                    )
+                
+                with export_col2:
+                    json_data = df.to_json(orient="records", indent=2)
+                    st.download_button(
+                        "📋 JSON",
+                        data=json_data,
+                        file_name=f"nexusiq_query_{int(time.time())}.json",
+                        mime="application/json",
+                        use_container_width=True,
+                        key="persist_json"
+                    )
+                
+                with export_col3:
+                    import io
+                    from openpyxl.utils import get_column_letter
+                    
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Query Results')
+                        worksheet = writer.sheets['Query Results']
+                        for col_idx, column in enumerate(df.columns, 1):
+                            max_length = len(str(column))
+                            for value in df[column]:
+                                max_length = max(max_length, len(str(value)))
+                            adjusted_width = min(max_length + 3, 50)
+                            worksheet.column_dimensions[get_column_letter(col_idx)].width = adjusted_width
+                    
+                    st.download_button(
+                        "📊 Excel",
+                        data=excel_buffer.getvalue(),
+                        file_name=f"nexusiq_query_{int(time.time())}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="persist_excel"
+                    )
+                
+                with export_col4:
+                    markdown_table = df.to_markdown(index=False)
+                    st.download_button(
+                        "📝 Markdown",
+                        data=markdown_table,
+                        file_name=f"nexusiq_query_{int(time.time())}.md",
+                        mime="text/markdown",
+                        use_container_width=True,
+                        key="persist_md"
+                    )
     
     st.markdown("---")
     st.caption("🧠 NexusIQ AI | Intelligent multi-model fallback with quota tracking")

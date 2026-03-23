@@ -155,6 +155,7 @@ SQLAlchemy==2.0.48
 streamlit==1.55.0
 streamlit-lottie==0.0.5
 sympy==1.14.0
+tabulate==0.10.0
 tenacity==9.1.4
 threadpoolctl==3.6.0
 tokenizers==0.22.2

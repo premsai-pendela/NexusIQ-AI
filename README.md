@@ -82,7 +82,6 @@ Traditional analytics workflow:
 
 ## ⚙️ System Architecture
 
-
 ```mermaid
 graph LR
     A[User Query] --> B[Gemini 2.0 Flash]
@@ -97,17 +96,22 @@ graph LR
     I --> J{User Action}
     J -->|Visualize| K[Charts]
     J -->|Export| L[Files]
+```
+
+---
 
 ## 🧱 Tech Stack
 
-| Layer | Technology |
-|------|-----------|
-| LLM | Gemini 2.0 Flash / 1.5 Pro |
-| Query Engine | DuckDB |
-| Backend | Python |
-| Frontend | Streamlit |
-| Visualization | Plotly |
-| Data Handling | Pandas |
+| Layer            | Technology                     |
+|------------------|-------------------------------|
+| LLM              | Gemini 2.0 Flash / 1.5 Pro    |
+| Query Engine     | DuckDB                        |
+| Backend          | Python                        |
+| Frontend         | Streamlit                     |
+| Visualization    | Plotly                        |
+| Data Handling    | Pandas                        |
+
+---
 
 ## 📦 Setup (Run Locally)
 
@@ -121,21 +125,33 @@ source venv/bin/activate   # Mac/Linux
 pip install -r requirements.txt
 
 cp .env.example .env
+```
 
-Run:
+Add the following in `.env`:
 
+```env
+GOOGLE_API_KEY=your_key
+DATABASE_PATH=data/sales.db
+```
+
+Run the application:
+
+```bash
 python database/generate_data.py
 streamlit run app.py
+```
 
-```markdown
+---
+
 ## 🎯 Example Queries
 
+- What is total revenue?
+- Top 10 customers by revenue
+- Monthly sales trend
+- Compare Q1 vs Q2 performance
+- Best performing product category
 
-"What is total revenue?"
-"Top 10 customers by revenue"
-"Monthly sales trend"
-"Compare Q1 vs Q2 performance"
-"Best performing product category"
+---
 
 ## 📊 Dataset Overview
 
@@ -145,22 +161,28 @@ streamlit run app.py
 - 5 product categories  
 - 2+ years of data  
 
+---
+
 ## 📈 Performance Metrics
 
-| Metric | Value |
-|------|------|
-| Simple Queries | 2–3 sec |
-| Complex Queries | 5–8 sec |
-| Chart Rendering | ~0.5 sec |
-| Export (10K rows) | ~1 sec |
+| Metric               | Value     |
+|---------------------|----------|
+| Simple Queries      | 2–3 sec  |
+| Complex Queries     | 5–8 sec  |
+| Chart Rendering     | ~0.5 sec |
+| Export (10K rows)   | ~1 sec   |
+
+---
 
 ## 🧪 Testing
 
 ```bash
 pytest tests/ -v
 pytest --cov=agents tests/
+```
 
-```markdown
+---
+
 ## 🗺️ Roadmap
 
 ### ✅ Completed
@@ -180,6 +202,8 @@ pytest --cov=agents tests/
 - Multi-database support  
 - REST API layer  
 
+---
+
 ## 💼 Real-World Use Cases
 
 - 📊 Sales → Top customers & revenue insights  
@@ -187,15 +211,20 @@ pytest --cov=agents tests/
 - 💰 Finance → Revenue trends & forecasting  
 - 🎯 Product → Category performance tracking  
 
+---
+
 ## 🤝 Contributing
 
 ```bash
 git checkout -b feature/your-feature
 git commit -m "Add feature"
 git push origin feature/your-feature
+```
+
+---
 
 ## 👤 Author
 
 **Prem Sai Pendela**  
-🔗 GitHub: https://github.com/premsai-pendela  
+🔗 GitHub: https://github.com/premsai-pendela
 

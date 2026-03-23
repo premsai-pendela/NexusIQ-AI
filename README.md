@@ -82,7 +82,6 @@ Traditional analytics workflow:
 
 ## ⚙️ System Architecture
 
-## ⚙️ System Architecture
 
 ```mermaid
 graph LR
@@ -99,7 +98,7 @@ graph LR
     J -->|Visualize| K[Charts]
     J -->|Export| L[Files]
 
-    ## 🧱 Tech Stack
+## 🧱 Tech Stack
 
 | Layer | Technology |
 |------|-----------|

@@ -195,7 +195,7 @@ class RAGAgent:
         self, 
         query: str, 
         n_results: int = 5,
-        similarity_threshold: float = 0.5  # ✨ Higher threshold for cosine (0-1 scale)
+        similarity_threshold: float = None  # ✅ NEW: Will use adaptive threshold
     ) -> List[Dict]:
         """
         Semantic search over document collection
@@ -204,18 +204,23 @@ class RAGAgent:
             query: User question
             n_results: Max number of chunks to retrieve
             similarity_threshold: Minimum similarity score (0-1, higher = more similar)
+                                If None, uses adaptive threshold based on query type
         
         Returns:
             List of retrieved chunks with metadata and similarity scores
         """
         
-        logger.info(f"Searching documents for: '{query}'")
+        # ✅ NEW: Use adaptive threshold if not provided
+        if similarity_threshold is None:
+            similarity_threshold = self._get_adaptive_threshold(query)
+        
+        logger.info(f"Searching documents for: '{query}' (threshold: {similarity_threshold:.2f})")
         
         # Generate query embedding (normalized for cosine)
         query_embedding = self.embedding_model.encode(
             query, 
             convert_to_numpy=True,
-            normalize_embeddings=True  # ✨ Important for cosine similarity
+            normalize_embeddings=True
         )
         
         # Search ChromaDB
@@ -236,9 +241,7 @@ class RAGAgent:
             results['metadatas'][0],
             results['distances'][0]
         )):
-            # ✨ FIX: Cosine distance to similarity
-            # Cosine distance = 1 - cosine_similarity
-            # So: cosine_similarity = 1 - cosine_distance
+            # Cosine distance to similarity
             similarity = 1 - distance
             
             # Filter by threshold
@@ -246,7 +249,7 @@ class RAGAgent:
                 logger.debug(f"Skipping chunk {i+1}: similarity {similarity:.3f} below threshold {similarity_threshold}")
                 continue
             
-            # ✨ Better page info
+            # Better page info
             page_info = metadata.get('page', 'Unknown')
             if metadata.get('page_start') and metadata.get('page_end'):
                 if metadata['page_start'] != metadata['page_end']:
@@ -261,10 +264,54 @@ class RAGAgent:
                 'similarity': round(similarity, 3)
             })
         
-        logger.info(f"Retrieved {len(chunks)} relevant chunks (threshold: {similarity_threshold})")
+        logger.info(f"Retrieved {len(chunks)} relevant chunks (threshold: {similarity_threshold:.2f})")
         
         return chunks
     
+    def _get_adaptive_threshold(self, query: str, base_threshold: float = 0.3) -> float:
+        """
+        ✅ NEW: Adjust similarity threshold based on query characteristics
+        
+        - Comparative queries → Lower threshold (need multiple docs)
+        - Specific fact queries → Higher threshold (need precise match)
+        - Broad overview queries → Lower threshold (need variety)
+        
+        Args:
+            query: User question
+            base_threshold: Default threshold (0.3)
+        
+        Returns:
+            Adjusted threshold (0.2 - 0.5 range)
+        """
+        query_lower = query.lower()
+        
+        # Lower threshold for comparative/analytical queries (need multiple perspectives)
+        if any(word in query_lower for word in ['compare', 'vs', 'versus', 'difference', 'between']):
+            threshold = base_threshold * 0.8  # 20% lower → 0.24
+            logger.debug(f"Comparative query detected → threshold: {threshold:.2f}")
+            return threshold
+        
+        # Lower threshold for broad/summary queries (need variety)
+        if any(word in query_lower for word in ['all', 'every', 'summary', 'overview', 'tell me about']):
+            threshold = base_threshold * 0.85  # 15% lower → 0.255
+            logger.debug(f"Broad query detected → threshold: {threshold:.2f}")
+            return threshold
+        
+        # Lower threshold for multi-topic queries (contains "and")
+        if ' and ' in query_lower:
+            threshold = base_threshold * 0.9  # 10% lower → 0.27
+            logger.debug(f"Multi-topic query detected → threshold: {threshold:.2f}")
+            return threshold
+        
+        # Higher threshold for specific fact lookups (need precision)
+        if any(word in query_lower for word in ['what was', 'how much', 'when did', 'what is the']):
+            threshold = base_threshold * 1.2  # 20% higher → 0.36
+            logger.debug(f"Specific fact query detected → threshold: {threshold:.2f}")
+            return threshold
+        
+        # Default threshold
+        return base_threshold
+
     def _build_context(self, 
         chunks: List[Dict], 
         model_name: str = None,
@@ -510,28 +557,59 @@ ANSWER (include source citations):"""
     
     def _classify_query_complexity(self, query: str) -> str:
         """
-        Classify query as simple or complex
+        ✅ IMPROVED: Classify query as simple or complex
         
-        Simple: Single fact lookup
-        Complex: Multi-document synthesis, comparisons, analysis
+        Simple: Single fact lookup, direct answer
+        Complex: Multi-document synthesis, comparisons, analysis, explanations
+        
+        Returns:
+            "simple" or "complex"
         """
-        
-        complex_indicators = [
-            'compare', 'difference', 'why', 'how', 'analyze', 
-            'explain', 'relationship', 'trend', 'impact',
-            'vs', 'versus', 'better', 'worse', 'between',
-            'multiple', 'all', 'every', 'across', 'summary',
-            'overview', 'breakdown', 'detail'
-        ]
         
         query_lower = query.lower()
         
+        # ✅ Expanded complex indicators
+        complex_indicators = [
+            # Analysis & comparison
+            'compare', 'difference', 'vs', 'versus', 'between',
+            'relationship', 'correlation', 'impact', 'affect',
+            
+            # Deep understanding
+            'why', 'how does', 'explain', 'analyze', 'describe',
+            
+            # Trends & patterns
+            'trend', 'growth', 'change', 'over time', 'pattern',
+            
+            # Breadth indicators
+            'all', 'every', 'multiple', 'across', 'various',
+            'summary', 'overview', 'breakdown', 'detail',
+            
+            # Strategic/planning topics
+            'plan', 'strategy', 'budget', 'forecast', 'expansion',
+            'recommendation', 'should', 'best',
+            
+            # Narrative requests
+            'tell me about', 'what do you know about'
+        ]
+        
+        # Check for complex indicators
         if any(indicator in query_lower for indicator in complex_indicators):
             return "complex"
         
-        if len(query.split()) > 15:  # Long questions likely complex
+        # ✅ NEW: Multi-topic detection ("X and Y" pattern)
+        if ' and ' in query_lower:
+            # "revenue and profit" = complex (multiple aspects)
             return "complex"
         
+        # ✅ NEW: Long questions are likely complex
+        if len(query.split()) > 10:  # Lowered from 15
+            return "complex"
+        
+        # ✅ NEW: Questions with multiple question marks or clauses
+        if query.count('?') > 1 or query.count(',') > 2:
+            return "complex"
+        
+        # Default to simple for direct fact lookups
         return "simple"
     
     def _extract_sources(self, answer: str, chunks: List[Dict]) -> List[Dict]:

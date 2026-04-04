@@ -137,33 +137,46 @@ class SQLAgent:
         """Get database schema for LLM context"""
         
         schema = """
-I am using PostgreSQL 15. Here is my database schema:
+    I am using PostgreSQL 15. Here is my database schema:
 
-TABLE: sales_transactions (100,000 rows)
-  • id (INTEGER, PRIMARY KEY)
-  • transaction_date (TIMESTAMP)
-  • region (VARCHAR): 'East', 'West', 'North', 'South', 'Central'
-  • store_id (VARCHAR): e.g., 'E001', 'W015'
-  • product_category (VARCHAR): 'Electronics', 'Clothing', 'Food', 'Home', 'Sports'
-  • product_name (VARCHAR)
-  • quantity (INTEGER)
-  • unit_price (NUMERIC)
-  • total_amount (NUMERIC)
-  • customer_id (VARCHAR)
-  • payment_method (VARCHAR): 'Credit Card', 'Debit Card', 'Cash', 'Digital Wallet'
+    TABLE: sales_transactions (90,500 rows)
+    • id (INTEGER, PRIMARY KEY)
+    • transaction_date (TIMESTAMP)
+    • region (VARCHAR): 'East', 'West', 'North', 'South', 'Central'
+    • store_id (VARCHAR): e.g., 'E001', 'W015'
+    • product_category (VARCHAR): 'Electronics', 'Clothing', 'Food', 'Home', 'Sports'
+    • product_name (VARCHAR)
+    • quantity (INTEGER)
+    • unit_price (NUMERIC)
+    • total_amount (NUMERIC)
+    • customer_id (VARCHAR)
+    • payment_method (VARCHAR): 'Credit Card', 'Debit Card', 'Cash', 'Digital Wallet'
 
-TABLE: inventory
-  • id, store_id, product_name, stock_level, reorder_point, last_restocked
+    ⚠️ CRITICAL DATE INFORMATION:
+    • ALL data is from year 2024 ONLY (January 1, 2024 to December 31, 2024)
+    • There is NO data for 2025 or 2026
+    • When user mentions Q4, Q3, etc. - ALWAYS assume 2024
 
-TABLE: customers (5,000 rows)
-  • id, customer_id, name, email, region, signup_date, total_purchases
+    QUARTER DATE RANGES (USE THESE EXACT DATES):
+    • Q1 2024: transaction_date >= '2024-01-01' AND transaction_date < '2024-04-01'
+    • Q2 2024: transaction_date >= '2024-04-01' AND transaction_date < '2024-07-01'
+    • Q3 2024: transaction_date >= '2024-07-01' AND transaction_date < '2024-10-01'
+    • Q4 2024: transaction_date >= '2024-10-01' AND transaction_date < '2025-01-01'
 
-POSTGRESQL NOTES:
-• Use ILIKE for case-insensitive matching
-• Use DATE_TRUNC('month', column) for grouping
-• Use CURRENT_DATE, INTERVAL '1 month' for dates
-• Total revenue = SUM(total_amount)
-"""
+    EXAMPLES:
+    • "Q4 revenue" → WHERE transaction_date >= '2024-10-01' AND transaction_date < '2025-01-01'
+    • "Q4 Electronics" → WHERE product_category = 'Electronics' AND transaction_date >= '2024-10-01' AND transaction_date < '2025-01-01'
+    • "Compare Q3 and Q4" → Use the date ranges above for each quarter
+
+    DO NOT USE:
+    • CURRENT_DATE (data is historical from 2024)
+    • EXTRACT(QUARTER FROM ...) without explicit year filter
+
+    POSTGRESQL NOTES:
+    • Use ILIKE for case-insensitive matching
+    • Use DATE_TRUNC('month', column) for grouping by month
+    • Total revenue = SUM(total_amount)
+    """
         return schema
     
     

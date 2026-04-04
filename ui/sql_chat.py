@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 import plotly.express as px
 import plotly.graph_objects as go
+from config.settings import settings
 
 sys.path.append(str(Path(__file__).parent.parent))
 
@@ -564,12 +565,29 @@ def run_sql_chat():
 
         st.markdown("---")
         st.subheader("📊 Model Status")
+        # ✨ NEW: Show Gemini Pro toggle status
+        if settings.use_gemini_pro:
+            st.warning("🟡 Gemini Pro: **ENABLED** (may exhaust quickly)")
+        else:
+            st.info("🔵 Gemini Pro: **DISABLED** (free tier protection)")
+        
         quota_status = agent.get_quota_status()
         if quota_status:
             for model, status in quota_status.items():
+                # ✨ NEW: Skip showing Pro if disabled
+                if "pro" in model.lower() and not settings.use_gemini_pro:
+                    continue
                 st.caption(f"{status['status']} {model.split('-')[0]}")
         else:
             st.caption("🟢 All models available")
+
+        # ✨ NEW: Optional - Allow toggling Pro at runtime (advanced users only)
+        if st.checkbox("⚙️ Advanced: Enable Gemini Pro", value=settings.use_gemini_pro, key="toggle_pro"):
+            st.warning("⚠️ Enabling Pro may exhaust your free tier quota in 1-2 queries!")
+            if st.button("🔓 Unlock Gemini Pro (I understand)", use_container_width=True):
+                settings.use_gemini_pro = True
+                st.success("✅ Gemini Pro enabled for this session")
+                st.rerun()
 
         if st.button("🔄 Reset Quota Tracking"):
             agent.reset_quota_tracking()

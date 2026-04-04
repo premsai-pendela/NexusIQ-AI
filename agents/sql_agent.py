@@ -64,43 +64,53 @@ class SQLAgent:
     # Model configurations
     MODELS = {
         "complex": [
+            # Complex queries need SMARTER models first
+            # Joins, comparisons, trends, multi-step analysis
             {
-                "name": "gemini-2.5-pro",
+                "name": "gemini-2.5-flash",
                 "type": "gemini",
-                "description": "Gemini 2.5 Pro (Best for complex queries)",
-                "quota": "500/day"
+                "description": "Gemini 2.5 Flash (Smart + Fast)",
+                "quota": "1,500/day",
+                "priority_reason": "Best for complex SQL generation"
             },
             {
                 "name": "llama-3.3-70b-versatile",
                 "type": "groq",
-                "description": "Groq Llama 3.3 70B (Fast fallback)",
-                "quota": "14,400/day"
+                "description": "Groq Llama 3.3 70B (Fallback)",
+                "quota": "14,400/day",
+                "priority_reason": "Good SQL capability, very fast"
             },
             {
-                "name": "deepseek-coder:6.7b",
+                "name": "deepseek-r1:1.5b",
                 "type": "ollama",
-                "description": "Ollama DeepSeek-Coder (Unlimited local)",
-                "quota": "Unlimited"
+                "description": "Ollama DeepSeek-R1 (Local Backup)",
+                "quota": "Unlimited",
+                "priority_reason": "Always available, basic capability"
             }
         ],
         "simple": [
+            # Simple queries prioritize SPEED over smarts
+            # Single table, basic aggregations, lookups
             {
                 "name": "llama-3.3-70b-versatile",
                 "type": "groq",
-                "description": "Groq Llama 3.3 70B (Fast)",
-                "quota": "14,400/day"
-            },
-            {
-                "name": "deepseek-coder:6.7b",
-                "type": "ollama",
-                "description": "Ollama DeepSeek-Coder (Unlimited local)",
-                "quota": "Unlimited"
+                "description": "Groq Llama 3.3 70B (Fastest)",
+                "quota": "14,400/day",
+                "priority_reason": "Fastest response for simple queries"
             },
             {
                 "name": "gemini-2.5-flash",
                 "type": "gemini",
-                "description": "Gemini 2.5 Flash (Backup)",
-                "quota": "500/day"
+                "description": "Gemini 2.5 Flash (Reliable)",
+                "quota": "1,500/day",
+                "priority_reason": "Reliable fallback"
+            },
+            {
+                "name": "deepseek-r1:1.5b",
+                "type": "ollama",
+                "description": "Ollama DeepSeek-R1 (Local Backup)",
+                "quota": "Unlimited",
+                "priority_reason": "Always available"
             }
         ]
     }
@@ -185,11 +195,20 @@ POSTGRESQL NOTES:
             if not settings.google_api_key:
                 raise Exception("Gemini API key not configured")
             
+            # ✨ NEW: Apply timeout/retry settings based on model
+            if "pro" in model_name.lower():
+                max_retries = settings.gemini_pro_max_retries
+                timeout = settings.gemini_pro_timeout
+            else:  # Flash
+                max_retries = settings.gemini_flash_max_retries
+                timeout = settings.gemini_flash_timeout
+            
             return ChatGoogleGenerativeAI(
                 model=model_name,
                 google_api_key=settings.google_api_key,
                 temperature=0.1,
-                max_retries=2  # Reduced retries for faster fallback
+                max_retries=max_retries,  # ✨ NEW: Controlled retries
+                timeout=timeout  # ✨ NEW: Fast fail
             )
         
         elif model_type == "groq":
@@ -233,6 +252,18 @@ POSTGRESQL NOTES:
         models_to_try = self.MODELS.get(complexity, self.MODELS["simple"])
         models_tried = []
         
+        # ✨ NEW: Conditionally add Gemini Pro as FIRST model if enabled
+        if settings.use_gemini_pro and settings.google_api_key:
+            gemini_pro_config = {
+                "name": "gemini-2.5-pro",
+                "type": "gemini",
+                "description": "Gemini 2.5 Pro (Best for complex queries)",
+                "quota": "50/day (free tier)"
+            }
+            # Insert at position 0 (highest priority)
+            models_to_try = [gemini_pro_config] + list(models_to_try)
+            logger.info("🟢 Gemini Pro ENABLED - trying first")
+
         for model_config in models_to_try:
             model_name = model_config["name"]
             model_start = time.time()

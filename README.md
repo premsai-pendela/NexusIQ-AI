@@ -1,74 +1,119 @@
-# 🧠 NexusIQ AI
-**AI-Powered Business Intelligence Platform | Natural Language → SQL → Insights**
+# 🧠 NexusIQ AI  
+**Multi-Agent AI Business Intelligence Platform | From Questions → Insights → Decisions**
 
 [![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)](https://streamlit.io)
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Google Gemini](https://img.shields.io/badge/Gemini-AI-8E75B2?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 [![DuckDB](https://img.shields.io/badge/DuckDB-Analytics-FFF000?style=for-the-badge&logo=duckdb&logoColor=black)](https://duckdb.org)
 
-> 🚀 **Ask business questions in plain English → Get SQL insights, charts, and explanations in seconds**
+> 🚀 Ask a business question → Multiple AI agents collaborate → Get insights, charts, and decisions in seconds
 
 ---
 
 ## 🔥 Why This Project Matters
 
-Traditional analytics workflow:
-- Write SQL → Debug → Export → Visualize → Explain  
-⏱️ **Time: 2–3 hours per analysis**
+Traditional analytics is fragmented:
+- SQL for structured data  
+- Documents for context  
+- Web for external signals  
+- Analysts to interpret everything  
 
-**NexusIQ replaces this with:**
-- Ask question → Get answer + chart + explanation  
-⚡ **Time: ~3–8 seconds**
-
----
-
-## 📊 Impact & Results
-
-- ⚡ Query execution: **2–8 seconds**
-- 📉 Manual effort reduced: **~95%**
-- 📊 Dataset handled: **100,000+ transactions**
-- 💰 Revenue analyzed: **$139M**
-- 👥 Designed for **non-technical stakeholders**
+⏱️ **Time: Hours to days**
 
 ---
 
-## 🎬 Demo
+### ⚡ NexusIQ Approach
 
-![NexusIQ Demo](docs/demo.gif)
+Instead of one tool, NexusIQ uses a **multi-agent system**:
 
-🔗 **Live Demo:** *(Add your Render/Streamlit link here — this is critical)*  
+- Each agent specializes in one task  
+- Agents collaborate like a real analytics team  
+- Final output is not just data → but **decision-ready insights**
 
 ---
 
-## 🧠 Core Capabilities
+## 🧠 Multi-Agent Architecture (Core Idea)
+
+```text
+User Question (plain English)
+        ↓
+    🧠 PLANNER AGENT
+    Breaks problem into sub-tasks
+        ↓
+    ┌────────┬────────┬────────┬────────┬────────┐
+    ↓        ↓        ↓        ↓        ↓
+  🗄️ SQL   📄 RAG   🌐 WEB   📊 DATA   ⭐ SENTIMENT
+  Agent    Agent     Agent     Agent     Agent
+    │        │        │        │        │
+    └────────┴────────┴────────┴────────┘
+                    ↓
+            🔗 FUSION AGENT
+            Combines all findings
+                    ↓
+            📈 ANALYST AGENT
+            Finds patterns & root causes
+                    ↓
+            📝 STORYTELLER AGENT
+            Generates business insights
+                    ↓
+                ✅ OUTPUT
+```
+
+---
+
+## 🎯 Final Output Includes
+
+- 📊 Interactive charts  
+- 🧠 Plain English insights  
+- 📄 Source-backed reasoning  
+- 📉 Trends & root causes  
+- ⭐ Confidence scores  
+- 📥 Downloadable reports  
+
+---
+
+## ⚙️ Current Implementation Status
+
+### ✅ Built (Working)
+- SQL AI Agent (NL → SQL → Charts)
+- Chat-based interface
+- Visualization engine
+- Export system
+
+### 🚧 In Progress
+- Planner Agent
+- RAG (document intelligence)
+- Multi-agent orchestration
+- Fusion & Analyst agents
+
+### 🔮 Planned
+- Web intelligence agent
+- Sentiment analysis agent
+- PDF report generation
+- Voice-based analytics
+
+---
+
+## 🧠 Core Capabilities (Current)
 
 ### 💬 Natural Language → SQL Engine
-- Converts plain English into optimized SQL
-- Context-aware multi-turn conversations
-- Auto error correction & suggestions
+- Converts plain English into SQL queries  
+- Handles follow-up questions  
+- Auto-corrects errors  
 
 ---
 
-### 📊 Interactive Analytics Dashboard
-- 6 chart types: Bar, Line, Pie, Scatter, Area, Horizontal
-- Custom axes & grouping
-- Real-time rendering
+### 📊 Interactive Dashboard
+- Multiple chart types  
+- Real-time rendering  
+- User-controlled visualizations  
 
 ---
 
-### 🧠 Smart Query Intelligence
-- Typo detection ("wset" → "west")
-- Date range validation
-- Context understanding
-- Follow-up queries supported
-
----
-
-### 🔒 Enterprise-Grade Safety
-- Read-only queries only
-- SQL injection protection
-- Query timeout control
-- Model failover handling
+### 🔒 Safe Query Execution
+- Read-only queries  
+- SQL injection protection  
+- Timeout handling  
 
 ---
 
@@ -80,23 +125,29 @@ Traditional analytics workflow:
 
 ---
 
-## ⚙️ System Architecture
+## 📊 Dataset Overview
 
-```mermaid
-graph LR
-    A[User Query] --> B[Gemini 2.0 Flash]
-    B --> C{Complexity Detection}
-    C -->|Simple| D[Fast Model]
-    C -->|Complex| E[Advanced Model]
-    D --> F[SQL Query]
-    E --> F
-    F --> G[DuckDB Engine]
-    G --> H[Query Results]
-    H --> I[Chat UI]
-    I --> J{User Action}
-    J -->|Visualize| K[Charts]
-    J -->|Export| L[Files]
-```
+- 100,000+ transactions  
+- $139M revenue analyzed  
+- 5 regions  
+- 5 product categories  
+- 2+ years of data  
+
+---
+
+## 📈 Performance (SQL Agent)
+
+| Metric               | Value     |
+|---------------------|----------|
+| Query Response      | 2–8 sec  |
+| Chart Rendering     | ~0.5 sec |
+| Export (10K rows)   | ~1 sec   |
+
+---
+
+## 🎬 Demo
+
+🚧 **Coming Soon — Live Demo will be available shortly**
 
 ---
 
@@ -120,14 +171,25 @@ git clone https://github.com/premsai-pendela/NexusIQ-AI.git
 cd NexusIQ-AI
 
 python -m venv venv
-source venv/bin/activate   # Mac/Linux
+source venv/bin/activate
 
 pip install -r requirements.txt
 
 cp .env.example .env
 ```
 
+<<<<<<< Updated upstream
 Run the application:
+=======
+Add in `.env`:
+
+```env
+GOOGLE_API_KEY=your_key
+DATABASE_PATH=data/sales.db
+```
+
+Run:
+>>>>>>> Stashed changes
 
 ```bash
 python database/generate_data.py
@@ -139,70 +201,19 @@ streamlit run app.py
 ## 🎯 Example Queries
 
 - What is total revenue?
-- Top 10 customers by revenue
+- Top customers by revenue
 - Monthly sales trend
 - Compare Q1 vs Q2 performance
 - Best performing product category
 
 ---
 
-## 📊 Dataset Overview
-
-- 100,000 transactions  
-- $139M total revenue  
-- 5 regions  
-- 5 product categories  
-- 2+ years of data  
-
----
-
-## 📈 Performance Metrics
-
-| Metric               | Value     |
-|---------------------|----------|
-| Simple Queries      | 2–3 sec  |
-| Complex Queries     | 5–8 sec  |
-| Chart Rendering     | ~0.5 sec |
-| Export (10K rows)   | ~1 sec   |
-
----
-
-## 🧪 Testing
-
-```bash
-pytest tests/ -v
-pytest --cov=agents tests/
-```
-
----
-
-## 🗺️ Roadmap
-
-### ✅ Completed
-- SQL AI Agent  
-- Chat Interface  
-- Visualization Engine  
-- Export System  
-
-### 🚧 In Progress
-- RAG Document Agent  
-- Web Data Agent  
-- Multi-agent orchestration  
-
-### 🔮 Future
-- Voice-based analytics  
-- Scheduled reports  
-- Multi-database support  
-- REST API layer  
-
----
-
 ## 💼 Real-World Use Cases
 
-- 📊 Sales → Top customers & revenue insights  
-- 📈 Marketing → Campaign performance analysis  
-- 💰 Finance → Revenue trends & forecasting  
-- 🎯 Product → Category performance tracking  
+- 📊 Sales → Revenue insights  
+- 📈 Marketing → Campaign analysis  
+- 💰 Finance → Forecasting  
+- 🎯 Product → Performance tracking  
 
 ---
 
@@ -220,4 +231,3 @@ git push origin feature/your-feature
 
 **Prem Sai Pendela**  
 🔗 GitHub: https://github.com/premsai-pendela
-

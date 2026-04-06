@@ -1,0 +1,251 @@
+{
+  "campmor_sports": {
+    "competitor": "Campmor",
+    "category": "sports",
+    "products": [
+      {
+        "name": "Kelty Mistral 20 Degree Sleeping Bag",
+        "price": "$69.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35415425RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Marmot Trestles 30 Degree Sleeping Bag",
+        "price": "$89.25",
+        "compare_at_price": "$119.00",
+        "brand": "Marmot",
+        "sku": "23520-4430-RZ",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Coleman Palmetto Cool Weather Sleeping Bag",
+        "price": "$53.99",
+        "compare_at_price": null,
+        "brand": "Coleman",
+        "sku": "2205649",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Cosmic 0 Degree 550 Down Sleeping Bag",
+        "price": "$309.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35413524RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Rambler 50 Degree Semi-Rectangular Sleeping Bag",
+        "price": "$64.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35415320RRBLU",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Callisto Kids 30 Degree Sleeping Bag",
+        "price": "$59.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35425020SR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Cosmic Synthetic 0 Degree Sleeping Bag",
+        "price": "$149.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35428525RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Cosmic 20 Degree 550 Down Sleeping Bag",
+        "price": "$179.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35413724SR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Cosmic Synthetic 20 Degree Sleeping Bag",
+        "price": "$109.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35428625RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Mistral Kids 20 Degree Sleeping Bag",
+        "price": "$59.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35429225MAL",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Mistral Kids 30 Degree Sleeping Bag",
+        "price": "$59.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35429025DPL",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Therm-A-Rest Space Cowboy 45F Degree Sleeping Bag",
+        "price": "$99.98",
+        "compare_at_price": "$219.95",
+        "brand": "Therm-A-Rest",
+        "sku": "11389",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "NEMO Equipment Jazz 30 Double Synthetic Sleeping Bag",
+        "price": "$349.95",
+        "compare_at_price": null,
+        "brand": "Nemo Equipment",
+        "sku": "811666037169",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Wild Aspen 20 Sleeping Bags by Klymit",
+        "price": "$84.95",
+        "compare_at_price": null,
+        "brand": "Klymit",
+        "sku": "carro-2134444",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Coleman Arch Bay 30 Degree Sleeping Bag",
+        "price": "$79.99",
+        "compare_at_price": "$84.99",
+        "brand": "Coleman",
+        "sku": "2205643",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Exped Megasleep Uno Sleeping Bag",
+        "price": "$149.95",
+        "compare_at_price": null,
+        "brand": "Exped",
+        "sku": "7640277845947",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Nemo Equipment Riff Mens 30 Endless  Promise Down Sleeping Bag",
+        "price": "$359.95",
+        "compare_at_price": null,
+        "brand": "Nemo Equipment",
+        "sku": "811666035578",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Nemo Equipment Riff Womens 30 Endless Promise Down Sleeping Bag",
+        "price": "$359.95",
+        "compare_at_price": null,
+        "brand": "Nemo Equipment",
+        "sku": "811666035622",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Nemo Equipment Riff\u2122 Women's Endless Promise\u00ae\u202fDown 15\u00b0 Sleeping Bag",
+        "price": "$399.95",
+        "compare_at_price": null,
+        "brand": "Nemo Equipment",
+        "sku": "811666035608",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Kelty Eclipse 15 Sleeping Bag",
+        "price": "$184.95",
+        "compare_at_price": null,
+        "brand": "Kelty",
+        "sku": "35432626SR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      }
+    ],
+    "total_found": 28,
+    "timestamp": "2026-04-05T21:21:45.347447",
+    "method": "Shopify API (requests)",
+    "url": "https://www.campmor.com/collections/sleeping-bags"
+  },
+  "newegg_electronics": {
+    "competitor": "Newegg",
+    "category": "electronics",
+    "products": [
+      {
+        "name": "Acer Aspire Go 15 AG15-42P-R3GM, 15.6\" Full HD IPS Display, AMD Ryzen 7 7730U Octa-Core Processor, AMD Radeon Graphics, 32GB DDR4 Memory, 1TB PCIe Gen4 SSD, 802.11ax Wi-Fi 6E, Windows 11 Home",
+        "price": "$699",
+        "source": "Newegg"
+      },
+      {
+        "name": "Lenovo Ideapad Slim 3 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 512GB SSD Windows 11 Home (82XM0035US)",
+        "price": "$549",
+        "source": "Newegg"
+      },
+      {
+        "name": "BiTECOOL 15.6-inch FHD IPS Laptop, 32GB RAM 512GB SSD, Intel Pentium Gold 6500Y (up to 3.4GHz), 4 Speakers, 2.4/5G WiFi Bluetooth 5.0, Windows 11 Pro Lightweight Portable Notebook",
+        "price": "$279",
+        "source": "Newegg"
+      },
+      {
+        "name": "Auusda 16\" Laptop AMD Ryzen 7 7840HS, 32GB DDR5 RAM, 1TB NVMe SSD, Windows 11 Pro Computer, Not for Heavy Gaming, Backlit, Fingerprint, Full-Type C, WiFi 6, Bluetooth 5.3, Webcam Switch, Gray",
+        "price": "$649",
+        "source": "Newegg"
+      },
+      {
+        "name": "ASUS TUF Gaming A16 - 16\" WQXGA 165 Hz - AMD Ryzen 7 260 - GeForce RTX 5060 Laptop GPU - 32GB Memory DDR5 5600 - 1TB PCIe SSD - Windows 11 Home  (FA608UM-NS76)",
+        "price": "$1,699",
+        "source": "Newegg"
+      },
+      {
+        "name": "Lenovo Legion 5i - 15.1\" GeForce RTX 5060 Laptop GPU - Intel Core i7-14700HX - 16GB Memory - 512GB SSD - 165Hz OLED Display - Windows 11 Home Gaming Laptop (83LY000LUS)",
+        "price": "$1,299",
+        "source": "Newegg"
+      },
+      {
+        "name": "MSI Stealth 14 AI 14\"  Ultra Thin and Light Gaming Laptop -  Intel Core Ultra 7 155H - NVIDIA GeForce RTX 4050 - 16GB DDR5 RAM - 1TB NVMe SSD -  Win 11 Pro (A1VEG-090US)",
+        "price": "$1,069",
+        "source": "Newegg"
+      },
+      {
+        "name": "MSI Stealth - 18\" 120 Hz - Intel Core Ultra 9 275HX - GeForce RTX 5080 Laptop GPU - 64GB Memory DDR5 5600 - 2TB SSD - Windows 11 Pro(Stealth 18 HX AI A2XWIG-036US)",
+        "price": "$3,546",
+        "source": "Newegg"
+      },
+      {
+        "name": "BiTECOOL Laptop Computer 15.6 inch, Intel Quad Core N95, 12GB LPDDR5 RAM 1TB NVMe SSD Laptop with FHD IPS Display, WiFi 5, BT5.0, USB Type C and Fingerprint, 2 Years Warranty, Windows 11 Pro",
+        "price": "$289",
+        "source": "Newegg"
+      },
+      {
+        "name": "MSI Cyborg 17 - 17.3\" FHD 144 Hz - Intel Core 9 270H(2.70-5.80 GHz) - GeForce RTX 5060 Laptop GPU - 16GB Memory DDR5 5600 - 1TB NVMe SSD Gen4x4 SSD - Windows 11 Home  (Cyborg 17 B2RWFKG-067US )",
+        "price": "$1,399",
+        "source": "Newegg"
+      }
+    ],
+    "timestamp": "2026-04-05T21:27:34.642183",
+    "url": "https://www.newegg.com/p/pl?d=laptop&N=4131",
+    "method": "BeautifulSoup"
+  }
+}

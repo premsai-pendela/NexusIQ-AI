@@ -7,10 +7,11 @@ import time
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Tuple
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
+
 
 # ═══════════════════════════════════════════════════════════
 #  QUOTA TRACKER CLASS
@@ -28,43 +29,40 @@ class QuotaTracker:
     """
     
     # File to persist tracker across restarts
-    TRACKER_FILE = Path(__file__).parent.parent / "data" / "quota_tracker.json"
+    TRACKER_FILE = Path("data/quota_tracker.json")
     
-    # How long to wait before retrying a failed model
+    # How long to wait before retrying a failed model (in seconds)
     RETRY_DELAYS = {
-        "quota_exceeded": 3600,      # 1 hour (daily quota)
-        "rate_limit": 60,            # 1 minute (RPM limit)
-        "server_error": 300,         # 5 minutes (temporary issue)
-        "not_found": 86400,          # 24 hours (model doesn't exist)
-        "connection_error": 120,     # 2 minutes (network issue)
-        "unknown": 300               # 5 minutes (default)
+        "RESOURCE_EXHAUSTED": 3600,   # 1 hour for quota exhaustion (429)
+        "RATE_LIMIT": 60,              # 1 minute for RPM limit
+        "DEADLINE_EXCEEDED": 300,      # 5 min for timeouts (504)
+        "CONNECTION": 180,             # 3 min for connection errors
+        "NOT_FOUND": 86400,            # 24 hours for model doesn't exist (404)
+        "SERVER_ERROR": 300,           # 5 min for server errors (500/503)
+        "DEFAULT": 300                 # 5 min for unknown errors
     }
     
     def __init__(self):
-        self.state_file = Path("data/quota_tracker.json")
-        self.state_file.parent.mkdir(exist_ok=True)
+        # Ensure data directory exists
+        self.TRACKER_FILE.parent.mkdir(parents=True, exist_ok=True)
         
-        # ✅ UPDATED: Different retry delays for different errors
-        self.RETRY_DELAYS = {
-            "RESOURCE_EXHAUSTED": 3600,  # 1 hour for quota exhaustion (429)
-            "DEADLINE_EXCEEDED": 300,    # 5 min for timeouts (504)
-            "CONNECTION": 180,           # 3 min for connection errors
-            "DEFAULT": 300               # 5 min for unknown errors
-        }
+        # Load existing state or start fresh
+        self.models = self._load_state()
         
-        self.models = self._load_state() or {}
-        logger.info(f"📂 Loaded quota tracker state: {len(self.models)} models tracked")
+        logger.info(f"📂 Quota tracker initialized: {len(self.models)} models tracked")
     
-    def _load_state(self):
+    def _load_state(self) -> Dict:
         """Load tracker state from file"""
         try:
             if self.TRACKER_FILE.exists():
                 with open(self.TRACKER_FILE, 'r') as f:
-                    self.models = json.load(f)
-                logger.info(f"📂 Loaded quota tracker state: {len(self.models)} models tracked")
+                    data = json.load(f)
+                    logger.info(f"📂 Loaded quota tracker state from {self.TRACKER_FILE}")
+                    return data
         except Exception as e:
             logger.warning(f"⚠️ Could not load tracker state: {e}")
-            self.models = {}
+        
+        return {}  # Return empty dict if file doesn't exist or error
     
     def _save_state(self):
         """Save tracker state to file"""
@@ -77,22 +75,24 @@ class QuotaTracker:
     
     def _classify_error(self, error_message: str) -> str:
         """Classify error type from error message"""
-        error_lower = error_message.lower()
+        error_upper = error_message.upper()
         
-        if "429" in error_message or "quota" in error_lower or "exhausted" in error_lower:
-            return "quota_exceeded"
-        elif "rate" in error_lower and "limit" in error_lower:
-            return "rate_limit"
-        elif "404" in error_message or "not found" in error_lower:
-            return "not_found"
-        elif "500" in error_message or "503" in error_message or "server" in error_lower:
-            return "server_error"
-        elif "connection" in error_lower or "timeout" in error_lower:
-            return "connection_error"
+        if "429" in error_message or "RESOURCE_EXHAUSTED" in error_upper or "QUOTA" in error_upper:
+            return "RESOURCE_EXHAUSTED"
+        elif "RATE" in error_upper and "LIMIT" in error_upper:
+            return "RATE_LIMIT"
+        elif "404" in error_message or "NOT FOUND" in error_upper:
+            return "NOT_FOUND"
+        elif "500" in error_message or "503" in error_message or "SERVER" in error_upper:
+            return "SERVER_ERROR"
+        elif "DEADLINE_EXCEEDED" in error_upper or "TIMEOUT" in error_upper or "504" in error_message:
+            return "DEADLINE_EXCEEDED"
+        elif "CONNECTION" in error_upper or "NETWORK" in error_upper:
+            return "CONNECTION"
         else:
-            return "unknown"
+            return "DEFAULT"
     
-    def is_available(self, model_name: str) -> tuple:
+    def is_available(self, model_name: str) -> Tuple[bool, str]:
         """
         Check if model is available for use
         
@@ -115,12 +115,12 @@ class QuotaTracker:
             now = datetime.now()
             
             if now < retry_time:
-                # ✅ FIXED: Show remaining wait time
+                # Still in cooldown period
                 remaining = (retry_time - now).total_seconds()
                 minutes = int(remaining / 60)
                 seconds = int(remaining % 60)
                 
-                error_type = model_info.get("error_type", "unknown")
+                error_type = model_info.get("error_type", "UNKNOWN")
                 return False, f"{error_type}: Retry in {minutes}m {seconds}s"
             else:
                 # Retry time reached - reset status
@@ -141,7 +141,7 @@ class QuotaTracker:
     
     def report_failure(self, model_name: str, error_message: str):
         """
-        ✅ FIXED: Report model failure with smart retry delays
+        Report model failure with smart retry delays
         
         Args:
             model_name: Model identifier
@@ -150,30 +150,12 @@ class QuotaTracker:
         
         now = datetime.now()
         
-        # Determine error type and retry delay
-        error_upper = error_message.upper()
-        
-        if "RESOURCE_EXHAUSTED" in error_upper or "429" in error_message:
-            error_type = "RESOURCE_EXHAUSTED"
-            retry_delay = self.RETRY_DELAYS["RESOURCE_EXHAUSTED"]  # 1 hour
-            logger.warning(f"🔴 {model_name}: Quota exhausted, retry in {retry_delay/60:.0f} min")
-        
-        elif "DEADLINE_EXCEEDED" in error_upper or "504" in error_message or "TIMEOUT" in error_upper:
-            error_type = "DEADLINE_EXCEEDED"
-            retry_delay = self.RETRY_DELAYS["DEADLINE_EXCEEDED"]  # 5 min
-            logger.warning(f"🟡 {model_name}: Timeout, retry in {retry_delay/60:.0f} min")
-        
-        elif "CONNECTION" in error_upper or "NETWORK" in error_upper:
-            error_type = "CONNECTION"
-            retry_delay = self.RETRY_DELAYS["CONNECTION"]  # 3 min
-            logger.warning(f"🟠 {model_name}: Connection issue, retry in {retry_delay/60:.0f} min")
-        
-        else:
-            error_type = "UNKNOWN"
-            retry_delay = self.RETRY_DELAYS["DEFAULT"]  # 5 min
-            logger.warning(f"⚫ {model_name}: Unknown error, retry in {retry_delay/60:.0f} min")
-        
+        # Classify error type
+        error_type = self._classify_error(error_message)
+        retry_delay = self.RETRY_DELAYS.get(error_type, self.RETRY_DELAYS["DEFAULT"])
         retry_after = now + timedelta(seconds=retry_delay)
+        
+        logger.warning(f"🔴 {model_name}: {error_type}, retry in {retry_delay/60:.0f} min")
         
         if model_name not in self.models:
             self.models[model_name] = {
@@ -199,23 +181,38 @@ class QuotaTracker:
     def get_status_report(self) -> Dict[str, dict]:
         """Get current status of all tracked models"""
         report = {}
+        now = datetime.now()
         
         for model_name, state in self.models.items():
-            failed_at = state.get("failed_at", 0)
-            error_type = state.get("error_type", "unknown")
-            retry_delay = self.RETRY_DELAYS.get(error_type, 300)
-            time_since_failure = time.time() - failed_at
-            
-            if time_since_failure >= retry_delay:
-                status = "🟡 RETRY_READY"
+            # Parse last failure time
+            last_failure_str = state.get("last_failure")
+            if last_failure_str:
+                last_failure = datetime.fromisoformat(last_failure_str)
+                time_since_failure = (now - last_failure).total_seconds()
             else:
+                time_since_failure = 0
+            
+            # Parse retry time
+            retry_after_str = state.get("retry_after")
+            if retry_after_str:
+                retry_after = datetime.fromisoformat(retry_after_str)
+                retry_in = max(0, (retry_after - now).total_seconds())
+            else:
+                retry_in = 0
+            
+            # Determine status
+            if retry_in > 0:
                 status = "🔴 BLOCKED"
+            else:
+                status = "🟡 RETRY_READY"
             
             report[model_name] = {
                 "status": status,
-                "error_type": error_type,
+                "error_type": state.get("error_type", "UNKNOWN"),
+                "failure_count": state.get("failure_count", 0),
                 "failed_ago": f"{int(time_since_failure)}s",
-                "retry_in": f"{max(0, int(retry_delay - time_since_failure))}s"
+                "retry_in": f"{int(retry_in)}s",
+                "last_error": state.get("last_error", "")[:50]
             }
         
         return report
@@ -235,10 +232,9 @@ class QuotaTracker:
 
 
 # ═══════════════════════════════════════════════════════════
-#  GLOBAL TRACKER INSTANCE
+#  GLOBAL TRACKER INSTANCE (SINGLETON)
 # ═══════════════════════════════════════════════════════════
 
-# Singleton instance
 _tracker_instance = None
 
 def get_tracker() -> QuotaTracker:
@@ -249,6 +245,18 @@ def get_tracker() -> QuotaTracker:
     return _tracker_instance
 
 
+# Alias for backward compatibility
+quota_tracker = None  # Will be set on first import if needed
+
+def _init_global():
+    """Initialize global quota_tracker variable"""
+    global quota_tracker
+    if quota_tracker is None:
+        quota_tracker = get_tracker()
+
+_init_global()
+
+
 # ═══════════════════════════════════════════════════════════
 #  TESTING
 # ═══════════════════════════════════════════════════════════
@@ -257,23 +265,41 @@ if __name__ == "__main__":
     # Test the tracker
     tracker = get_tracker()
     
-    print("\n=== Quota Tracker Test ===\n")
+    print("\n" + "="*50)
+    print("QUOTA TRACKER TEST")
+    print("="*50 + "\n")
     
-    # Test availability check
-    available, reason = tracker.is_available("gemini-2.5-pro")
-    print(f"Gemini available: {available}, Reason: {reason}")
+    # Test 1: Check fresh model availability
+    print("Test 1: Check fresh model")
+    available, reason = tracker.is_available("gemini-2.5-flash")
+    print(f"  Gemini Flash available: {available}")
+    print(f"  Reason: {reason}")
     
-    # Simulate failure
-    tracker.report_failure("gemini-2.5-pro", "429 RESOURCE_EXHAUSTED quota exceeded")
+    # Test 2: Simulate quota exhaustion
+    print("\nTest 2: Simulate quota exhaustion")
+    tracker.report_failure("gemini-2.5-flash", "429 RESOURCE_EXHAUSTED: quota exceeded")
+    available, reason = tracker.is_available("gemini-2.5-flash")
+    print(f"  Gemini Flash available: {available}")
+    print(f"  Reason: {reason}")
     
-    # Check again
-    available, reason = tracker.is_available("gemini-2.5-pro")
-    print(f"Gemini available after failure: {available}, Reason: {reason}")
+    # Test 3: Simulate timeout
+    print("\nTest 3: Simulate timeout")
+    tracker.report_failure("groq-llama", "504 DEADLINE_EXCEEDED")
+    available, reason = tracker.is_available("groq-llama")
+    print(f"  Groq Llama available: {available}")
+    print(f"  Reason: {reason}")
     
-    # Get status report
-    print("\nStatus Report:")
-    print(json.dumps(tracker.get_status_report(), indent=2))
+    # Test 4: Get status report
+    print("\nTest 4: Status Report")
+    report = tracker.get_status_report()
+    print(json.dumps(report, indent=2))
     
-    # Reset
+    # Test 5: Reset all
+    print("\nTest 5: Reset all models")
     tracker.reset_all()
-    print("\nAfter reset - all models available")
+    available, reason = tracker.is_available("gemini-2.5-flash")
+    print(f"  After reset - Gemini Flash available: {available}")
+    
+    print("\n" + "="*50)
+    print("✅ Quota Tracker tests complete!")
+    print("="*50 + "\n")

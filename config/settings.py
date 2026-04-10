@@ -5,19 +5,10 @@ import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
-# Pull Streamlit secrets into env vars (Streamlit Cloud deployment)
-try:
-    import streamlit as st
-    for _k, _v in st.secrets.items():
-        if isinstance(_v, str):
-            os.environ.setdefault(_k.upper(), _v)
-except Exception:
-    pass  # Not running under Streamlit, or no secrets configured
-
 
 class Settings(BaseSettings):
-    # API Keys
-    google_api_key: str
+    # API Keys — defaults to "" so the app loads even without secrets configured
+    google_api_key: str = ""
     groq_api_key: str = ""
     
     # Model names

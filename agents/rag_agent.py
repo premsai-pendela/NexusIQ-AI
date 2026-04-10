@@ -31,7 +31,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-import ollama
+try:
+    import ollama
+    OLLAMA_AVAILABLE = True
+except ImportError:
+    OLLAMA_AVAILABLE = False
 
 from config.settings import settings
 from utils.quota_tracker import get_tracker
@@ -454,6 +458,9 @@ ANSWER (include source citations):"""
                 return response.content
             
             elif model_type == "ollama":
+                if not OLLAMA_AVAILABLE:
+                    logger.warning("Ollama not available, skipping")
+                    return None
                 response = ollama.chat(
                     model=settings.ollama_model,
                     messages=[{"role": "user", "content": prompt}]

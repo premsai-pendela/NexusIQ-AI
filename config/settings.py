@@ -1,8 +1,19 @@
 """
 NexusIQ AI — Configuration Management
 """
+import os
 from pydantic_settings import BaseSettings
 from typing import Optional
+
+# Pull Streamlit secrets into env vars (Streamlit Cloud deployment)
+try:
+    import streamlit as st
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str):
+            os.environ.setdefault(_k.upper(), _v)
+except Exception:
+    pass  # Not running under Streamlit, or no secrets configured
+
 
 class Settings(BaseSettings):
     # API Keys
@@ -35,8 +46,8 @@ class Settings(BaseSettings):
     # Rate limiting
     max_requests_per_minute: int = 25  # Stay under 30 RPM limit
     
-    # Database
-    database_url: str
+    # Database (defaults to SQLite for zero-setup deployment)
+    database_url: str = "sqlite:///data/sales.db"
     
     # Vector Store (ChromaDB)
     chroma_persist_directory: str = "./data/chroma_db"

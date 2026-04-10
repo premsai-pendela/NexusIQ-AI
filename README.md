@@ -169,17 +169,41 @@ Create `.env`:
 ```env
 GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
-DATABASE_PATH=data/sales.db
+DATABASE_URL=sqlite:///data/sales.db
 ```
 
-Generate data and run:
+The SQLite database and ChromaDB vector store are pre-built and committed — no generation step needed. Just run:
 
 ```bash
-python database/generate_data.py
 streamlit run main.py
 ```
 
+To regenerate the database from scratch:
+
+```bash
+python database/generate_aligned_data.py
+```
+
 Open `http://localhost:8501`
+
+---
+
+## Streamlit Cloud Deployment
+
+1. Fork / push this repo to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io) → New app → select this repo
+3. Set **Main file path** to `main.py`
+4. Open **Advanced settings → Secrets** and paste:
+
+```toml
+GOOGLE_API_KEY = "your_gemini_api_key"
+GROQ_API_KEY   = "your_groq_api_key"
+DATABASE_URL   = "sqlite:///data/sales.db"
+```
+
+5. Deploy. The SQLite DB and ChromaDB are pre-committed — no build step required.
+
+> Note: The IKEA Selenium scraper is disabled on Streamlit Cloud (no Chrome). All other scrapers (Shopify API, Newegg BeautifulSoup) work as-is.
 
 ---
 

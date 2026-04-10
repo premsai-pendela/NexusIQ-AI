@@ -1,0 +1,31 @@
+{
+  "pdfs_processed": 23,
+  "chunks_created": 108,
+  "categories": {
+    "01_financial": {
+      "pdfs": 5,
+      "chunks": 11
+    },
+    "02_market_intelligence": {
+      "pdfs": 5,
+      "chunks": 27
+    },
+    "03_contracts_legal": {
+      "pdfs": 4,
+      "chunks": 17
+    },
+    "04_products_operations": {
+      "pdfs": 4,
+      "chunks": 19
+    },
+    "05_strategic_planning": {
+      "pdfs": 3,
+      "chunks": 14
+    },
+    "06_hr_compliance": {
+      "pdfs": 2,
+      "chunks": 20
+    }
+  },
+  "distance_metric": "cosine"
+}

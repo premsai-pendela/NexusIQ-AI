@@ -49,7 +49,8 @@ pydantic>=2.5.0
 pydantic-settings>=2.1.0
 tenacity>=8.2.0
 
-# ML Backend (CPU-only torch for cloud deployment)
+# ML Backend
 torch>=2.1.0
+torchvision>=0.16.0
 scipy>=1.11.0
 scikit-learn>=1.3.0

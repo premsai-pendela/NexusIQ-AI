@@ -58,6 +58,11 @@ class FusionAgent:
         self._last_routing_fallback = False
         self._no_data_reason = None
 
+        # Proactive Gemini rate limiter — free tier allows 5 req/min
+        # Track timestamps of recent Gemini routing calls (rolling 60s window)
+        self._gemini_routing_calls: list = []
+        self._gemini_rpm_limit = 4  # stay 1 below hard limit as buffer
+
         logger.info("✅ Fusion Agent initialized with SQL + RAG + Web!")
     
     def _classify_query_source(self, question: str) -> str:
@@ -162,16 +167,21 @@ product, quantity, unit_price, total_amount, payment_method, customer_id.
 **RAG** — 23 PDF documents: Q1-Q4 2024 performance reports, return/privacy/compliance
 policies, expansion plans, budget, digital wallet initiative, vendor contracts.
 ✅ Use for: policies, strategies, plans, performance narratives, compliance
-   (also use alongside SQL for quarterly questions so reports can add context)
+   (also use alongside SQL for quarterly/revenue questions — PDF reports contain
+   the same revenue figures, enabling cross-validation)
 ❌ Skip for: granular row-level transaction data
 
 **Web** — live competitor pricing scraped from Newegg, IKEA, Campmor, Swanson.
 ✅ Use for: competitor prices, market pricing comparisons
 ❌ Skip for: anything about our own data
 
-## Cross-Validation
-Set cross_validate=true only when BOTH sql=true AND rag=true AND the same numeric
-fact (like "Q3 revenue") can be verified in both independently.
+## Cross-Validation Rules (IMPORTANT — follow strictly)
+- Revenue questions (total, quarterly, regional, category): sql=true AND rag=true AND cross_validate=true
+  REASON: PDF reports independently confirm transaction totals — always cross-validate financial figures
+- Strategy/policy only: rag=true, sql=false
+- Competitor pricing only: web=true, sql=false, rag=false
+- "Validate", "verify", "confirm", "cross-check": always set cross_validate=true
+- When unsure whether to add RAG to a financial query: include it (cross-validation is cheap)
 
 ## Question
 "{question}"
@@ -185,6 +195,18 @@ Reply with ONLY this JSON (no extra text):
   "reasoning": "one sentence"
 }}"""
 
+        # ── Proactive Gemini rate limiter ────────────────────────────────────────
+        # Free tier = 5 req/min. Track rolling 60s window; wait if at limit.
+        now_ts = time.time()
+        self._gemini_routing_calls = [t for t in self._gemini_routing_calls if now_ts - t < 60]
+        if len(self._gemini_routing_calls) >= self._gemini_rpm_limit:
+            oldest = self._gemini_routing_calls[0]
+            wait_s = 60 - (now_ts - oldest) + 1  # +1s buffer
+            if wait_s > 0:
+                logger.info(f"⏳ Gemini RPM limit reached — waiting {wait_s:.1f}s to avoid quota exhaustion")
+                time.sleep(wait_s)
+            self._gemini_routing_calls = [t for t in self._gemini_routing_calls if time.time() - t < 60]
+
         # Try available LLM clients in order: Gemini Flash → Groq
         clients = []
         if self.gemini_flash:
@@ -196,6 +218,10 @@ Reply with ONLY this JSON (no extra text):
 
         for client_name, client in clients:
             try:
+                # Track Gemini calls for rate limiting
+                if client_name == "Gemini Flash":
+                    self._gemini_routing_calls.append(time.time())
+
                 response = client.invoke(prompt)
                 content = response.content.strip()
 
@@ -406,17 +432,21 @@ Reply with ONLY this JSON (no extra text):
         
         # Extract numbers from both sources
         sql_numbers = []
-        if sql_result.get('success') and sql_result.get('results'):
-            # Get numbers from SQL results
-            for row in sql_result['results']:
-                for key, value in row.items():
-                    if isinstance(value, (int, float)) and value > 0:
-                        sql_numbers.append({
-                            'value': float(value),
-                            'label': key,
-                            'source': 'SQL'
-                        })
-        
+        if sql_result.get('success'):
+            # Primary: extract formatted numbers from the SQL answer text
+            # (catches aggregated totals like "$45.2M" that row-level data misses)
+            answer_nums = self._extract_numbers(sql_result.get('answer', ''))
+            for n in answer_nums:
+                sql_numbers.append({'value': n, 'label': 'answer', 'source': 'SQL'})
+
+            # Secondary: row-level numeric values (single-row results only —
+            # multi-row results contain per-item amounts that don't match RAG totals)
+            rows = sql_result.get('results', [])
+            if len(rows) == 1:
+                for key, value in rows[0].items():
+                    if isinstance(value, (int, float)) and value > 1000:
+                        sql_numbers.append({'value': float(value), 'label': key, 'source': 'SQL'})
+
         rag_numbers = self._extract_numbers(rag_result.get('answer', ''))
         rag_number_dicts = [{'value': n, 'label': 'extracted', 'source': 'RAG'} for n in rag_numbers]
         

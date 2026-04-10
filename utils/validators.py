@@ -114,15 +114,22 @@ def check_category_typo(question: str) -> Optional[dict]:
     for word in words:
         word_cap = word.capitalize()
         
-        # Skip common words
-        skip_words = ['in', 'the', 'for', 'and', 'or', 'by', 'to', 'of',
-                      'category', 'type', 'sales', 'revenue', 'total', 'show',
-                      'what', 'how', 'best', 'top', 'product', 'products']
+        # Skip common words — include any word that fuzzy-matches a category
+        # by accident (e.g. "reports" → "Sports", "sorting" → "Sports")
+        skip_words = [
+            'in', 'the', 'for', 'and', 'or', 'by', 'to', 'of',
+            'category', 'type', 'sales', 'revenue', 'total', 'show',
+            'what', 'how', 'best', 'top', 'product', 'products',
+            'reports', 'report', 'against', 'validate', 'validation',
+            'sorting', 'sorted', 'importing', 'exports', 'supports',
+            'efforts', 'results', 'metrics', 'targets', 'formats',
+        ]
         if word.lower() in skip_words:
             continue
-        
+
         if word_cap not in VALID_CATEGORIES:
-            match = find_closest_match(word_cap, VALID_CATEGORIES, threshold=0.6)
+            # Raised from 0.6 → 0.75 to avoid false positives like "reports" → "Sports"
+            match = find_closest_match(word_cap, VALID_CATEGORIES, threshold=0.75)
             if match:
                 return {
                     "typo": word,

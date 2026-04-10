@@ -25,6 +25,7 @@ from pathlib import Path
 ROUTING_OVERRIDES = {
     1:  ("sql_rag",  "LLM cross-validates total revenue against PDF reports — correct behavior"),
     26: ("sql_rag",  "'All metrics' includes SQL transaction data; pure rag_only is too narrow"),
+    27: ("sql_rag",  "Q1-Q4 revenue trends requires SQL transaction data; rag_only is too narrow"),
 }
 
 # ── Phase presets ────────────────────────────────────────────────────────────
@@ -338,6 +339,10 @@ def main():
     t_start = time.time()
     total = len(selected)
 
+    # Delay between queries to avoid Groq rate limits (429s).
+    # Complex queries (advanced/comparison) hit the API harder — give them more breathing room.
+    DELAY_BY_DIFFICULTY = {"simple": 2, "medium": 3, "advanced": 5, "comparison": 5, "validation": 2, "category": 2}
+
     print(f"\nRunning {total} queries…\n")
     for i, q in enumerate(selected, 1):
         tag = f"#{q['id']:3d} [{q['section'][:20]} / {q['difficulty']}]"
@@ -346,6 +351,9 @@ def main():
         icon = {"pass": "✅", "routing_mismatch": "⚠️", "error": "❌"}.get(r["status"], "?")
         print(f"{icon}  {r['actual_routing'] or r['error'] or '—'}  ({r['query_time_s']}s)")
         results.append(r)
+        if i < total:
+            delay = DELAY_BY_DIFFICULTY.get(q["difficulty"], 3)
+            time.sleep(delay)
 
     duration = time.time() - t_start
 

@@ -176,12 +176,24 @@ policies, expansion plans, budget, digital wallet initiative, vendor contracts.
 ❌ Skip for: anything about our own data
 
 ## Cross-Validation Rules (IMPORTANT — follow strictly)
-- Revenue questions (total, quarterly, regional, category): sql=true AND rag=true AND cross_validate=true
-  REASON: PDF reports independently confirm transaction totals — always cross-validate financial figures
+
+**When to use sql=true AND rag=true (cross_validate=true):**
+- Quarterly totals: "Q1/Q2/Q3/Q4 revenue", "quarterly performance", "compare quarters"
+- Annual totals: "total revenue", "annual revenue", "full year"
+- "Validate", "verify", "confirm", "cross-check" — always cross-validate
+REASON: PDF quarterly reports independently confirm these aggregate figures.
+
+**When to use sql=true ONLY (rag=false):**
+- Rankings/top-N: "top 5 products", "best performing store", "highest revenue product"
+- Breakdowns without quarterly context: "sales by region", "by payment method", "by category"
+- Trends over months: "monthly trend", "month by month", "weekly sales"
+- Counts: "how many transactions", "number of orders"
+REASON: PDF reports do NOT contain product rankings, monthly trends, or payment breakdowns.
+Adding RAG to these queries wastes time and adds no validation value.
+
+**Other rules:**
 - Strategy/policy only: rag=true, sql=false
 - Competitor pricing only: web=true, sql=false, rag=false
-- "Validate", "verify", "confirm", "cross-check": always set cross_validate=true
-- When unsure whether to add RAG to a financial query: include it (cross-validation is cheap)
 
 ## Question
 "{question}"

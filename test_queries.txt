@@ -1,0 +1,339 @@
+# 🧪 COMPLETE TESTING SUITE FOR FUSION AGENT
+
+## **📋 Testing Strategy**
+
+Test all routing combinations across 3 difficulty levels:
+- **Simple**: Single fact lookup, direct answers
+- **Medium**: Multi-step queries, basic analysis
+- **Advanced**: Cross-validation, comparisons, multi-source synthesis
+
+---
+
+## **1️⃣ SQL ONLY QUERIES**
+
+### **Simple**
+```
+1. What is the total revenue?
+2. How many transactions are in the database?
+3. List all regions
+4. What payment methods are available?
+5. Show me the top product
+```
+
+### **Medium**
+```
+6. What are the top 5 products by revenue?
+7. Show sales by region
+8. Which region has the highest revenue?
+9. What is the average transaction amount?
+10. Show monthly sales trend for 2024
+```
+
+### **Advanced**
+```
+11. Compare revenue across all 5 regions with percentage breakdown
+12. Show top 10 products with quantity sold, revenue, and average price
+13. What is the year-over-year growth rate by quarter?
+14. Which store_id in the East region had the best performance?
+15. Show payment method distribution with transaction counts and total amounts
+```
+
+---
+
+## **2️⃣ RAG ONLY QUERIES**
+
+### **Simple**
+```
+16. What is the return policy?
+17. What is the company mission?
+18. What are the office locations?
+19. What is the employee handbook about?
+20. What is the Digital Wallet initiative?
+```
+
+### **Medium**
+```
+21. What is the West region expansion plan?
+22. Explain the return policy for Electronics
+23. What are the Q4 2024 strategic priorities?
+24. What is the budget allocation for regional expansion?
+25. What are the compliance requirements mentioned?
+```
+
+### **Advanced**
+```
+26. Compare Q3 and Q4 2024 performance across all metrics
+27. What are the differences between Q1, Q2, Q3, and Q4 revenue trends?
+28. Explain the relationship between Digital Wallet adoption and regional performance
+29. What strategic initiatives were planned vs executed in 2024?
+30. Compare Electronics vs Clothing category performance with growth rates
+```
+
+---
+
+## **3️⃣ WEB ONLY QUERIES**
+
+### **Simple**
+```
+31. What are competitor prices for electronics?
+32. Show me home goods pricing
+33. What do competitors charge for sports equipment?
+34. Find food/supplement prices
+35. What are clothing prices at competitors?
+```
+
+### **Medium**
+```
+36. Compare our electronics prices to Newegg
+37. How do IKEA's home goods prices compare to ours?
+38. What is the price range for camping gear at competitors?
+39. Show me competitor pricing for vitamins and supplements
+40. What is the average price of laptops at competitors?
+```
+
+### **Advanced**
+```
+41. Compare competitor pricing across all 5 categories with average prices
+42. What are the most expensive and cheapest items in electronics category?
+43. Analyze competitor pricing strategy for sports equipment
+44. Show price distribution for home goods across all scraped sources
+45. Compare our value proposition to competitor pricing in clothing
+```
+
+---
+
+## **4️⃣ SQL + RAG FUSION (Cross-Validation)**
+
+### **Simple**
+```
+46. What was Q4 2024 revenue?
+47. What was Q3 2024 revenue?
+48. How many transactions were in Q4?
+49. What was Digital Wallet adoption rate?
+50. What was the West region performance?
+```
+
+### **Medium**
+```
+51. Validate Q4 2024 Electronics revenue against reports
+52. What was the actual vs projected revenue for Q3?
+53. Compare database transactions to reported quarterly numbers
+54. Verify Digital Wallet usage numbers across sources
+55. Cross-check regional performance data
+```
+
+### **Advanced**
+```
+56. Compare Q3 and Q4 2024 revenue with full validation
+57. Validate all quarterly revenue figures (Q1-Q4) against reports
+58. Cross-validate Electronics category performance across SQL and documents
+59. Verify West region expansion metrics between database and strategic plans
+60. Compare Digital Wallet adoption rates from transactions vs quarterly reports
+```
+
+---
+
+## **5️⃣ SQL + WEB FUSION**
+
+### **Simple**
+```
+61. Compare our electronics revenue to competitor pricing
+62. How do our sales compare to market prices?
+63. Show our revenue vs competitor product ranges
+```
+
+### **Medium**
+```
+64. Compare our top-selling electronics to competitor prices
+65. How competitive are our prices in the sports category?
+66. Analyze our revenue per category vs competitor pricing strategies
+```
+
+### **Advanced**
+```
+67. Compare our Electronics revenue to competitor pricing landscape and identify opportunities
+68. Analyze our market position: revenue, top products, and competitor price benchmarks
+69. Show profitability analysis: our sales vs competitor pricing for top 10 products
+```
+
+---
+
+## **6️⃣ RAG + WEB FUSION**
+
+### **Simple**
+```
+70. What do documents say about competitor pricing?
+71. Compare our strategy to market prices
+72. What is our competitive positioning?
+```
+
+### **Medium**
+```
+73. Compare our Q4 strategic pricing plans to actual competitor prices
+74. How does our expansion budget align with market pricing?
+75. Validate our pricing strategy against competitor data
+```
+
+### **Advanced**
+```
+76. Compare our strategic pricing plans (from docs) to live competitor data across all categories
+77. Analyze our competitive advantage: strategic plans vs actual market pricing
+78. Validate Q4 pricing strategy execution against competitor intelligence
+```
+
+---
+
+## **7️⃣ ALL SOURCES FUSION (SQL + RAG + WEB)**
+
+### **Simple**
+```
+79. What is our overall business performance?
+80. How are we doing compared to competitors?
+81. Show me a complete business overview
+```
+
+### **Medium**
+```
+82. Compare our Q4 performance: database numbers, strategic plans, and competitor landscape
+83. Validate our Electronics category across all data sources
+84. Show West region performance: sales data, expansion plans, and market pricing
+```
+
+### **Advanced**
+```
+85. Complete Q4 2024 analysis: validate revenue across SQL+RAG, compare to competitor pricing, assess strategic execution
+86. Multi-source validation: Q3 vs Q4 comparison with competitor intelligence and strategic plan alignment
+87. Full business intelligence: validate all quarterly numbers, compare to strategic goals, benchmark against competitors
+88. Comprehensive Electronics analysis: transaction data, strategic reports, competitor pricing, and market position
+89. West region expansion analysis: sales performance, budget execution, competitor presence, and strategic outcomes
+90. Digital Wallet initiative assessment: adoption rates from transactions, strategic goals from documents, market comparison
+```
+
+---
+
+## **8️⃣ EDGE CASES & ERROR HANDLING**
+
+### **Validation Tests**
+```
+91. What was revenue in Wset region?  (Typo: West)
+92. Show me sales for Electrnics  (Typo: Electronics)
+93. What was revenue in 2020?  (Date out of range)
+94. What is the best product?  (Ambiguous - by revenue or quantity?)
+95. Show top products  (Ambiguous - top how many? by what metric?)
+```
+
+### **Comparison Tests (RAG Agentic Mode)**
+```
+96. Compare Q1 and Q2
+97. Compare Q2 vs Q3
+98. Q3 versus Q4
+99. Compare all quarters
+100. Show quarter-over-quarter growth
+```
+
+### **Category-Specific Web Tests**
+```
+101. Electronics pricing (should use Newegg)
+102. Home goods pricing (should use IKEA + Selenium)
+103. Sports equipment pricing (should use Campmor + Shopify)
+104. Food/supplements pricing (should use Swanson + Shopify)
+105. Clothing pricing (should use mock data)
+```
+
+---
+
+## **🎯 RECOMMENDED TESTING ORDER**
+
+### **Phase 1: Basic Functionality (30 min)**
+Test one from each category to verify all routes work:
+- SQL Only: `#1` (total revenue)
+- RAG Only: `#16` (return policy)
+- Web Only: `#31` (electronics pricing)
+- SQL+RAG: `#46` (Q4 revenue validation)
+- Comparison: `#26` (Q3 vs Q4)
+
+### **Phase 2: Cross-Validation (20 min)**
+Test validation confidence badges:
+- High confidence: `#46` (Q4 revenue - should match exactly)
+- Medium confidence: `#51` (Electronics revenue - partial match)
+- Multi-source: `#85` (complete Q4 analysis)
+
+### **Phase 3: Edge Cases (15 min)**
+Test error handling:
+- Typos: `#91, #92`
+- Date validation: `#93`
+- Ambiguity: `#94, #95`
+
+### **Phase 4: Advanced Features (30 min)**
+Test complex queries:
+- RAG Comparison: `#26, #27, #99`
+- Multi-source fusion: `#85, #86, #87`
+- Web scraping: `#41, #42` (all categories)
+
+### **Phase 5: Chart Builder (15 min)**
+Test visualization on SQL results:
+- `#7` (sales by region) → Bar chart
+- `#10` (monthly trend) → Line chart
+- `#6` (top 5 products) → Horizontal bar
+- `#15` (payment methods) → Pie chart
+
+---
+
+## **✅ SUCCESS CRITERIA CHECKLIST**
+
+For each query, verify:
+
+- [ ] Correct routing badge displayed (🗄️/📄/🌐/🔗)
+- [ ] Main answer is coherent and accurate
+- [ ] Appropriate sections expanded (SQL/RAG/Web)
+- [ ] Cross-validation badge shows when SQL+RAG (if applicable)
+- [ ] Source citations present (for RAG queries)
+- [ ] Data table + exports work (for SQL queries)
+- [ ] Chart builder appears for SQL numeric data
+- [ ] Model journey shows fallback attempts
+- [ ] Query saved to history with correct metadata
+- [ ] No errors in browser console
+- [ ] Page doesn't crash or freeze
+- [ ] Response time < 10 seconds (simple queries)
+- [ ] Response time < 30 seconds (complex queries)
+
+---
+
+## **🐛 KNOWN ISSUES TO WATCH FOR**
+
+1. **Web Scraping Timeouts**: IKEA Selenium might take 10-15 seconds
+2. **Quota Exhaustion**: If Gemini Flash fails, should fallback to Groq
+3. **Empty Results**: Some web categories use mock data (clothing)
+4. **Date Parsing**: Comparison queries need careful date extraction
+5. **Large Tables**: SQL results >100 rows might slow UI
+
+---
+
+## **📊 EXPECTED RESULTS SAMPLES**
+
+### **Query #46: "What was Q4 2024 revenue?"**
+**Expected:**
+- Routing: 🔗 SQL + RAG Fusion
+- SQL Answer: $45.2M (from transactions)
+- RAG Answer: $45.2M (from quarterly report)
+- Validation: ✅ HIGH confidence (exact match)
+- Chart: Available (revenue by month/region)
+
+### **Query #26: "Compare Q3 and Q4 2024 performance"**
+**Expected:**
+- Routing: 🧠 RAG Comparison Mode
+- Decomposition: 2 sub-queries (Q3 performance + Q4 performance)
+- Comparison table with metrics:
+  - Revenue: $38.7M → $45.2M (+16.8%)
+  - Transactions: 23,500 → 25,000 (+6.4%)
+  - Digital Wallet: 24% → 31% (+7pp)
+
+### **Query #31: "What are competitor prices for electronics?"**
+**Expected:**
+- Routing: 🌐 Web Scraping
+- Sources: Newegg (BeautifulSoup) + Mock data
+- Products: 10+ laptops, headphones, TVs with prices
+- Export: JSON download available
+
+
+

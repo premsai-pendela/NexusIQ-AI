@@ -13,9 +13,10 @@ ENV/
 .env.local
 
 # Data
-data/chroma_db/
 data/synthetic/*.csv
-*.db
+# SQLite DB and ChromaDB are committed for zero-setup deployment
+# data/chroma_db/
+# data/sales.db
 
 # IDE
 .vscode/

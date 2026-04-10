@@ -322,5 +322,5 @@ NexusIQ-AI/
 
 ## Author
 
-**Prem Sai Pendela**
+**Naga Prem Sai Pendela**
 GitHub: [premsai-pendela](https://github.com/premsai-pendela)

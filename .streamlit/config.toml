@@ -1,0 +1,7 @@
+[server]
+# Disable file watcher — prevents Streamlit from scanning all transformers
+# sub-modules at startup (which triggers torchvision import errors on Cloud)
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false

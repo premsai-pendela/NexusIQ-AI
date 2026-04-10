@@ -26,7 +26,7 @@ LOTTIE_LOADING = "https://assets9.lottiefiles.com/packages/lf20_x62chJ.json"
 
 page = st.sidebar.radio(
     "🧠 NexusIQ AI",
-    ["🏠 Home", "🗄️ SQL Agent"]
+    ["🏠 Home", "🔗 Fusion Agent"]  # ✨ Changed from "SQL Agent" to "Fusion Agent"
 )
 
 if page == "🏠 Home":
@@ -37,31 +37,32 @@ if page == "🏠 Home":
     ### 🎯 What We Do
     NexusIQ AI autonomously answers business questions by investigating across 
     multiple data sources in minutes instead of days.
-    
+
     ### 🚀 Features
+    - 🔗 **Fusion Agent** — Cross-validated intelligence from SQL + RAG + Web
     - 🗄️ **SQL Agent** — Query 100K+ transactions in plain English
-    - 📄 **RAG Agent** — Search through business documents *(Coming Soon)*
-    - 🌐 **Web Agent** — Scrape competitor data *(Coming Soon)*
-    - 📊 **Data Agent** — Analyze CSVs and sentiment *(Coming Soon)*
+    - 📄 **RAG Agent** — Search through 23 business documents
+    - 🌐 **Web Agent** — Scrape competitor pricing (Newegg, IKEA, Campmor, Swanson)
+    - 🔍 **Cross-Validation** — Verify numbers across multiple sources
     """)
     
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Database Records", "100,000", "✅")
     with col2:
-        st.metric("Agents Built", "1 / 6", "+1 this week")
+        st.metric("PDF Documents", "23", "✅")
     with col3:
-        st.metric("Status", "Active", "🟢")
+        st.metric("Agents Active", "4 / 4", "🟢")
 
-elif page == "🗄️ SQL Agent":
+elif page == "🔗 Fusion Agent":  # ✨ Changed condition
     
-    if "sql_agent_loaded" not in st.session_state:
-        st.session_state.sql_agent_loaded = False
+    if "fusion_agent_loaded" not in st.session_state:  # ✨ Changed key
+        st.session_state.fusion_agent_loaded = False
     
-    if not st.session_state.sql_agent_loaded:
+    if not st.session_state.fusion_agent_loaded:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.markdown("### 🔄 Loading SQL Agent...")
+            st.markdown("### 🔄 Loading Fusion Agent...")
             lottie_json = load_lottie_url(LOTTIE_LOADING)
             if lottie_json:
                 st_lottie(lottie_json, height=200, key="loading_brain")
@@ -73,9 +74,9 @@ elif page == "🗄️ SQL Agent":
                 time.sleep(0.01)
                 progress.progress(i + 1)
         
-        st.session_state.sql_agent_loaded = True
+        st.session_state.fusion_agent_loaded = True
         st.rerun()
     
     else:
-        from ui.sql_chat import run_sql_chat
-        run_sql_chat()
+        from ui.fusion_chat import run_fusion_chat  # ✨ Changed import
+        run_fusion_chat()

@@ -120,11 +120,13 @@ class WebAgent:
             json.dump(self.cache, f, indent=2)
     
     def _should_scrape(self, cache_key: str, max_age_hours: int = 24) -> bool:
-        """Check if cache is fresh enough"""
+        """Check if cache is fresh enough AND has actual data"""
         cached = self.cache.get(cache_key)
         if not cached:
             return True
-        
+        # Always re-scrape if cached result has no products (failed earlier run)
+        if not cached.get('products'):
+            return True
         cache_time = datetime.fromisoformat(cached.get('timestamp', '2000-01-01'))
         return (datetime.now() - cache_time).total_seconds() > max_age_hours * 3600
     
@@ -194,10 +196,15 @@ class WebAgent:
                 params = {"limit": 250, "page": page}
                 
                 logger.info(f"  Fetching page {page}...")
-                response = self.client.get(url, params=params, timeout=15)
+                response = self.client.get(
+                    url,
+                    params=params,
+                    timeout=15,
+                    headers={"Accept": "application/json", "Accept-Encoding": "gzip, deflate"}
+                )
 
                 if response.status_code != 200:
-                    logger.warning(f"  Stopped at page {page}: HTTP {response.status_code}")
+                    logger.warning(f"  Stopped at page {page}: HTTP {response.status_code} — {response.text[:200]}")
                     break
 
                 # ✅ FIX: Handle gzip/encoding issues
@@ -581,6 +588,61 @@ class WebAgent:
             })
     
     
+
+    # ═══════════════════════════════════════════════════════════
+    #  NEW COMPETITORS
+    # ═══════════════════════════════════════════════════════════
+
+    def _scrape_goalzero(self, category: str = "electronics") -> Dict:
+        """Scrape Goal Zero (Shopify) - Portable Power / Electronics"""
+        collection_map = {
+            'electronics': 'power-stations',
+            'sports': 'solar-panels',
+            'home': 'home-integration',
+        }
+        return self._scrape_shopify_collection(
+            domain="www.goalzero.com",
+            collection_handle=collection_map.get(category, 'power-stations'),
+            site_name="Goal Zero",
+            category=category
+        )
+
+    def _scrape_nativepath(self, category: str = "food") -> Dict:
+        """Scrape NativePath (Shopify) - Supplements / Health Food"""
+        return self._scrape_shopify_collection(
+            domain="www.nativepath.com",
+            collection_handle="all",
+            site_name="NativePath",
+            category=category
+        )
+
+    def _scrape_taylorstitch(self, category: str = "clothing") -> Dict:
+        """Scrape Taylor Stitch (Shopify) - Men's Premium Clothing"""
+        return self._scrape_shopify_collection(
+            domain="www.taylorstitch.com",
+            collection_handle="all",
+            site_name="Taylor Stitch",
+            category=category
+        )
+
+    def _scrape_chubbies(self, category: str = "clothing") -> Dict:
+        """Scrape Chubbies (Shopify) - Men's Casual Clothing"""
+        return self._scrape_shopify_collection(
+            domain="www.chubbies.com",
+            collection_handle="all",
+            site_name="Chubbies",
+            category=category
+        )
+
+    def _scrape_finisterre(self, category: str = "clothing") -> Dict:
+        """Scrape Finisterre (Shopify) - Sustainable Outdoor Clothing"""
+        return self._scrape_shopify_collection(
+            domain="www.finisterre.com",
+            collection_handle="all",
+            site_name="Finisterre",
+            category=category
+        )
+
     # ═══════════════════════════════════════════════════════════
     #  MOCK DATA FALLBACK
     # ═══════════════════════════════════════════════════════════
@@ -665,13 +727,14 @@ class WebAgent:
         start = time.time()
         
         results = []
+        scraper_statuses = []  # Track per-scraper status for UI dashboard
         
         # Define scraper methods per category
         scraper_methods = {
-            'electronics': [self._scrape_newegg],
+            'electronics': [self._scrape_newegg, self._scrape_goalzero],
             'home': [self._scrape_ikea_selenium],
-            'clothing': [],
-            'food': [self._scrape_swanson],
+            'clothing': [self._scrape_taylorstitch, self._scrape_chubbies, self._scrape_finisterre],
+            'food': [self._scrape_swanson, self._scrape_nativepath],
             'sports': [self._scrape_campmor]
         }
         
@@ -684,29 +747,70 @@ class WebAgent:
         # Run API/BeautifulSoup scrapers
         if api_methods:
             for method in api_methods:
+                scraper_start = time.time()
                 try:
                     logger.info(f"🔄 Running {method.__name__}...")
                     result = method(category)
+                    elapsed_s = round(time.time() - scraper_start, 2)
                     
                     if result and result.get('products'):
                         logger.info(f"✅ {method.__name__}: {len(result['products'])} products")
                         results.append(result)
+                        scraper_statuses.append({
+                            'name': result.get('competitor', method.__name__),
+                            'status': 'success',
+                            'products': len(result['products']),
+                            'time': elapsed_s,
+                            'error': None
+                        })
                     else:
                         logger.warning(f"⚠️  {method.__name__}: No products found")
+                        scraper_statuses.append({
+                            'name': method.__name__,
+                            'status': 'empty',
+                            'products': 0,
+                            'time': elapsed_s,
+                            'error': 'No products returned'
+                        })
                         
                 except Exception as e:
+                    elapsed_s = round(time.time() - scraper_start, 2)
                     logger.error(f"❌ {method.__name__} failed: {str(e)[:200]}")
+                    scraper_statuses.append({
+                        'name': method.__name__,
+                        'status': 'failed',
+                        'products': 0,
+                        'time': elapsed_s,
+                        'error': str(e)[:150]
+                    })
                 
                 time.sleep(0.5)
         
         # Run Selenium scrapers with driver cleanup
         for method in selenium_methods:
+            scraper_start = time.time()
             try:
                 logger.info(f"🔄 Running {method.__name__}...")
                 data = method(category)
+                elapsed_s = round(time.time() - scraper_start, 2)
                 
                 if data and data.get('products'):
                     results.append(data)
+                    scraper_statuses.append({
+                        'name': data.get('competitor', method.__name__),
+                        'status': 'success',
+                        'products': len(data['products']),
+                        'time': elapsed_s,
+                        'error': None
+                    })
+                else:
+                    scraper_statuses.append({
+                        'name': method.__name__,
+                        'status': 'empty',
+                        'products': 0,
+                        'time': elapsed_s,
+                        'error': 'No products returned'
+                    })
                 
                 # Quit driver after each scrape
                 if self._driver:
@@ -720,7 +824,15 @@ class WebAgent:
                 time.sleep(2)
                 
             except Exception as e:
+                elapsed_s = round(time.time() - scraper_start, 2)
                 logger.error(f"❌ {method.__name__} failed: {e}")
+                scraper_statuses.append({
+                    'name': method.__name__,
+                    'status': 'failed',
+                    'products': 0,
+                    'time': elapsed_s,
+                    'error': str(e)[:150]
+                })
         
         # Filter empty results
         results = [r for r in results if r and 'products' in r and r['products']]
@@ -728,12 +840,21 @@ class WebAgent:
         # Fallback to mock data
         if not results:
             logger.warning(f"All scrapers failed for {category}, using mock data")
-            results.append(self._get_mock_data(category))
+            mock = self._get_mock_data(category)
+            mock['is_mock'] = True
+            results.append(mock)
+            scraper_statuses.append({
+                'name': 'Mock Data Fallback',
+                'status': 'fallback',
+                'products': len(mock.get('products', [])),
+                'time': 0,
+                'error': 'All live scrapers failed — using sample data'
+            })
         
         elapsed = time.time() - start
         logger.info(f"✅ Scraped {len(results)} sources for {category} in {elapsed:.2f}s")
         
-        return results
+        return results, scraper_statuses
 
     
     def scrape_competitor_pricing(self, category: str) -> Dict:
@@ -746,11 +867,12 @@ class WebAgent:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        results = loop.run_until_complete(self.scrape_competitor_pricing_async(category))
+        results, scraper_statuses = loop.run_until_complete(self.scrape_competitor_pricing_async(category))
         
         return {
             'category': category,
             'competitors': results,
+            'scraper_statuses': scraper_statuses,
             'timestamp': datetime.now().isoformat()
         }
     
@@ -806,10 +928,20 @@ Format as bullet points with competitor names."""
                 
             except Exception as e:
                 quota_tracker.report_failure("llama-3.3-70b-versatile", str(e))
+                logger.warning(f"LLM failed for web answer, using raw data fallback: {e}")
+                competitors = pricing_data.get('competitors', [])
+                fallback_lines = []
+                for comp in competitors:
+                    name = comp.get('competitor', 'Unknown')
+                    products = comp.get('products', [])
+                    if products:
+                        prices = [p.get('price', '') for p in products[:3]]
+                        fallback_lines.append(f"- **{name}**: {', '.join(prices)}")
+                fallback_answer = "\n".join(fallback_lines) if fallback_lines else "No competitor pricing data available."
                 return {
-                    'answer': f"Error processing web data: {str(e)}",
+                    'answer': fallback_answer,
                     'raw_data': pricing_data,
-                    'error': str(e)
+                    'llm_error': str(e)
                 }
         else:
             # General query - return generic market info

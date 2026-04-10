@@ -27,6 +27,13 @@ data/synthetic/*.csv
 logs/
 *.log
 
+# Runtime data (auto-generated)
+data/web_cache.json
+data/quota_tracker.json
+
+# Test reports (auto-generated)
+.gstack/
+
 # OS
 .DS_Store
 Thumbs.db

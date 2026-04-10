@@ -175,7 +175,7 @@ class SQLAgent:
     POSTGRESQL NOTES:
     • Use ILIKE for case-insensitive matching
     • Use DATE_TRUNC('month', column) for grouping by month
-    • Total revenue = SUM(total_amount)
+    • Total revenue = ROUND(SUM(total_amount)::numeric, 2)
     """
         return schema
     
@@ -379,6 +379,7 @@ RULES:
 4. Add ORDER BY and LIMIT for rankings
 5. NEVER use DELETE, DROP, UPDATE, INSERT
 6. Return ONLY the SQL query, no explanations
+7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
 
 SQL QUERY:"""
 
@@ -618,13 +619,26 @@ EXPLANATION:"""
         
         start_time = time.time()
         all_models_tried = []
+        correction_note = None
         
         logger.info(f"\n{'='*60}")
         logger.info(f"📊 SQL AGENT — Processing Question")
         logger.info(f"{'='*60}")
 
-        # Step 0: Validate question for common issues
-        validation = validate_question(question)
+        # ═══════════════════════════════════════════════════════
+        # Step 0: Validate question with auto-correction
+        # ═══════════════════════════════════════════════════════
+        
+        validation = validate_question(question, auto_fix=True)
+        
+        # If auto-corrected, use the corrected question
+        if validation.get("auto_corrected"):
+            corrected_q = validation["corrected_question"]
+            logger.info(f"✨ Auto-corrected: '{question}' → '{corrected_q}'")
+            correction_note = f"Auto-corrected: {', '.join([c['from'] + ' → ' + c['to'] for c in validation.get('corrections', [])])}"
+            question = corrected_q
+        
+        # If still not valid, return error
         if not validation["valid"]:
             return {
                 "success": False,
@@ -635,7 +649,10 @@ EXPLANATION:"""
                 "execution_time": time.time() - start_time
             }
         
+        # ═══════════════════════════════════════════════════════
         # Step 1: Generate SQL
+        # ═══════════════════════════════════════════════════════
+        
         query_result = self.generate_query(question)
         all_models_tried.extend(query_result.get("models_tried", []))
         
@@ -643,12 +660,16 @@ EXPLANATION:"""
             return {
                 "success": False,
                 "question": question,
-                "error": query_result["error"],
+                "query": query_result.get("query"),
+                "error": query_result.get("error", "Failed to generate SQL"),
                 "models_tried": all_models_tried,
                 "execution_time": time.time() - start_time
             }
         
+        # ═══════════════════════════════════════════════════════
         # Step 2: Execute SQL
+        # ═══════════════════════════════════════════════════════
+        
         execution_result = self.execute_query(query_result["query"])
         
         if not execution_result["success"]:
@@ -656,13 +677,16 @@ EXPLANATION:"""
                 "success": False,
                 "question": question,
                 "query": query_result["query"],
-                "error": execution_result["error"],
+                "error": execution_result.get("error", "Query execution failed"),
                 "models_tried": all_models_tried,
                 "model_used": query_result.get("model_used"),
                 "execution_time": time.time() - start_time
             }
         
+        # ═══════════════════════════════════════════════════════
         # Step 3: Format answer
+        # ═══════════════════════════════════════════════════════
+        
         format_result = self._format_answer(
             question=question,
             query=query_result["query"],
@@ -671,12 +695,19 @@ EXPLANATION:"""
         )
         all_models_tried.extend(format_result.get("models_tried", []))
         
+        # ═══════════════════════════════════════════════════════
         # Step 4: Generate query explanation
+        # ═══════════════════════════════════════════════════════
+        
         explain_result = self._explain_query(
             sql_query=query_result["query"],
             question=question
         )
         all_models_tried.extend(explain_result.get("models_tried", []))
+        
+        # ═══════════════════════════════════════════════════════
+        # Step 5: Return complete result
+        # ═══════════════════════════════════════════════════════
         
         total_time = time.time() - start_time
         
@@ -691,8 +722,10 @@ EXPLANATION:"""
             "complexity": query_result.get("complexity", "simple"),
             "model_used": query_result.get("model_used"),
             "models_tried": all_models_tried,
-            "execution_time": total_time
+            "execution_time": total_time,
+            "correction_note": correction_note
         }
+
     
     
     def get_quota_status(self) -> Dict[str, dict]:

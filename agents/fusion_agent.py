@@ -53,81 +53,211 @@ class FusionAgent:
         self.gemini_flash = self.rag_agent.gemini_flash
         self.groq_client = self.rag_agent.groq_client
         
+        # Routing metadata (set per-query by _classify_query_source_llm)
+        self._last_routing_model = None
+        self._last_routing_fallback = False
+        self._no_data_reason = None
+
         logger.info("✅ Fusion Agent initialized with SQL + RAG + Web!")
     
     def _classify_query_source(self, question: str) -> str:
         """
-        Determine which source(s) to use for answering
+        ✅ ENHANCED: Data-aware intelligent routing
+        
+        Uses data inventory to determine which sources can actually answer the question
         
         Returns:
-            "sql_only" | "rag_only" | "web_only" | "sql_rag" | "sql_web" | "rag_web" | "all"
+            "sql_only" | "rag_only" | "web_only" | "sql_rag" | "comparison" | ...
         """
+        
+        from config.data_inventory import (
+            can_sql_answer, can_rag_answer, can_web_answer, should_cross_validate
+        )
         
         question_lower = question.lower()
         
-        # ✅ PRIORITY 1: Web-only (competitor/industry questions)
-        web_indicators = [
-            'competitor', 'walmart', 'best buy', 'target',
-            'industry trend', 'market', 'pricing', 'price comparison',
-            'news', 'latest trends', 'current market',
-            'what are competitors', 'how do we compare'
-        ]
-        if any(ind in question_lower for ind in web_indicators):
-            return "web_only"
+        logger.info(f"🧠 Intelligent routing for: {question}")
         
-        # ✅ PRIORITY 2: Comparison queries → RAG agentic mode
-        comparison_words = ['compare', 'vs', 'versus', 'difference between']
-        if any(word in question_lower for word in comparison_words):
-            # Check if it's comparing quarters/periods (RAG)
-            if any(period in question_lower for period in ['q1', 'q2', 'q3', 'q4', 'quarter', 'year']):
+        # ═══════════════════════════════════════════════════════
+        # STEP 1: Check data availability in each source
+        # ═══════════════════════════════════════════════════════
+        
+        sql_check = can_sql_answer(question)
+        rag_check = can_rag_answer(question)
+        web_check = can_web_answer(question)
+        
+        logger.info(f"  SQL: {sql_check['can_answer']} ({sql_check['confidence']})")
+        logger.info(f"  RAG: {rag_check['can_answer']} ({rag_check['confidence']})")
+        logger.info(f"  Web: {web_check['can_answer']} ({web_check['confidence']})")
+        
+        # ═══════════════════════════════════════════════════════
+        # STEP 2: Priority routing based on question type
+        # ═══════════════════════════════════════════════════════
+        
+        # Priority 1: Comparison queries (RAG agentic mode)
+        if any(word in question_lower for word in ['compare', 'vs', 'versus', 'difference']):
+            if any(q in question_lower for q in ['q1', 'q2', 'q3', 'q4', 'quarter']):
+                logger.info("  → Route: comparison (RAG agentic)")
                 return "comparison"
-            # Otherwise might be competitor comparison (Web + RAG)
-            else:
-                return "rag_web"
         
-        # ✅ PRIORITY 3: RAG-only (policy/strategy questions)
-        rag_indicators = [
-            'policy', 'return policy', 'contract', 'agreement',
-            'why', 'explain', 'strategy', 'plan', 'recommend',
-            'expansion', 'roadmap', 'compliance', 'employee',
-            'handbook', 'procedure', 'budget allocation'
-        ]
-        if any(ind in question_lower for ind in rag_indicators):
-            return "rag_only"
-        
-        # ✅ PRIORITY 4: SQL-only (specific data queries)
-        sql_only_indicators = [
-            'how many transactions', 'count', 'list all',
-            'show all', 'top 10', 'bottom 5',
-            'each store', 'per store', 'daily',
-            'specific date', 'on january', 'on february'
-        ]
-        if any(ind in question_lower for ind in sql_only_indicators):
-            return "sql_only"
-        
-        # ✅ PRIORITY 5: SQL + RAG (revenue/performance with validation)
-        both_indicators = [
-            'revenue', 'sales', 'total', 'growth',
-            'quarter', 'q1', 'q2', 'q3', 'q4',
-            'region', 'category', 'electronics', 'clothing',
-            'digital wallet', 'payment', 'performance',
-            'validate', 'verify', 'confirm', 'check',
-            'how much', 'what was'
-        ]
-        if any(ind in question_lower for ind in both_indicators):
+        # Priority 2: Cross-validation (SQL + RAG both have data)
+        validation_check = should_cross_validate(question)
+        if validation_check["should_validate"]:
+            logger.info(f"  → Route: sql_rag (cross-validate {validation_check['validation_topic']})")
             return "sql_rag"
         
-        # ✅ PRIORITY 6: Web + RAG (competitive intelligence with context)
-        web_rag_indicators = [
-            'competitor revenue', 'industry benchmark', 'pricing strategy',
-            'market position', 'competitive advantage'
-        ]
-        if any(ind in question_lower for ind in web_rag_indicators):
-            return "rag_web"
+        # Priority 3: Single source with high confidence
+        sources_available = []
+        if sql_check["can_answer"] and sql_check["confidence"] == "high":
+            sources_available.append("sql")
+        if rag_check["can_answer"] and rag_check["confidence"] == "high":
+            sources_available.append("rag")
+        if web_check["can_answer"] and web_check["confidence"] == "high":
+            sources_available.append("web")
         
-        # ✅ DEFAULT: SQL + RAG (safest for business questions)
-        return "sql_rag"
-    
+        if len(sources_available) == 1:
+            logger.info(f"  → Route: {sources_available[0]}_only")
+            return f"{sources_available[0]}_only"
+        
+        # Priority 4: Multi-source fusion (normalize order: sql before rag/web)
+        if len(sources_available) == 2:
+            ordered = sorted(sources_available, key=lambda s: ["sql", "rag", "web"].index(s))
+            route = "_".join(ordered)
+            logger.info(f"  → Route: {route} (multi-source)")
+            return route
+        
+        if len(sources_available) == 3:
+            logger.info("  → Route: all (3 sources)")
+            return "all"
+        
+        # Priority 5: Default fallback
+        if sql_check["can_answer"]:
+            logger.info("  → Route: sql_only (default fallback)")
+            return "sql_only"
+        elif rag_check["can_answer"]:
+            logger.info("  → Route: rag_only (default fallback)")
+            return "rag_only"
+        else:
+            logger.warning("  → Route: sql_only (no match, trying SQL anyway)")
+            return "sql_only"
+
+    def _classify_query_source_llm(self, question: str) -> Optional[str]:
+        """
+        LLM-based dynamic routing — understands meaning, not just keywords.
+        Falls back to None on failure so caller can use keyword routing instead.
+        """
+        prompt = f"""You are a data routing agent for NexusIQ AI. Decide which sources answer the user question.
+
+## Sources
+
+**SQL** — 90,500 sales transactions for 2024 (Q1-Q4). Columns: date, region, category,
+product, quantity, unit_price, total_amount, payment_method, customer_id.
+✅ Use for: revenue, counts, rankings, trends, growth rates, quarterly breakdowns,
+   "by quarter", "each quarter", "quarter over quarter", "year-over-year by quarter"
+   (SQL has all 4 quarters of 2024 so it CAN show quarterly trends and compute
+   quarter-over-quarter growth — even when the phrase "year-over-year" appears,
+   if the question asks for a quarterly breakdown SQL must be included)
+❌ Skip for: policies, strategies, contracts, competitor pricing
+
+**RAG** — 23 PDF documents: Q1-Q4 2024 performance reports, return/privacy/compliance
+policies, expansion plans, budget, digital wallet initiative, vendor contracts.
+✅ Use for: policies, strategies, plans, performance narratives, compliance
+   (also use alongside SQL for quarterly questions so reports can add context)
+❌ Skip for: granular row-level transaction data
+
+**Web** — live competitor pricing scraped from Newegg, IKEA, Campmor, Swanson.
+✅ Use for: competitor prices, market pricing comparisons
+❌ Skip for: anything about our own data
+
+## Cross-Validation
+Set cross_validate=true only when BOTH sql=true AND rag=true AND the same numeric
+fact (like "Q3 revenue") can be verified in both independently.
+
+## Question
+"{question}"
+
+Reply with ONLY this JSON (no extra text):
+{{
+  "sql": true or false,
+  "rag": true or false,
+  "web": true or false,
+  "cross_validate": true or false,
+  "reasoning": "one sentence"
+}}"""
+
+        # Try available LLM clients in order: Gemini Flash → Groq
+        clients = []
+        if self.gemini_flash:
+            clients.append(("Gemini Flash", self.gemini_flash))
+        if self.groq_client:
+            clients.append(("Groq", self.groq_client))
+
+        primary_client_name = clients[0][0] if clients else None
+
+        for client_name, client in clients:
+            try:
+                response = client.invoke(prompt)
+                content = response.content.strip()
+
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if not json_match:
+                    continue
+
+                routing = json.loads(json_match.group())
+                is_fallback = client_name != primary_client_name
+                routing["_routing_model"] = client_name
+                routing["_routing_fallback"] = is_fallback
+                if is_fallback:
+                    logger.warning(f"  ⚠️  Routing fallback: primary LLM unavailable, using {client_name}")
+                logger.info(f"  LLM routing ({client_name}) → {routing}")
+
+                sources = []
+                if routing.get("sql"):
+                    sources.append("sql")
+                if routing.get("rag"):
+                    sources.append("rag")
+                if routing.get("web"):
+                    sources.append("web")
+
+                if not sources:
+                    # LLM explicitly says no source can answer — store reasoning and signal caller
+                    self._last_routing_model = client_name
+                    self._last_routing_fallback = routing.get("_routing_fallback", False)
+                    self._no_data_reason = routing.get("reasoning", "No available source covers this query.")
+                    logger.warning(f"  LLM says no source applies: {self._no_data_reason}")
+                    return "no_data"
+
+                if len(sources) == 1:
+                    route = f"{sources[0]}_only"
+                else:
+                    if routing.get("cross_validate") and "sql" in sources and "rag" in sources:
+                        route = "sql_rag" if len(sources) == 2 else "all"
+                    elif len(sources) == 2:
+                        # Normalize order: always sql before rag/web
+                        ordered = sorted(sources, key=lambda s: ["sql","rag","web"].index(s))
+                        route = "_".join(ordered)
+                    else:
+                        route = "all"
+
+                # Safety net: questions asking for quarterly breakdowns need SQL
+                # even if LLM said rag_only (SQL has full Q1-Q4 2024 data)
+                quarter_terms = ["quarter", "quarterly", "q1","q2","q3","q4"]
+                if route == "rag_only" and any(t in question.lower() for t in quarter_terms):
+                    logger.info("  Safety net: quarterly question upgraded rag_only → sql_rag")
+                    route = "sql_rag"
+
+                # Attach routing metadata for callers
+                self._last_routing_model = routing.get("_routing_model", client_name)
+                self._last_routing_fallback = routing.get("_routing_fallback", False)
+
+                return route
+
+            except Exception as e:
+                logger.warning(f"LLM routing failed ({client_name}): {e}")
+                continue
+
+        return None
+
     def _run_sql_query(self, question: str) -> Dict:
         """Run SQL Agent and capture results"""
         
@@ -206,13 +336,17 @@ class FusionAgent:
             result = self.web_agent.query(question, category=category)
             elapsed = time.time() - start
             
+            has_answer = bool(result.get('answer'))
+            has_data   = bool(result.get('raw_data', {}).get('competitors'))
+            hard_error = bool(result.get('error'))   # only set on total failure
             return {
-                'success': True if result.get('answer') and 'error' not in result.get('answer', '').lower() else False,
+                'success': (has_answer or has_data) and not hard_error,
                 'answer': result.get('answer', 'No web data available'),
                 'raw_data': result.get('raw_data', {}),
                 'category': result.get('category'),
                 'time': round(elapsed, 2),
-                'source': 'Web Scraping'
+                'source': 'Web Scraping',
+                'llm_error': result.get('llm_error')
             }
             
         except Exception as e:
@@ -239,7 +373,10 @@ class FusionAgent:
         for pattern in patterns:
             matches = re.findall(pattern, text, re.IGNORECASE)
             for match in matches:
-                num = float(match.replace(',', ''))
+                cleaned = match.replace(',', '').strip()
+                if not cleaned:
+                    continue
+                num = float(cleaned)
                 # Normalize to actual value
                 if 'M' in text[text.find(match):text.find(match)+len(match)+5].upper() or 'million' in text[text.find(match):text.find(match)+len(match)+10].lower():
                     num = num * 1_000_000
@@ -336,7 +473,7 @@ class FusionAgent:
         else:
             confidence = "LOW"
             confidence_score = 0.3
-            confidence_reason = f"Multiple discrepancies found ({len(discrepancies)})"
+            confidence_reason = f"Multiple discrepancies found ({len(discrepancies)}) — PDF figures may be projected/reported revenue while SQL reflects actual transaction totals"
         
         validation = {
             'validated': len(discrepancies) == 0 and len(matches) > 0,
@@ -372,6 +509,11 @@ SOURCE 1 - SQL DATABASE (Exact transaction data):
 {sql_result.get('answer', 'No SQL data available')}
 SQL Query Used: {sql_result.get('query', 'N/A')}
 """
+        elif sql_result and not sql_result.get('success'):
+            sources_text += f"""
+SOURCE 1 - SQL DATABASE (Unavailable):
+SQL query failed: {sql_result.get('error', 'unknown error')}. Answer will be based on documents only.
+"""
         
         if rag_result and rag_result.get('success'):
             sources_text += f"""
@@ -388,11 +530,19 @@ SOURCE 3 - WEB SCRAPING (Competitor & industry data):
         # Build validation text
         validation_text = ""
         if validation:
+            discrepancy_note = ""
+            if validation['confidence'] == "LOW" and validation.get('discrepancies'):
+                discrepancy_note = """
+- IMPORTANT: The numbers differ between SQL and PDF. In your answer you MUST explicitly state:
+  1. SQL shows actual transaction revenue recorded in the database.
+  2. PDF shows projected or reported revenue (may include adjustments, forecasts, or channels not in the database).
+  3. The gap is normal in real businesses — it does NOT mean either source is wrong.
+"""
             validation_text = f"""
 CROSS-VALIDATION RESULTS:
 - Confidence: {validation['confidence']} ({validation['confidence_reason']})
 - Matches: {len(validation['matches'])} numbers verified across sources
-- Discrepancies: {len(validation['discrepancies'])}
+- Discrepancies: {len(validation['discrepancies'])}{discrepancy_note}
 """
         
         # Build fusion prompt
@@ -410,7 +560,7 @@ RULES:
 3. Use PDF reports for context, trends, and strategic explanations
 4. Use Web data for competitor comparisons and market context
 5. When data is VALIDATED across sources, mention it with confidence
-6. If sources disagree, mention both with explanation
+6. If sources disagree, mention both with explanation — a common reason is that PDF reports contain projected/forecast revenue while the SQL database contains actual transaction revenue. Always tell the user which is which
 7. Start with a direct answer, then supporting details
 8. End with confidence level (if validation available)
 
@@ -484,22 +634,40 @@ ANSWER:"""
         
         return "\n\n".join(parts)
     
-    def query(self, question: str) -> Dict:
+    def query(self, question: str, force_source: Optional[str] = None) -> Dict:
         """
         ✅ UPDATED: Main fusion query method with Web Agent support
-        
-        Routes to appropriate source(s) and combines results
+
+        Routes to appropriate source(s) and combines results.
+
+        Args:
+            question: The user's question
+            force_source: Override auto-routing. One of "sql_only", "rag_only",
+                          "web_only", or None to use auto-detection.
         """
-        
+
         start_time = datetime.now()
-        
+        self._last_routing_model = None
+        self._last_routing_fallback = False
+        self._no_data_reason = None
+
         logger.info(f"\n{'='*70}")
         logger.info(f"🔗 FUSION AGENT: {question}")
         logger.info(f"{'='*70}")
-        
-        # Step 1: Classify query source
-        source_type = self._classify_query_source(question)
-        logger.info(f"📋 Query routing: {source_type.upper()}")
+
+        # Step 1: Classify query source (forced → LLM → keyword fallback)
+        if force_source:
+            source_type = force_source
+            logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
+        else:
+            source_type = self._classify_query_source_llm(question)
+            if source_type:
+                logger.info(f"📋 Query routing: {source_type.upper()} (LLM)")
+            else:
+                source_type = self._classify_query_source(question)
+                self._last_routing_model = "keyword fallback"
+                self._last_routing_fallback = True
+                logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
         
         # Step 2: Execute based on routing
         sql_result = None
@@ -508,9 +676,28 @@ ANSWER:"""
         validation = None
         
         # ═══════════════════════════════════════════════════════════
+        # NO DATA — LLM explicitly said no source covers this query
+        # ═══════════════════════════════════════════════════════════
+
+        if source_type == "no_data":
+            reason = self._no_data_reason or "No available data source covers this query."
+            logger.warning(f"→ No data route: {reason}")
+            return {
+                'answer': f"I don't have data to answer this question.\n\n**Reason:** {reason}\n\nAvailable data covers: SQL transactions (2024 only), internal PDF documents, and live competitor pricing.",
+                'source_type': 'no_data',
+                'sql_result': None,
+                'rag_result': None,
+                'web_result': None,
+                'validation': None,
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
+                'query_time': (datetime.now() - start_time).total_seconds()
+            }
+
+        # ═══════════════════════════════════════════════════════════
         # SINGLE-SOURCE ROUTES
         # ═══════════════════════════════════════════════════════════
-        
+
         if source_type == "sql_only":
             logger.info("→ Using SQL Agent only")
             sql_result = self._run_sql_query(question)
@@ -522,13 +709,15 @@ ANSWER:"""
                 'rag_result': None,
                 'web_result': None,
                 'validation': None,
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
-        
+
         elif source_type == "rag_only":
             logger.info("→ Using RAG Agent only")
             rag_result = self._run_rag_query(question)
-            
+
             return {
                 'answer': rag_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
@@ -537,13 +726,15 @@ ANSWER:"""
                 'web_result': None,
                 'validation': None,
                 'sources': rag_result.get('sources', []),
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
-        
+
         elif source_type == "web_only":
             logger.info("→ Using Web Agent only")
             web_result = self._run_web_query(question)
-            
+
             return {
                 'answer': web_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
@@ -551,13 +742,15 @@ ANSWER:"""
                 'rag_result': None,
                 'web_result': web_result,
                 'validation': None,
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
-        
+
         elif source_type == "comparison":
             logger.info("→ Using RAG Agentic Comparison")
             rag_result = self._run_rag_query(question)
-            
+
             return {
                 'answer': rag_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
@@ -566,6 +759,8 @@ ANSWER:"""
                 'web_result': None,
                 'validation': None,
                 'sources': rag_result.get('sources', []),
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
         
@@ -589,12 +784,17 @@ ANSWER:"""
             # Cross-validate if we have SQL + RAG
             if sql_result and rag_result and sql_result.get('success') and rag_result.get('success'):
                 validation = self._cross_validate(sql_result, rag_result)
-            
+
+            # Downgrade source_type label when SQL silently failed
+            if sql_result and not sql_result.get('success') and rag_result and rag_result.get('success'):
+                logger.warning(f"SQL failed in {source_type} route — answer will be RAG-only. SQL error: {sql_result.get('error', 'unknown')}")
+                source_type = "rag_only (sql_failed)"
+
             # Generate fused answer
             answer = self._generate_fused_answer(
-                question, 
-                sql_result, 
-                rag_result, 
+                question,
+                sql_result,
+                rag_result,
                 web_result,  # ✅ Now properly passed
                 validation
             )
@@ -608,9 +808,11 @@ ANSWER:"""
                 'source_type': source_type,
                 'sql_result': sql_result,
                 'rag_result': rag_result,
-                'web_result': web_result,  # ✅ Now included in response
+                'web_result': web_result,
                 'validation': validation,
                 'sources': rag_result.get('sources', []) if rag_result else [],
+                'routing_model': self._last_routing_model,
+                'routing_fallback': self._last_routing_fallback,
                 'query_time': query_time
             }
     

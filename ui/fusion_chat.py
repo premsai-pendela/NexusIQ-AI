@@ -817,7 +817,6 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
 #  INITIALIZE AGENT
 # ═══════════════════════════════════════════════════════
 
-@st.cache_resource(show_spinner=False)
 def get_agent():
     return get_fusion_agent()
 
@@ -851,33 +850,29 @@ def run_fusion_chat():
     #  LOAD AGENT (cached — only slow on first load)
     # ═══════════════════════════════════════════════════════
 
-    if "agent_ready" not in st.session_state:
-        loading_screen = st.empty()
-        with loading_screen.container():
+    if "nexusiq_agent" not in st.session_state:
+        placeholder = st.empty()
+        with placeholder.container():
             st.markdown("<br><br>", unsafe_allow_html=True)
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 st.markdown(
                     """
-                    <div style='text-align:center; padding: 40px;'>
-                        <div style='font-size: 72px; margin-bottom: 16px;'>🧠</div>
-                        <h2 style='color:#4F8BF9; margin-bottom: 8px;'>Loading Fusion Agent</h2>
+                    <div style='text-align:center; padding:40px;'>
+                        <div style='font-size:72px; margin-bottom:16px;'>🧠</div>
+                        <h2 style='color:#4F8BF9; margin-bottom:8px;'>Loading Fusion Agent</h2>
                         <p style='color:#888; font-size:16px;'>Initializing AI models & vector database...</p>
-                        <p style='color:#aaa; font-size:13px; margin-top:8px;'>First load only — takes ~20 seconds</p>
+                        <p style='color:#aaa; font-size:13px; margin-top:8px;'>First load only — ~20 seconds</p>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
-                progress = st.progress(0, text="Starting up...")
-                for i in range(85):
-                    time.sleep(0.05)
-                    progress.progress(i + 1, text="Loading AI models...")
-        agent = get_agent()
-        loading_screen.empty()
-        st.session_state.agent_ready = True
+                st.progress(100, text="Loading AI models...")
+        st.session_state.nexusiq_agent = get_agent()
+        placeholder.empty()
         st.rerun()
-    else:
-        agent = get_agent()
+
+    agent = st.session_state.nexusiq_agent
 
     # ═══════════════════════════════════════════════════════
     #  SESSION STATE

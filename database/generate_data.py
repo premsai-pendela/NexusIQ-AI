@@ -26,15 +26,17 @@ def generate_sales_data(num_records=100000):
     
     # Generate transactions
     transactions = []
-    start_date = datetime.now() - timedelta(days=365)
-    
+    start_date = datetime(2024, 1, 1)
+    end_date = datetime(2024, 12, 31)
+    date_range_days = (end_date - start_date).days
+
     for i in range(num_records):
         region = random.choice(regions)
         category = random.choice(categories)
         product = random.choice(products[category])
-        
+
         transaction = {
-            'transaction_date': start_date + timedelta(days=random.randint(0, 365)),
+            'transaction_date': start_date + timedelta(days=random.randint(0, date_range_days)),
             'region': region,
             'store_id': f"{region[:1]}{random.randint(1, 20):03d}",
             'product_category': category,

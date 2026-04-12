@@ -4,6 +4,24 @@
     "category": "sports",
     "products": [
       {
+        "name": "Marmot Trestles 15 Degree Sleeping Bag Regular Length",
+        "price": "$96.75",
+        "compare_at_price": "$129.00",
+        "brand": "Marmot",
+        "sku": "23530-2958-RZ",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Marmot Nanowave 25 Degree Sleeping Bag",
+        "price": "$89.25",
+        "compare_at_price": "$119.00",
+        "brand": "Marmot",
+        "sku": "38860-2200-LZ",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
         "name": "Kelty Mistral 20 Degree Sleeping Bag",
         "price": "$69.95",
         "compare_at_price": null,
@@ -36,6 +54,24 @@
         "compare_at_price": null,
         "brand": "Kelty",
         "sku": "35413524RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Marmot Trestles Synthetic 15 Degree Sleeping Bag - Women's",
+        "price": "$96.75",
+        "compare_at_price": "$129.00",
+        "brand": "Marmot",
+        "sku": "23610-3822-LZ",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Marmot Trestles 30 Degree Long Sleeping Bag",
+        "price": "$96.75",
+        "compare_at_price": "$129.00",
+        "brand": "Marmot",
+        "sku": "23720-4430-RZ",
         "product_type": "sleeping gear",
         "source": "Campmor"
       },
@@ -81,6 +117,15 @@
         "compare_at_price": null,
         "brand": "Kelty",
         "sku": "35428625RR",
+        "product_type": "sleeping gear",
+        "source": "Campmor"
+      },
+      {
+        "name": "Marmot Nanowave 25 Degree Long Sleeping Bag",
+        "price": "$96.75",
+        "compare_at_price": "$129.00",
+        "brand": "Marmot",
+        "sku": "38870-2200-LZ",
         "product_type": "sleeping gear",
         "source": "Campmor"
       },
@@ -137,55 +182,10 @@
         "sku": "2205643",
         "product_type": "sleeping gear",
         "source": "Campmor"
-      },
-      {
-        "name": "Exped Megasleep Uno Sleeping Bag",
-        "price": "$149.95",
-        "compare_at_price": null,
-        "brand": "Exped",
-        "sku": "7640277845947",
-        "product_type": "sleeping gear",
-        "source": "Campmor"
-      },
-      {
-        "name": "Nemo Equipment Riff Mens 30 Endless  Promise Down Sleeping Bag",
-        "price": "$359.95",
-        "compare_at_price": null,
-        "brand": "Nemo Equipment",
-        "sku": "811666035578",
-        "product_type": "sleeping gear",
-        "source": "Campmor"
-      },
-      {
-        "name": "Nemo Equipment Riff Womens 30 Endless Promise Down Sleeping Bag",
-        "price": "$359.95",
-        "compare_at_price": null,
-        "brand": "Nemo Equipment",
-        "sku": "811666035622",
-        "product_type": "sleeping gear",
-        "source": "Campmor"
-      },
-      {
-        "name": "Nemo Equipment Riff\u2122 Women's Endless Promise\u00ae\u202fDown 15\u00b0 Sleeping Bag",
-        "price": "$399.95",
-        "compare_at_price": null,
-        "brand": "Nemo Equipment",
-        "sku": "811666035608",
-        "product_type": "sleeping gear",
-        "source": "Campmor"
-      },
-      {
-        "name": "Kelty Eclipse 15 Sleeping Bag",
-        "price": "$184.95",
-        "compare_at_price": null,
-        "brand": "Kelty",
-        "sku": "35432626SR",
-        "product_type": "sleeping gear",
-        "source": "Campmor"
       }
     ],
-    "total_found": 28,
-    "timestamp": "2026-04-05T21:21:45.347447",
+    "total_found": 40,
+    "timestamp": "2026-04-08T20:51:01.408411",
     "method": "Shopify API (requests)",
     "url": "https://www.campmor.com/collections/sleeping-bags"
   },
@@ -194,58 +194,1046 @@
     "category": "electronics",
     "products": [
       {
-        "name": "Acer Aspire Go 15 AG15-42P-R3GM, 15.6\" Full HD IPS Display, AMD Ryzen 7 7730U Octa-Core Processor, AMD Radeon Graphics, 32GB DDR4 Memory, 1TB PCIe Gen4 SSD, 802.11ax Wi-Fi 6E, Windows 11 Home",
-        "price": "$699",
-        "source": "Newegg"
-      },
-      {
         "name": "Lenovo Ideapad Slim 3 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 512GB SSD Windows 11 Home (82XM0035US)",
         "price": "$549",
         "source": "Newegg"
       },
       {
-        "name": "BiTECOOL 15.6-inch FHD IPS Laptop, 32GB RAM 512GB SSD, Intel Pentium Gold 6500Y (up to 3.4GHz), 4 Speakers, 2.4/5G WiFi Bluetooth 5.0, Windows 11 Pro Lightweight Portable Notebook",
-        "price": "$279",
+        "name": "Acer Aspire Go 15, 15.6\" Full HD IPS Display, AMD Ryzen 7 7730U Octa-Core Processor, AMD Radeon Graphics, 32GB DDR4 Memory, 1TB PCIe Gen4 SSD, 802.11ax Wi-Fi 6E, Windows 11 Home AG15-42P-R3GM",
+        "price": "$699",
         "source": "Newegg"
       },
       {
-        "name": "Auusda 16\" Laptop AMD Ryzen 7 7840HS, 32GB DDR5 RAM, 1TB NVMe SSD, Windows 11 Pro Computer, Not for Heavy Gaming, Backlit, Fingerprint, Full-Type C, WiFi 6, Bluetooth 5.3, Webcam Switch, Gray",
-        "price": "$649",
+        "name": "Asus VivoBook 16\" Copilot+ PC Laptop AMD Ryzen AI 7 350 16GB DDR5 Memory 512GB PCIE SSD Windows 11 Home (M1607KA-NS76)",
+        "price": "$694",
         "source": "Newegg"
       },
       {
-        "name": "ASUS TUF Gaming A16 - 16\" WQXGA 165 Hz - AMD Ryzen 7 260 - GeForce RTX 5060 Laptop GPU - 32GB Memory DDR5 5600 - 1TB PCIe SSD - Windows 11 Home  (FA608UM-NS76)",
-        "price": "$1,699",
+        "name": "MSI Modern 15 H 15.6\" TouchScreen Laptop Intel Core 9 270H - 32GB RAM - 1TB NVMe SSD - Windows 11 Home (C2RMTG-401US)",
+        "price": "$849",
         "source": "Newegg"
       },
       {
-        "name": "Lenovo Legion 5i - 15.1\" GeForce RTX 5060 Laptop GPU - Intel Core i7-14700HX - 16GB Memory - 512GB SSD - 165Hz OLED Display - Windows 11 Home Gaming Laptop (83LY000LUS)",
-        "price": "$1,299",
+        "name": "Lenovo V15 Gen 4 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 1TB SSD Windows 11 Home (83CR003UUS)",
+        "price": "$599",
         "source": "Newegg"
       },
       {
-        "name": "MSI Stealth 14 AI 14\"  Ultra Thin and Light Gaming Laptop -  Intel Core Ultra 7 155H - NVIDIA GeForce RTX 4050 - 16GB DDR5 RAM - 1TB NVMe SSD -  Win 11 Pro (A1VEG-090US)",
-        "price": "$1,069",
+        "name": "HP ProBook 465 Copilot+ Business Laptop (AMD version ProBook 460) 16.0\" IPS WUXGA Display (AMD Ryzen 5 7535U,  16GB DDR5, 512GB PCIe SSD, WiFi 6E, BT 5.3, Webcam, Win 11 Pro)",
+        "price": "$713",
         "source": "Newegg"
       },
       {
-        "name": "MSI Stealth - 18\" 120 Hz - Intel Core Ultra 9 275HX - GeForce RTX 5080 Laptop GPU - 64GB Memory DDR5 5600 - 2TB SSD - Windows 11 Pro(Stealth 18 HX AI A2XWIG-036US)",
-        "price": "$3,546",
-        "source": "Newegg"
-      },
-      {
-        "name": "BiTECOOL Laptop Computer 15.6 inch, Intel Quad Core N95, 12GB LPDDR5 RAM 1TB NVMe SSD Laptop with FHD IPS Display, WiFi 5, BT5.0, USB Type C and Fingerprint, 2 Years Warranty, Windows 11 Pro",
-        "price": "$289",
-        "source": "Newegg"
-      },
-      {
-        "name": "MSI Cyborg 17 - 17.3\" FHD 144 Hz - Intel Core 9 270H(2.70-5.80 GHz) - GeForce RTX 5060 Laptop GPU - 16GB Memory DDR5 5600 - 1TB NVMe SSD Gen4x4 SSD - Windows 11 Home  (Cyborg 17 B2RWFKG-067US )",
+        "name": "Lenovo 14.0\" ThinkPad X1 Carbon Gen 12 Intel Core Ultra 7 155U 32GB RAM 2TB SSD Windows 11 Pro",
         "price": "$1,399",
+        "source": "Newegg"
+      },
+      {
+        "name": "OMEN MAX Gaming Laptop 16\" WQXGA Intel Core Ultra 9 32 GB memory;1 TB SSD",
+        "price": "$2,799",
+        "source": "Newegg"
+      },
+      {
+        "name": "Lenovo ThinkPad E16 Business Laptop, 16\" FHD+ Touchscreen, AMD Ryzen 7 7735U, 24GB DDR5 RAM, 1TB SSD, Webcam w/ Shutter, HDMI, Type-C, Fingerprint, Backlit KB, Wi-Fi 6, Windows 11 Pro, Black",
+        "price": "$1,009",
+        "source": "Newegg"
+      },
+      {
+        "name": "Dell 16 Plus Copilot+ PC Laptop DB16255, 16\" Touch FHD+, AMD Ryzen 7, AMD Radeon Graphics, 32 GB RAM, 1TB SSD",
+        "price": "$1,149",
         "source": "Newegg"
       }
     ],
-    "timestamp": "2026-04-05T21:27:34.642183",
+    "timestamp": "2026-04-08T20:27:39.315710",
     "url": "https://www.newegg.com/p/pl?d=laptop&N=4131",
     "method": "BeautifulSoup"
+  },
+  "ikea_home": {
+    "competitor": "IKEA",
+    "category": "home",
+    "products": [
+      {
+        "name": "BRIMNESCabinet with doors, white, 30 3/4x37 3/8 \"",
+        "price": "$BRIMNESCabinet with doors, white, 30 3/4x37 3/8 \"$99.00Price $ 99.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "BILLYBookcase with glass doors, dark blue, 31 1/2x11 3/4x79 1/2 \"",
+        "price": "$BILLYBookcase with glass doors, dark blue, 31 1/2x11 3/4x79 1/2 \"$199.00Price $ 199.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "BILLY / OXBERGBookcase, white, 31 1/2x11 3/4x79 1/2 \"",
+        "price": "$BILLY / OXBERGBookcase, white, 31 1/2x11 3/4x79 1/2 \"$179.00Price $ 179.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "HAVSTACabinet with base, white, 31 7/8x18 1/2x35 \"",
+        "price": "$HAVSTACabinet with base, white, 31 7/8x18 1/2x35 \"$270.00Price $ 270.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "S\u00c5GM\u00c4STARECabinet, light gray-blue, 32 3/4x14 1/4x50 1/4 \"",
+        "price": "$S\u00c5GM\u00c4STARECabinet, light gray-blue, 32 3/4x14 1/4x50 1/4 \"$129.00Price $ 129.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "HEMNESGlass-door cabinet with 3 drawers, gray-green/light brown stained, 35 3/8x77 1/2 \"",
+        "price": "$HEMNESGlass-door cabinet with 3 drawers, gray-green/light brown stained, 35 3/8x77 1/2 \"$449.00Price $ 449.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "HEMNESStorage combination w doors/drawers, gray-green/light brown stained, 106 1/4x77 1/2 \"",
+        "price": "$HEMNESStorage combination w doors/drawers, gray-green/light brown stained, 106 1/4x77 1/2 \"$1,227.00Price $ 1227.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "LOMMARPCabinet, dark blue-green, 40 1/8x39 3/4 \"",
+        "price": "$LOMMARPCabinet, dark blue-green, 40 1/8x39 3/4 \"$449.00Price $ 449.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "BILLYBookcase with doors, white, 31 1/2x11 3/4x79 1/2 \"",
+        "price": "$BILLYBookcase with doors, white, 31 1/2x11 3/4x79 1/2 \"$139.00Price $ 139.00",
+        "source": "IKEA"
+      },
+      {
+        "name": "BAGGEBOGlass-door cabinet, metal/white, 13 3/8x11 3/4x45 5/8 \"",
+        "price": "$BAGGEBOGlass-door cabinet, metal/white, 13 3/8x11 3/4x45 5/8 \"$64.99Price $ 64.99",
+        "source": "IKEA"
+      }
+    ],
+    "timestamp": "2026-04-08T20:50:28.488811",
+    "url": "https://www.ikea.com/us/en/cat/bookcases-shelving-units-st003/",
+    "method": "Selenium (Firefox)"
+  },
+  "swanson vitamins_food": {
+    "competitor": "Swanson Vitamins",
+    "category": "food",
+    "products": [
+      {
+        "name": "Dr. Stephen Langer's Ultimate 16 Strain Probiotic with FOS",
+        "price": "$16.09",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWA051",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-probiotics-dr-stephen-langers-ultimate-16-strain-probiotic-fos-3-2-billon-cfu-60-veg-drcaps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/9649f82c-545d-40f1-b1d0-3ae62129ccfc_large_dd06496a-bd06-4742-896c-9f040e0bdcf7.jpg?v=1769002424",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Vitamin D3 - Highest Potency",
+        "price": "$9.99",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1371",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-highest-potency-vitamin-d-3-5000-iu-5000-iu-250-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/d5db35e4-34e5-443b-af48-4868f6ae4fe8_large_5edf7ed6-c38e-4f66-bc5f-ae7a46994b06.jpg?v=1768945718",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "CoQ10 100 mg",
+        "price": "$19.29",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU561",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-coq10-100-100-mg-100-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/7b6efe85-c560-4b10-bbe4-025488eb8968_large_c26cd52c-6a7e-4198-bcee-46598ecd2a4f.jpg?v=1768448395",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "C-1000 - Vitamin C with Rose Hips",
+        "price": "$13.19",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW106",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-vitamin-c-rose-hips-1000-mg-250-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/d647c660-728d-42af-b8d3-31824c0131c9_large_35dc56fe-5949-4c54-b0b4-36de52e3b5f6.jpg?v=1768945681",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "NAC N-Acetyl Cysteine",
+        "price": "$17.09",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW854",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-nac-n-acetyl-cysteine-600-mg-100-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/590c1dd8-9e04-4457-8356-87e7279dca9c_large_dec2f9f3-30eb-45ea-8575-9da7ee070366.jpg?v=1769001366",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Triple Strength Melatonin - 100% Drug Free",
+        "price": "$8.99",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU305",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-triple-strength-melatonin-10-mg-60-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/807f83f2-9b34-4147-8f33-c71bd45edd55_large_896c9e87-9327-42b3-86e0-3b81b37eb57b.jpg?v=1769003295",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Maximum Strength L-Arginine",
+        "price": "$8.49",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1713",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-super-strength-l-arginine-850-mg-90-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/f57db410-8fcf-46bf-a33b-82cf3c475d5b_large_5eb89abe-687e-4707-93eb-67e8f05e25a6.jpg?v=1768448744",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Resveratrol",
+        "price": "$10.59",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU283",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-resveratrol-100-100-mg-30-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/b6faea6d-7ba1-49a0-bb24-97c20f95d03a_large_8e23e179-950b-41f3-9472-e904191966bd.jpg?v=1768450330",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Vitamin K2 - Natural",
+        "price": "$10.89",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU671",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-natural-vitamin-k2-menaquinone-7-from-natto-50-mcg-30-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/5e5d6cc5-6085-47ee-a116-10a860c08c4d_large_0247014d-5c21-45da-8e03-9a7c8b3e99fe.jpg?v=1769003571",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Vitamin K2 - Natural",
+        "price": "$18.99",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU672",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-high-potency-natural-vitamin-k-2-menaquinone-7-from-natto-100-mcg-30-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/dd84a51c-dc95-4836-838c-19dccb0de529_large_f73ad12f-9a5d-4e34-9ed6-119d3bbb1c8f.jpg?v=1769003552",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Biotin",
+        "price": "$5.99",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW877",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-biotin-5-mg-100-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/11b092bb-7b0c-404c-960c-11c114fbfc04_large_84583dab-67f4-4f97-a934-2e50f880ab83.jpg?v=1769000863",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "CoQ10 200 mg",
+        "price": "$24.99",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU035",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-coq10-200-200-mg-90-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/3fe61994-f24a-41b8-bbdb-7c6bdc23fd3c_large_b6f22caa-0045-4cad-be56-92a9c6fb090a.jpg?v=1768448233",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Quercetin - Higher Strength",
+        "price": "$15.29",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1671",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-high-potency-quercetin-475-mg-60-veg-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/be8c5fe5-26cb-4ffb-9e71-d8263071b9f9_large_74908431-65d2-4c47-9401-94ea3d63f1d7.jpg?v=1768448082",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Omega-3 Fish Oil - Lemon Flavor",
+        "price": "$13.69",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1253",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-lemon-flavor-omega-3-fish-oil-150-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/ce2ef236-d0b1-480e-b322-d05ef825739f_large_b5c8793b-a3f7-4f63-92a2-80fa71756a8c.jpg?v=1768448131",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Vitamin D3 - Higher Potency",
+        "price": "$9.19",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1210",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-higher-potency-vitamin-d-3-2000-iu-250-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/e27156d0-2d99-4dcb-aded-853d33786de2_large_99b5d45a-f5f9-4edd-88f7-ded6f009b10c.jpg?v=1768945282",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Extra Strength D3 & K2 - 5,000 IU & 100 mcg",
+        "price": "$15.79",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1804",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-vitamins-d3-k2-2-in-1-formula-extra-strength-60-veg-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/907c4703-a677-4495-a0e9-128ac926371b_large_80792e18-c18f-4d1d-935e-2c1a3b796e37.jpg?v=1768735732",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Alpha Lipoic Acid",
+        "price": "$22.69",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU190",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-alpha-lipoic-acid-300-mg-120-caps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/2d06ffbd-1226-4727-954f-68f9a6b3080e_large_c25c0df8-7bef-4c64-8ab2-2cb94ba129f1.jpg?v=1768450516",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Epic Pro 25-Strain Probiotic",
+        "price": "$26.89",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWA030",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-probiotics-epic-pro-25-strain-probiotic-30-veg-drcaps",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/f63033e9-add1-4dda-8adc-6f967d87cdae_large_9c803c6b-4c38-4f3b-9834-a9ab1d02449f.jpg?v=1769002026",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Glucosamine, Chondroitin & MSM - Highest Strength 3-in-1 Formula",
+        "price": "$11.89",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SW1009",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-premium-glucosamine-chondroitin-msm-250-200-150-mg-120-tabs",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/8f38264d-46d6-4ad3-b53f-4cfbb7a86a18_large_0726b5d4-0ce3-488b-94f3-e5949ee88232.jpg?v=1768448640",
+        "source": "Swanson Vitamins"
+      },
+      {
+        "name": "Astaxanthin & Zeaxanthin",
+        "price": "$28.29",
+        "compare_at_price": null,
+        "brand": "Swanson Vitamins",
+        "sku": "SWU925",
+        "product_type": "",
+        "url": "https://www.swansonvitamins.com/products/swanson-ultra-astaxanthin-zeaxanthin-60-sgels",
+        "image": "https://cdn.shopify.com/s/files/1/0693/8139/0474/files/81710e9c-6a81-4b0e-9a2d-7549fb0be833_large_607704be-86f0-4285-89dc-7139033b7f23.jpg?v=1775054906",
+        "source": "Swanson Vitamins"
+      }
+    ],
+    "total_found": 750,
+    "timestamp": "2026-04-08T20:51:29.136489",
+    "method": "Shopify API",
+    "url": "https://www.swansonvitamins.com/collections/vitamins-and-supplements-8"
+  },
+  "taylor stitch_clothing": {
+    "competitor": "Taylor Stitch",
+    "category": "clothing",
+    "products": [
+      {
+        "name": "1957 Timex Marlin Cub Scout",
+        "price": "$225.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1957TMCSOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1957-timex-marlin-cub-scout",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_marlin_cub_scout_001.jpg?v=1762271391",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1958 Timex Marlin Boy Scout",
+        "price": "$225.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1958TMBSOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1958-timex-marlin-boy-scout",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_marlin_boy_scout_001.jpg?v=1762271392",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1960 Timex Marlin Aluminum",
+        "price": "$250.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1960TMAOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1960-timex-marlin-aluminum",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_marlin_aluminum_001.jpg?v=1762271388",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1964 Timex Electric",
+        "price": "$225.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1964TEOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1964-timex-electric",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_electric_001.jpg?v=1762271405",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1965 Timex Electric",
+        "price": "$225.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1965TEOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1965-timex-electic",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_65_electric_001.jpg?v=1762271404",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1966 Timex Mercury",
+        "price": "$150.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1966TMOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1966-timex-mercury",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_mercury_001.jpg?v=1762271400",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1967 Timex Marlin \"Dot Dash\"",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1967TMDDOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1967-timex-marlin-dot-dash",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_marlin_dot_dash_001.jpg?v=1759257070",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1968 Timex Mercury",
+        "price": "$150.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1968TMOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1968-timex-mercury",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_68_mercury_001.jpg?v=1762271401",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1969 Timex Marlin",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1969TMOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1969-timex-marlin",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_69_marlin_001.jpg?v=1762271404",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1970 Timex 21",
+        "price": "$200.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1970TOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1970-timex-21",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_21_001.jpg?v=1762271386",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1970 Timex Mercury \"MLK\"",
+        "price": "$200.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1970TMMLKOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1970-timex-mercury-mlk",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_mercury_MLK_001.jpg?v=1762271399",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1970 Timex Viscount",
+        "price": "$200.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1970TVOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1970-timex-viscount",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_viscount_001.jpg?v=1759257069",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1971 Timex Marlin",
+        "price": "$200.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1971TMOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1971-timex-marlin",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_71_marlin_001.jpg?v=1762271408",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1972 Timex Marlin Gold",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1972TMGOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1972-timex-marlin-gold",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_72_marlin_gold_001.jpg?v=1759257065",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1973 Timex Marlin",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1973TMOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1973-timex-marlin",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_73_marlin_001.jpg?v=1762271402",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1974 Timex Electronic \"Rotary\" Calendar",
+        "price": "$225.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1974TERCOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1974-timex-electronic-rotary-calendar",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_74_rotary_001.jpg?v=1762271383",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1974 Timex Electronic Time Zone",
+        "price": "$250.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1974TETZOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1974-timex-electronic-time-zone",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_74_timezone_001.jpg?v=1762271395",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1974 Timex Mercury Calendar Gold",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1974TMCGOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1974-timex-mercury-calendar-gold",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_74_mercury_calendar_gold_001.jpg?v=1759257055",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1974 Timex Mercury Calendar Silver",
+        "price": "$175.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1974TMCSOS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1974-timex-mercury-calendar-silver",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_mercury_calendar_silver_001.jpg?v=1759257054",
+        "source": "Taylor Stitch"
+      },
+      {
+        "name": "1974 Timex Viscount M24",
+        "price": "$200.00",
+        "compare_at_price": null,
+        "brand": "Taylor Stitch",
+        "sku": "1974TVM24OS",
+        "product_type": "Accessories",
+        "url": "https://www.taylorstitch.com/products/1974-timex-viscount-m24",
+        "image": "https://cdn.shopify.com/s/files/1/0070/1922/products/instock_mens_q322_timex_viscount_m24_001.jpg?v=1762271387",
+        "source": "Taylor Stitch"
+      }
+    ],
+    "total_found": 750,
+    "timestamp": "2026-04-08T21:04:26.395358",
+    "method": "Shopify API",
+    "url": "https://www.taylorstitch.com/collections/all"
+  },
+  "chubbies_clothing": {
+    "competitor": "Chubbies",
+    "category": "clothing",
+    "products": [
+      {
+        "name": "American Flag Dad Hat",
+        "price": "$24.50",
+        "compare_at_price": "$24.50",
+        "brand": "Chubbies",
+        "sku": "946222-039",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/american-flag-dad-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/AmericanFlagDadHat_SD_946222-030917.webp?v=1762270565",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Black Patch Nylon Rope Hat",
+        "price": "$10.00",
+        "compare_at_price": "$29.50",
+        "brand": "Chubbies",
+        "sku": "959222-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/black-patch-nylon-rope-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/BlackPatchNylonRopeHat_SD_959222-010924.webp?v=1762270567",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Breezetech Friday Shirt (Bloomerang)",
+        "price": "$52.00",
+        "compare_at_price": "$74.50",
+        "brand": "Chubbies",
+        "sku": "501232-061",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-bloomerang-breezetech-2-0",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Bloomerang_Breezetech__501232-06_OF.webp?v=1762271325",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies Dreamin' (Non Pocket Graphic Tee)",
+        "price": "$23.00",
+        "compare_at_price": "$29.50",
+        "brand": "Chubbies Shorts",
+        "sku": "502253-212",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-dreamin-non-pocket-graphic-tee",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Chubbies_20Dreamin_27_20_28Non_20Pocket_20Graphic_20Tee_29_502253-21_OF__4.webp?v=1753387421",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies Palm Trucker Hat",
+        "price": "$10.00",
+        "compare_at_price": "$29.50",
+        "brand": "Chubbies",
+        "sku": "960222-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-palm-trucker-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/ChubbiesPalmTruckerHat_SD_960222-01_0922.webp?v=1762270566",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies Radatoo Water Bottle",
+        "price": "$10.00",
+        "compare_at_price": "$15.00",
+        "brand": "Chubbies",
+        "sku": "956214-039",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/radatoo-water-bottle",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/RadatooWaterBottle_SD_956214-035476.webp?v=1762270374",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies The Neon Vikings 5.5\" Inseam for Men Polyester/Spandex Swim Trunks with Boxer Brief Mesh Liner",
+        "price": "$89.50",
+        "compare_at_price": "$89.50",
+        "brand": "Chubbies",
+        "sku": "126243-661",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-neon-vikings-5-5-classic-lined-swim-trunks",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/neonvikings_126243-66_SD_1.webp?v=1754313320",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies Toucan Dad Hat",
+        "price": "$24.50",
+        "compare_at_price": "$24.50",
+        "brand": "Chubbies",
+        "sku": "946222-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-toucan-dad-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/ChubbiesToucanDadHat_SD_946222-010914.webp?v=1762270563",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies Vinyl Decal",
+        "price": "$4.00",
+        "compare_at_price": "$7.00",
+        "brand": "Chubbies",
+        "sku": "966223-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-vinyl-decal",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/ChubbiesVinylDecal_SD_966223-010075.webp?v=1762271268",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies x Rumpl Beverage Blanket",
+        "price": "$8.00",
+        "compare_at_price": "$8.00",
+        "brand": "Chubbies",
+        "sku": "949204-039",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-x-rumpl-can-jacket-1",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/ChubbiesBearBlanket_LS_DT_5.webp?v=1762269991",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Chubbies x Rumpl Domingoes Can Jacket",
+        "price": "$8.00",
+        "compare_at_price": "$8.00",
+        "brand": "Chubbies",
+        "sku": "949214-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/chubbies-x-rumpl-domingoes-can-jacket",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/2400_ChubbiesxRumplCanJacket_SD_949204-03_0631.webp?v=1762270345",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Cockatoo Dad Hat",
+        "price": "$10.00",
+        "compare_at_price": "$24.50",
+        "brand": "Chubbies",
+        "sku": "946213-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/cockatoo-dad-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/CockatooDadHat_946213-01.webp?v=1762270283",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Digital Gift Card",
+        "price": "$25.00",
+        "compare_at_price": "$500.00",
+        "brand": "Chubbies",
+        "sku": "giftcard25",
+        "product_type": "Gift Cards",
+        "url": "https://www.chubbies.com/products/gift-card",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/Web_Giftcard_PDP.webp?v=1759251263",
+        "source": "Chubbies"
+      },
+      {
+        "name": "DNU: The July 24s 5.5\" (Classic Lined Swim Trunk)",
+        "price": "$79.50",
+        "compare_at_price": "$79.50",
+        "brand": "Chubbies",
+        "sku": "126241-191",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-july-24s-5-5-classic-lined-swim-trunk",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/July_24s_5.5_Classic_Lined_Swim_Trunk__126241-19_OF.webp?v=1762271579",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Fleece Quarter Zip (Chilly Vibe)",
+        "price": "$38.00",
+        "compare_at_price": "$69.50",
+        "brand": "Chubbies",
+        "sku": "499214-092",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-chilly-vibe-quarter-zip",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/499214-09_ChillyVibe_3091.webp?v=1762270224",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Friday Shirt (En Fuego Wild)",
+        "price": "$25.00",
+        "compare_at_price": "$64.50",
+        "brand": "Chubbies",
+        "sku": "603222-022",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-en-fuego-wild-friday-shirt",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/EnFuegoWild_FridayShirt__603222-02_OF.webp?v=1762270514",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Friday Shirt (Inspiration)",
+        "price": "$38.00",
+        "compare_at_price": "$64.50",
+        "brand": "Chubbies",
+        "sku": "603231-012",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-inspiration-friday-shirt",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/Inspiration_FridayShirt__603231-01_OF_1222_2892.webp?v=1762271175",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Light Blue Chubbies Dad Cap",
+        "price": "$24.50",
+        "compare_at_price": "$24.50",
+        "brand": "Chubbies",
+        "sku": "946194-019",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/light-blue-chubbies-dad-hat",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/LIGHT_BLUE_DAD_CAP_CHUBBIES_LOGO_SD_946194-01_7937.webp?v=1762269157",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Long Sleeve T-Shirt (Palm Time)",
+        "price": "$22.00",
+        "compare_at_price": "$39.50",
+        "brand": "Chubbies",
+        "sku": "504223-052",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/the-palm-time-longsleeve-t-shirt",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/products/504223-05_008223-06_OF_4086.webp?v=1762270977",
+        "source": "Chubbies"
+      },
+      {
+        "name": "Loud & Proud (Non Pocket Graphic T-Shirt)",
+        "price": "$29.50",
+        "compare_at_price": "$29.50",
+        "brand": "Chubbies",
+        "sku": "502251-512",
+        "product_type": "",
+        "url": "https://www.chubbies.com/products/loud-proud-non-pocket-graphic-t-shirt",
+        "image": "https://cdn.shopify.com/s/files/1/0077/0432/files/PDP_Loud___Proud_Non_Pocket_Graphic_T-Shirt__502251-51_OF.webp?v=1768021501",
+        "source": "Chubbies"
+      }
+    ],
+    "total_found": 750,
+    "timestamp": "2026-04-08T21:04:31.085999",
+    "method": "Shopify API",
+    "url": "https://www.chubbies.com/collections/all"
+  },
+  "finisterre_clothing": {
+    "competitor": "Finisterre",
+    "category": "clothing",
+    "products": [
+      {
+        "name": "Amy Powney + Finisterre Women's Pleat Front Trouser",
+        "price": "$125.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "207129",
+        "product_type": "Women's Trousers & Shorts",
+        "url": "https://www.finisterre.com/products/womens-organic-amy-powney-finisterre-pleat-front-trouser-black",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/amy-powney-finisterre-076.jpg?v=1756740187",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Apex 5 Panel Camp Cap",
+        "price": "$35.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "209068",
+        "product_type": "Beanies & Scarves",
+        "url": "https://www.finisterre.com/products/recycled-apex-5-panel-camp-cap-navy-thorn-deep-sea",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/early-womens-OB-253.jpg?v=1765466395",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Ayr Scarf",
+        "price": "$50.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "212349",
+        "product_type": "Beanies & Scarves",
+        "url": "https://www.finisterre.com/products/recycled-wool-ayr-scarf-charcoal",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/vb5584486_ayr-triangle-scarf-black_2400x3200_9292d9c5-a333-453a-a6f8-1e0d952c7054.jpg?v=1762852974",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Ayr Scarf",
+        "price": "$50.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "212348",
+        "product_type": "Beanies & Scarves",
+        "url": "https://www.finisterre.com/products/recycled-wool-ayr-scarf-red",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/vb5584485_ayr-triangle-scarf-terracotta_2400x3200_1a3b63ef-d71b-40fb-ade1-06cf0caa4e9f.jpg?v=1762852971",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Black + Blum Food Flask",
+        "price": "$35.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "203767",
+        "product_type": "Gear",
+        "url": "https://www.finisterre.com/products/black-and-blum-food-flask-black",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/black-and-blum-food-flask-silver-black-artwork-tbc-web.jpg?v=1737546198",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Black + Blum Stainless Steel Lunch Box",
+        "price": "$35.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "203770",
+        "product_type": "Gear",
+        "url": "https://www.finisterre.com/products/black-and-blum-stainless-steel-lunch-box-black",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/black-and-blum-steel-lunch-box-large-silver-black-artwork-tbc-web.jpg?v=1737546231",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Black + Blum Stainless Steel Lunch Box",
+        "price": "$35.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "232040",
+        "product_type": "Gear",
+        "url": "https://www.finisterre.com/products/black-blum-stainless-steel-lunch-box-olive",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/black-and-blum-green-lunchbox.jpg?v=1770202038",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "192752",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-burnt-orange-grey-marl",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/products/vb1592965_bosun_sock_red_detail_1.jpg?v=1662995322",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "196611",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-navy-bright-flame",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/vb2295005_bosun-sock-navy-bright-flame_f13d97fd-145a-4406-9aa6-c6a5e8131bb9.jpg?v=1726837793",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$14.00",
+        "compare_at_price": "$22.00",
+        "brand": "Finisterre",
+        "sku": "206326",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-oatmeal-bay-leaf",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-oatmealstatic.jpg?v=1759919186",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "206344",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-skipper-blue-timber-green",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-sock-skipper-blue-timber-green-pack.jpg?v=1759415713",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$14.00",
+        "compare_at_price": "$22.00",
+        "brand": "Finisterre",
+        "sku": "206347",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-chestnut-skipper-blue",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-sock-chestnut-skipper-blue-pack.jpg?v=1759415726",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "210219",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-natural-twist-sage-green",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-sock-natural-twist-sage-green_1.jpg?v=1765452415",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "210222",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-pure-aran-autumn-glow",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-sock-pure-aran-autumn-glow.jpg?v=1765452496",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bosun Sock",
+        "price": "$22.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "187847",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/wool-blend-bosun-sock-oatmeal-navy",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bosun-sock-oatmealnavy1-1.jpg?v=1768912209",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bowline Belt",
+        "price": "$25.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "203268",
+        "product_type": "Accessories",
+        "url": "https://www.finisterre.com/products/bowline-belt-polyester-flame",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bowline-belt-orange.jpg?v=1732706132",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Bowline Belt",
+        "price": "$25.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "203267",
+        "product_type": "Accessories",
+        "url": "https://www.finisterre.com/products/bowline-belt-polyester-olive",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/bowline-belt-green.jpg?v=1732706137",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Cape Towel",
+        "price": "$40.00",
+        "compare_at_price": null,
+        "brand": "Finisterre",
+        "sku": "203763",
+        "product_type": "Gear",
+        "url": "https://www.finisterre.com/products/organic-cotton-cape-towel-navy-lake",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/finisterre-towel-1-2.jpg?v=1734974313",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Classic Wool Sock",
+        "price": "$11.00",
+        "compare_at_price": "$18.00",
+        "brand": "Finisterre",
+        "sku": "203736",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/recycled-wool-classic-sock-navy",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/original-sock-navy-pack.jpg?v=1750677716",
+        "source": "Finisterre"
+      },
+      {
+        "name": "Classic Wool Striped Sock",
+        "price": "$11.00",
+        "compare_at_price": "$18.00",
+        "brand": "Finisterre",
+        "sku": "206577",
+        "product_type": "Socks",
+        "url": "https://www.finisterre.com/products/recycled-wool-classic-sock-clay-grey-marl",
+        "image": "https://cdn.shopify.com/s/files/1/1074/5128/files/classic-stripe-sock-clay-grey-marl-pack.jpg?v=1756976505",
+        "source": "Finisterre"
+      }
+    ],
+    "total_found": 557,
+    "timestamp": "2026-04-08T21:04:35.577689",
+    "method": "Shopify API",
+    "url": "https://www.finisterre.com/collections/all"
+  },
+  "goal zero_electronics": {
+    "competitor": "Goal Zero",
+    "category": "electronics",
+    "products": [],
+    "total_found": 0,
+    "timestamp": "2026-04-09T13:11:43.567263",
+    "method": "Shopify API",
+    "url": "https://www.goalzero.com/collections/power-stations"
   }
 }

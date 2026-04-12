@@ -10,10 +10,10 @@
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-8E75B2?style=flat-square&logo=google&logoColor=white)](https://ai.google.dev)
 [![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=flat-square)](https://groq.com)
-[![DuckDB](https://img.shields.io/badge/DuckDB-Analytics-FFF000?style=flat-square&logo=duckdb&logoColor=black)](https://duckdb.org)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_DB-orange?style=flat-square)](https://trychroma.com)
 
-**[Live Demo](#demo)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
+**[🚀 Live Demo](https://nexusiq-ai.streamlit.app)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
 
 </div>
 
@@ -25,7 +25,7 @@ NexusIQ AI is a **multi-agent business intelligence system** that answers comple
 
 | Source | What it knows |
 |--------|--------------|
-| 🗄️ **SQL Database** | 90,500 sales transactions across 2024 — revenue, products, regions, payment methods |
+| 🗄️ **SQL Database** | 100,000 sales transactions across 2024 — revenue, products, regions, payment methods |
 | 📄 **PDF Documents** | 23 internal documents — quarterly reports, strategic plans, compliance policies |
 | 🌐 **Live Web** | Real-time competitor pricing scraped from Newegg, IKEA, Campmor, Swanson |
 
@@ -129,7 +129,7 @@ Includes per-scraper status dashboard and cache invalidation for empty results.
 
 ## Demo
 
-> 🔗 **Live Demo:** *coming soon — link will be added after deployment*
+> 🔗 **Live Demo:** [nexusiq-ai.streamlit.app](https://nexusiq-ai.streamlit.app)
 
 **Example interactions:**
 
@@ -169,19 +169,20 @@ Create `.env`:
 ```env
 GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
-DATABASE_URL=sqlite:///data/sales.db
+DATABASE_URL=postgresql://user:password@host:5432/postgres
 ```
 
-The SQLite database and ChromaDB vector store are pre-built and committed — no generation step needed. Just run:
+Set up the database:
+
+```bash
+python -m database.setup        # create tables
+python -m database.generate_data  # load 100K rows
+```
+
+Run the app:
 
 ```bash
 streamlit run main.py
-```
-
-To regenerate the database from scratch:
-
-```bash
-python database/generate_aligned_data.py
 ```
 
 Open `http://localhost:8501`
@@ -198,10 +199,10 @@ Open `http://localhost:8501`
 ```toml
 GOOGLE_API_KEY = "your_gemini_api_key"
 GROQ_API_KEY   = "your_groq_api_key"
-DATABASE_URL   = "sqlite:///data/sales.db"
+DATABASE_URL   = "postgresql://user:password@host:5432/postgres"
 ```
 
-5. Deploy. The SQLite DB and ChromaDB are pre-committed — no build step required.
+5. Deploy.
 
 > Note: The IKEA Selenium scraper is disabled on Streamlit Cloud (no Chrome). All other scrapers (Shopify API, Newegg BeautifulSoup) work as-is.
 
@@ -291,8 +292,8 @@ What is the best product?                  → Auto-resolves to "by revenue"
 
 | Attribute | Value |
 |-----------|-------|
-| Transactions | 90,500 |
-| Revenue | ~$139M |
+| Transactions | 100,000 |
+| Revenue | ~$140M |
 | Time Period | Jan 2024 – Dec 2024 |
 | Regions | East, West, North, South, Central |
 | Categories | Electronics, Clothing, Food, Home, Sports |
@@ -308,7 +309,7 @@ What is the best product?                  → Auto-resolves to "by revenue"
 | LLM (Primary) | Gemini 2.5 Flash |
 | LLM (Fallback) | Groq Llama 3.3 70B |
 | LLM (Local) | Ollama |
-| SQL Engine | DuckDB |
+| SQL Engine | PostgreSQL (Supabase) · SQLAlchemy |
 | Vector DB | ChromaDB |
 | Embeddings | `all-MiniLM-L6-v2` (sentence-transformers) |
 | BM25 Search | `rank_bm25` |

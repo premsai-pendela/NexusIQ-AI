@@ -899,7 +899,15 @@ def run_fusion_chat():
         st.session_state.web_category = "electronics"  # ✨ NEW: Default web category
     
     st.title("🔗 Fusion Agent — Multi-Source Intelligence")
-    st.markdown("*Ask questions and get validated answers from SQL + RAG + Web sources*")
+    st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
+    st.markdown(
+        "<p style='font-size:13px; color:#6b7280; margin-top:-8px;'>"
+        "<code>Gemini 2.5</code> &nbsp;·&nbsp; <code>Groq LLaMA 3.3</code> &nbsp;·&nbsp; "
+        "<code>PostgreSQL</code> &nbsp;·&nbsp; <code>ChromaDB</code> &nbsp;·&nbsp; "
+        "<code>BM25 + Vector Search</code> &nbsp;·&nbsp; <code>Live Web Scraping</code>"
+        "</p>",
+        unsafe_allow_html=True,
+    )
     
     # ═══════════════════════════════════════════════════════
     #  SIDEBAR
@@ -1192,50 +1200,68 @@ def run_fusion_chat():
         
         st.markdown(
             """
-            <div style='text-align:center; padding:40px;'>
-                <h2>👋 Welcome to NexusIQ Fusion Agent</h2>
-                <p style='color:#888; font-size:1.1em;'>
-                    Ask questions and get validated answers from multiple sources:<br>
-                    🗄️ SQL Database | 📄 PDF Documents | 🌐 Competitor Data
+            <div style='text-align:center; padding:32px 0 16px 0;'>
+                <h2 style='font-size:2rem; font-weight:800; margin-bottom:8px;'>
+                    What do you want to know?
+                </h2>
+                <p style='color:#9ca3af; font-size:1.05em; margin:0;'>
+                    Type any business question — the agent decides whether to query SQL, search PDFs, or scrape the web.
                 </p>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
-        
-        st.markdown("### 🚀 Quick Start")
-        
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Metrics strip
+        sq1, sq2, sq3, sq4 = st.columns(4)
+        with sq1:
+            st.metric("Transactions", "100K", "in PostgreSQL")
+        with sq2:
+            st.metric("Documents", "23 PDFs", "vector-indexed")
+        with sq3:
+            st.metric("LLM Models", "2 Active", "Gemini + Groq")
+        with sq4:
+            st.metric("Web Sources", "5 Sites", "live scraping")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown("### 🚀 Quick Start — click any question below")
+
         qs1, qs2, qs3 = st.columns(3)
-        
+
         with qs1:
             st.markdown("**📊 Cross-Validated Queries**")
-            if st.button("💰 Q4 revenue validated?", use_container_width=True, key="qs1"):
+            st.caption("SQL answer checked against PDF reports")
+            if st.button("💰 Q4 2024 revenue validated?", use_container_width=True, key="qs1"):
                 st.session_state.pending_suggestion = "What was Q4 2024 revenue?"
                 st.rerun()
-            if st.button("📈 Compare Q3 vs Q4", use_container_width=True, key="qs2"):
+            if st.button("📈 Compare Q3 vs Q4 performance", use_container_width=True, key="qs2"):
                 st.session_state.pending_suggestion = "Compare Q3 and Q4 2024 performance"
                 st.rerun()
-        
+
         with qs2:
             st.markdown("**📄 Document Intelligence**")
-            if st.button("📋 Return policy?", use_container_width=True, key="qs3"):
+            st.caption("Searches 23 indexed business PDFs")
+            if st.button("📋 What is the return policy?", use_container_width=True, key="qs3"):
                 st.session_state.pending_suggestion = "What is the return policy for Electronics?"
                 st.rerun()
-            if st.button("🌐 Expansion plan?", use_container_width=True, key="qs4"):
+            if st.button("🌐 West region expansion plan?", use_container_width=True, key="qs4"):
                 st.session_state.pending_suggestion = "What is the West region expansion plan?"
                 st.rerun()
-        
+
         with qs3:
             st.markdown("**🛒 Competitor Intelligence**")
-            if st.button("💻 Electronics pricing?", use_container_width=True, key="qs5"):
+            st.caption("Live prices scraped from competitor sites")
+            if st.button("💻 Electronics competitor pricing?", use_container_width=True, key="qs5"):
                 st.session_state.pending_suggestion = "What are competitor prices for electronics?"
                 st.rerun()
-            if st.button("🏠 Home goods pricing?", use_container_width=True, key="qs6"):
+            if st.button("🏠 Home goods vs competitors?", use_container_width=True, key="qs6"):
                 st.session_state.pending_suggestion = "Compare our home goods prices to competitors"
                 st.rerun()
-        
-        st.markdown("---")
-        st.info("💡 **Tip:** Use the sidebar to control routing (Auto/SQL/RAG/Web) and select web scraping categories!")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.info("💡 **Tip:** Use the sidebar to force SQL / RAG / Web only, or leave it on **Auto** to let the agent decide.")
 
 # Run the app
 if __name__ == "__main__":

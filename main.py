@@ -59,24 +59,5 @@ elif page == "🔗 Fusion Agent":  # ✨ Changed condition
     if "fusion_agent_loaded" not in st.session_state:  # ✨ Changed key
         st.session_state.fusion_agent_loaded = False
     
-    if not st.session_state.fusion_agent_loaded:
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.markdown("### 🔄 Loading Fusion Agent...")
-            lottie_json = load_lottie_url(LOTTIE_LOADING)
-            if lottie_json:
-                st_lottie(lottie_json, height=200, key="loading_brain")
-            else:
-                st.markdown("<div style='text-align:center;font-size:60px;'>🧠</div>", unsafe_allow_html=True)
-            
-            progress = st.progress(0)
-            for i in range(100):
-                time.sleep(0.01)
-                progress.progress(i + 1)
-        
-        st.session_state.fusion_agent_loaded = True
-        st.rerun()
-    
-    else:
-        from ui.fusion_chat import run_fusion_chat  # ✨ Changed import
-        run_fusion_chat()
+    from ui.fusion_chat import run_fusion_chat
+    run_fusion_chat()

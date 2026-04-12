@@ -817,11 +817,9 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
 #  INITIALIZE AGENT
 # ═══════════════════════════════════════════════════════
 
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_agent():
     return get_fusion_agent()
-
-agent = get_agent()
 
 
 
@@ -848,6 +846,17 @@ def add_to_history(question, result, execution_time):
 
 def run_fusion_chat():
     """Main function for Fusion Chat interface"""
+
+    # ═══════════════════════════════════════════════════════
+    #  LOAD AGENT (cached — only slow on first load)
+    # ═══════════════════════════════════════════════════════
+
+    if "agent_ready" not in st.session_state:
+        with st.spinner("🧠 Loading AI models (first time only, ~20s)..."):
+            agent = get_agent()
+        st.session_state.agent_ready = True
+    else:
+        agent = get_agent()
 
     # ═══════════════════════════════════════════════════════
     #  SESSION STATE

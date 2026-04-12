@@ -27,6 +27,7 @@ rank-bm25>=0.2.2
 
 # Database
 sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
 
 # PDF Processing
 pypdf>=4.0.0

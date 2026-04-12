@@ -5,6 +5,14 @@ import os
 from pydantic_settings import BaseSettings
 from typing import Optional
 
+# Load Streamlit Cloud secrets into env vars so pydantic_settings can read them
+try:
+    import streamlit as st
+    for _k, _v in st.secrets.items():
+        os.environ.setdefault(_k.upper(), str(_v))
+except Exception:
+    pass
+
 
 class Settings(BaseSettings):
     # API Keys — defaults to "" so the app loads even without secrets configured

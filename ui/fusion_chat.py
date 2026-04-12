@@ -852,9 +852,30 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
 
     if "agent_ready" not in st.session_state:
-        with st.spinner("🧠 Loading AI models (first time only, ~20s)..."):
-            agent = get_agent()
+        loading_screen = st.empty()
+        with loading_screen.container():
+            st.markdown("<br><br>", unsafe_allow_html=True)
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                st.markdown(
+                    """
+                    <div style='text-align:center; padding: 40px;'>
+                        <div style='font-size: 72px; margin-bottom: 16px;'>🧠</div>
+                        <h2 style='color:#4F8BF9; margin-bottom: 8px;'>Loading Fusion Agent</h2>
+                        <p style='color:#888; font-size:16px;'>Initializing AI models & vector database...</p>
+                        <p style='color:#aaa; font-size:13px; margin-top:8px;'>First load only — takes ~20 seconds</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                progress = st.progress(0, text="Starting up...")
+                for i in range(85):
+                    time.sleep(0.05)
+                    progress.progress(i + 1, text="Loading AI models...")
+        agent = get_agent()
+        loading_screen.empty()
         st.session_state.agent_ready = True
+        st.rerun()
     else:
         agent = get_agent()
 

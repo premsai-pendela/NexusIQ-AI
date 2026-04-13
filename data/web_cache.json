@@ -194,8 +194,8 @@
     "category": "electronics",
     "products": [
       {
-        "name": "Lenovo Ideapad Slim 3 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 512GB SSD Windows 11 Home (82XM0035US)",
-        "price": "$549",
+        "name": "MSI Modern 15 H 15.6\" TouchScreen Laptop Intel Core 9 270H - 32GB RAM - 1TB NVMe SSD - Windows 11 Home (C2RMTG-401US)",
+        "price": "$849",
         "source": "Newegg"
       },
       {
@@ -204,47 +204,47 @@
         "source": "Newegg"
       },
       {
-        "name": "Asus VivoBook 16\" Copilot+ PC Laptop AMD Ryzen AI 7 350 16GB DDR5 Memory 512GB PCIE SSD Windows 11 Home (M1607KA-NS76)",
-        "price": "$694",
-        "source": "Newegg"
-      },
-      {
-        "name": "MSI Modern 15 H 15.6\" TouchScreen Laptop Intel Core 9 270H - 32GB RAM - 1TB NVMe SSD - Windows 11 Home (C2RMTG-401US)",
-        "price": "$849",
-        "source": "Newegg"
-      },
-      {
         "name": "Lenovo V15 Gen 4 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 1TB SSD Windows 11 Home (83CR003UUS)",
         "price": "$599",
         "source": "Newegg"
       },
       {
-        "name": "HP ProBook 465 Copilot+ Business Laptop (AMD version ProBook 460) 16.0\" IPS WUXGA Display (AMD Ryzen 5 7535U,  16GB DDR5, 512GB PCIe SSD, WiFi 6E, BT 5.3, Webcam, Win 11 Pro)",
-        "price": "$713",
+        "name": "MSI Venture 16 AI TouchScreen Laptop Intel Core Ultra 7 255H 32GB DDR5 RAM 512GB SSD Intel Arc Graphics (A2HMTG-046US)",
+        "price": "$809",
         "source": "Newegg"
       },
       {
-        "name": "Lenovo 14.0\" ThinkPad X1 Carbon Gen 12 Intel Core Ultra 7 155U 32GB RAM 2TB SSD Windows 11 Pro",
-        "price": "$1,399",
+        "name": "Asus VivoBook 16\" Copilot+ PC Laptop AMD Ryzen AI 7 350 16GB DDR5 Memory 512GB PCIE SSD Windows 11 Home (M1607KA-NS76)",
+        "price": "$694",
         "source": "Newegg"
       },
       {
-        "name": "OMEN MAX Gaming Laptop 16\" WQXGA Intel Core Ultra 9 32 GB memory;1 TB SSD",
-        "price": "$2,799",
+        "name": "MSI Venture 16 AI Touchscreen Laptop Intel Core Ultra 9 285H 32GB RAM 1TB SSD (A2HMTG-015US)",
+        "price": "$999",
         "source": "Newegg"
       },
       {
-        "name": "Lenovo ThinkPad E16 Business Laptop, 16\" FHD+ Touchscreen, AMD Ryzen 7 7735U, 24GB DDR5 RAM, 1TB SSD, Webcam w/ Shutter, HDMI, Type-C, Fingerprint, Backlit KB, Wi-Fi 6, Windows 11 Pro, Black",
-        "price": "$1,009",
+        "name": "Lenovo Ideapad Slim 3 15.6\" Laptop AMD Ryzen 7 7730U 16GB RAM 512GB SSD Windows 11 Home (82XM0035US)",
+        "price": "$549",
         "source": "Newegg"
       },
       {
-        "name": "Dell 16 Plus Copilot+ PC Laptop DB16255, 16\" Touch FHD+, AMD Ryzen 7, AMD Radeon Graphics, 32 GB RAM, 1TB SSD",
-        "price": "$1,149",
+        "name": "RefurbishedLenovo ThinkPad X1 Carbon Gen 9 Intel Core i7-1165G7 16GB Memory 256GB SSD 14.0\" Touchscreen Windows 11 Pro (20XXS0KR00)",
+        "price": "$429",
+        "source": "Newegg"
+      },
+      {
+        "name": "ASUS Vivobook 15.6\" FHD Touchscreen Business Laptop Intel Core 7 150U (Beat i7-1355U) Intel Graphics 16GB RAM 1TB SSD Backlit Keyboard Wi-Fi 6 BT 5.2 HDMI USB-C Webcam Windows 11 Pro Silver",
+        "price": "$699",
+        "source": "Newegg"
+      },
+      {
+        "name": "RefurbishedHP EliteBook 845 G8 Laptop AMD Ryzen 5 PRO 5650U 16GB Memory 256 GB SSD 14.0\" FHD Windows 11 Pro",
+        "price": "$269",
         "source": "Newegg"
       }
     ],
-    "timestamp": "2026-04-08T20:27:39.315710",
+    "timestamp": "2026-04-13T08:46:51.849565",
     "url": "https://www.newegg.com/p/pl?d=laptop&N=4131",
     "method": "BeautifulSoup"
   },
@@ -1232,7 +1232,7 @@
     "category": "electronics",
     "products": [],
     "total_found": 0,
-    "timestamp": "2026-04-09T13:11:43.567263",
+    "timestamp": "2026-04-13T08:46:52.655771",
     "method": "Shopify API",
     "url": "https://www.goalzero.com/collections/power-stations"
   }

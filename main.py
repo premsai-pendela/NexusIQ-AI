@@ -189,5 +189,20 @@ if page == "🏠 Home":
 # ══════════════════════════════════════════════════════════════════════════════
 
 elif page == "🔗 Fusion Agent":
+    # Show instant feedback BEFORE heavy import
+    _loading_msg = st.empty()
+    _loading_msg.markdown(
+        """
+        <div style='text-align:center; padding:60px 0;'>
+            <div style='font-size:64px; margin-bottom:12px;'>🧠</div>
+            <h3 style='color:#4F8BF9;'>Preparing Fusion Agent...</h3>
+            <p style='color:#888;'>Loading modules, please wait</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    
     from ui.fusion_chat import run_fusion_chat
+    
+    _loading_msg.empty()
     run_fusion_chat()

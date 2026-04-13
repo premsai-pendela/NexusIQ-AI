@@ -20,6 +20,8 @@ import random
 import sys
 import json
 import io
+import threading
+from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 from datetime import datetime
 from pathlib import Path
 import plotly.express as px
@@ -851,25 +853,62 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
 
     if "nexusiq_agent" not in st.session_state:
-        placeholder = st.empty()
-        with placeholder.container():
-            st.markdown("<br><br>", unsafe_allow_html=True)
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                st.markdown(
-                    """
-                    <div style='text-align:center; padding:40px;'>
-                        <div style='font-size:72px; margin-bottom:16px;'>🧠</div>
-                        <h2 style='color:#4F8BF9; margin-bottom:8px;'>Loading Fusion Agent</h2>
-                        <p style='color:#888; font-size:16px;'>Initializing AI models & vector database...</p>
-                        <p style='color:#aaa; font-size:13px; margin-top:8px;'>First load only — ~20 seconds</p>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.progress(100, text="Loading AI models...")
-        st.session_state.nexusiq_agent = get_agent()
-        placeholder.empty()
+        # Kick off the heavy load on a background thread so the script
+        # thread can stay in a progress-update loop. `time.sleep` inside
+        # the loop releases the GIL, which is what lets Streamlit's
+        # message pump actually push deltas to the browser during a
+        # long-running init — that's the canonical Streamlit progress
+        # pattern.
+        if "_agent_loader" not in st.session_state:
+            _ctx = get_script_run_ctx()
+            _result: dict = {}
+
+            def _worker():
+                add_script_run_ctx(threading.current_thread(), _ctx)
+                try:
+                    _result["agent"] = get_fusion_agent()
+                except Exception as _exc:
+                    _result["error"] = _exc
+
+            _t = threading.Thread(target=_worker, daemon=True)
+            _t.start()
+            st.session_state._agent_loader = (_t, _result)
+
+        _thread, _result = st.session_state._agent_loader
+
+        # Render loading UI directly (no placeholder wrapper — wrappers batch).
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        _l, _c, _r = st.columns([1, 2, 1])
+        with _c:
+            st.markdown(
+                """
+                <div style='text-align:center; padding:40px;'>
+                    <div style='font-size:72px; margin-bottom:16px;'>🧠</div>
+                    <h2 style='color:#4F8BF9; margin-bottom:8px;'>Loading Fusion Agent</h2>
+                    <p style='color:#888; font-size:16px;'>Initializing AI models & vector database...</p>
+                    <p style='color:#aaa; font-size:13px; margin-top:8px;'>First load only — ~20 seconds</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            _progress = st.progress(0, text="Loading AI models…")
+
+        _start = time.time()
+        while _thread.is_alive():
+            _elapsed = time.time() - _start
+            _pct = min(int(_elapsed * 4), 95)
+            _progress.progress(_pct, text=f"Loading AI models… ({int(_elapsed)}s)")
+            time.sleep(0.2)
+
+        _progress.progress(100, text="Ready!")
+
+        if "error" in _result:
+            st.error(f"Failed to load Fusion Agent: {_result['error']}")
+            del st.session_state._agent_loader
+            st.stop()
+
+        st.session_state.nexusiq_agent = _result["agent"]
+        del st.session_state._agent_loader
         st.rerun()
 
     agent = st.session_state.nexusiq_agent

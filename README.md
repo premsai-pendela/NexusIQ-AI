@@ -13,7 +13,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com)
 [![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_DB-orange?style=flat-square)](https://trychroma.com)
 
-**[🚀 Live Demo](https://nexusiq-ai.streamlit.app)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
+**[🚀 Live Demo](https://bit.ly/NexusIQ-AI)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
 
 </div>
 

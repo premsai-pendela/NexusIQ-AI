@@ -13,7 +13,7 @@ Features:
 - All existing SQL chat features preserved
 """
 
-import streamlit as st
+'''import streamlit as st
 import pandas as pd
 import time
 import random
@@ -31,7 +31,19 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from agents.fusion_agent import get_fusion_agent
 from config.settings import settings
-from utils.validators import VALID_REGIONS, VALID_CATEGORIES
+from utils.validators import VALID_REGIONS, VALID_CATEGORIES'''
+
+import streamlit as st
+import time
+import random
+import sys
+import json
+import io
+import threading
+from datetime import datetime
+from pathlib import Path
+
+sys.path.append(str(Path(__file__).parent.parent))
 
 # ═══════════════════════════════════════════════════════
 #  CONFIGURATION
@@ -69,6 +81,35 @@ SOURCE_ICONS = {
     "web": "🌐",
     "fusion": "🔗"
 }
+
+# ═══════════════════════════════════════════════════════
+#  LAZY LOADERS — heavy modules loaded only when needed
+# ═══════════════════════════════════════════════════════
+
+def _get_pd():
+    """Lazy import pandas"""
+    import pandas as pd
+    return pd
+
+def _get_px():
+    """Lazy import plotly express"""
+    import plotly.express as px
+    return px
+
+def _get_go():
+    """Lazy import plotly graph objects"""
+    import plotly.graph_objects as go
+    return go
+
+def _get_settings():
+    """Lazy import settings"""
+    from config.settings import settings
+    return settings
+
+def _get_validators():
+    """Lazy import validators"""
+    from utils.validators import VALID_REGIONS, VALID_CATEGORIES
+    return VALID_REGIONS, VALID_CATEGORIES
 
 # ═══════════════════════════════════════════════════════
 #  HELPER FUNCTIONS (from sql_chat.py - kept as-is)
@@ -153,9 +194,9 @@ def can_visualize(df) -> dict:
         "row_count": len(df)
     }
 
-def generate_chart(df, chart_type: str, x_col: str, y_col: str, color_col: str = None) -> go.Figure:
-    """Generate a Plotly chart based on user selections."""
-    
+def generate_chart(df, chart_type: str, x_col: str, y_col: str, color_col: str = None):
+    px = _get_px()
+    go = _get_go()
     try:
         title = f"{y_col} by {x_col}"
         
@@ -234,7 +275,7 @@ def generate_chart(df, chart_type: str, x_col: str, y_col: str, color_col: str =
 #  CHART BUILDER UI (from sql_chat.py - kept as-is)
 # ─────────────────────────────────────────────────────
 
-def render_chart_builder(msg_id: str, df: pd.DataFrame):
+def render_chart_builder(msg_id: str, df):
     """Render the chart builder interface for a message."""
     
     viz_info = can_visualize(df)
@@ -459,6 +500,7 @@ def render_sql_section(msg_id: str, sql_result: dict, is_latest: bool = False):
         sql_result: SQL agent output dict
         is_latest: Whether this is the latest message (auto-expand charts)
     """
+    pd = _get_pd()
     
     if not sql_result or not sql_result.get('success'):
         st.warning("❌ SQL query failed or returned no results")
@@ -819,7 +861,9 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
 #  INITIALIZE AGENT
 # ═══════════════════════════════════════════════════════
 
+@st.cache_resource(show_spinner=False)
 def get_agent():
+    from agents.fusion_agent import get_fusion_agent    # ✅ lazy import
     return get_fusion_agent()
 
 
@@ -847,6 +891,7 @@ def add_to_history(question, result, execution_time):
 
 def run_fusion_chat():
     """Main function for Fusion Chat interface"""
+    from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
 
     # ═══════════════════════════════════════════════════════
     #  LOAD AGENT (cached — only slow on first load)
@@ -1010,6 +1055,7 @@ def run_fusion_chat():
         st.subheader("📊 Model Status")
         
         # Show Gemini Pro status
+        settings = _get_settings()
         if settings.use_gemini_pro:
             st.warning("🟡 Gemini Pro: **ENABLED** (may exhaust quickly)")
         else:

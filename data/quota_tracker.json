@@ -1,10 +1,1 @@
-{
-  "gemini-2.5-flash": {
-    "status": "FAILED",
-    "last_failure": "2026-04-10T10:49:59.979821",
-    "failure_count": 1,
-    "retry_after": "2026-04-10T11:49:59.979821",
-    "last_error": "Error calling model 'gemini-2.5-flash' (RESOURCE_EXHAUSTED): 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. Fo",
-    "error_type": "RESOURCE_EXHAUSTED"
-  }
-}
+{}

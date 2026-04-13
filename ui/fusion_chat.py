@@ -867,9 +867,8 @@ def run_fusion_chat():
                     """,
                     unsafe_allow_html=True,
                 )
-                st.progress(100, text="Loading AI models...")
+                st.progress(0, text="Loading AI models...")
         st.session_state.nexusiq_agent = get_agent()
-        placeholder.empty()
         st.rerun()
 
     agent = st.session_state.nexusiq_agent

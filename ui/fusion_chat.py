@@ -20,6 +20,7 @@ import random
 import sys
 import json
 import io
+import threading
 from datetime import datetime
 from pathlib import Path
 import plotly.express as px
@@ -851,6 +852,23 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
 
     if "nexusiq_agent" not in st.session_state:
+        # Kick off background load on first visit so the script thread
+        # stays free to render the loading UI across poll cycles.
+        if "_agent_loader" not in st.session_state:
+            _result: dict = {}
+
+            def _worker():
+                try:
+                    _result["agent"] = get_fusion_agent()
+                except Exception as exc:
+                    _result["error"] = exc
+
+            _t = threading.Thread(target=_worker, daemon=True)
+            _t.start()
+            st.session_state._agent_loader = (_t, _result)
+
+        _thread, _result = st.session_state._agent_loader
+
         st.markdown("<br><br>", unsafe_allow_html=True)
         _l, _c, _r = st.columns([1, 2, 1])
         with _c:
@@ -866,7 +884,19 @@ def run_fusion_chat():
                 unsafe_allow_html=True,
             )
             st.progress(0, text="Loading AI models...")
-        st.session_state.nexusiq_agent = get_agent()
+
+        if _thread.is_alive():
+            # Poll: let Streamlit flush the loading UI, then rerun.
+            time.sleep(0.4)
+            st.rerun()
+
+        if "error" in _result:
+            st.error(f"Failed to load Fusion Agent: {_result['error']}")
+            del st.session_state._agent_loader
+            st.stop()
+
+        st.session_state.nexusiq_agent = _result["agent"]
+        del st.session_state._agent_loader
         st.rerun()
 
     agent = st.session_state.nexusiq_agent

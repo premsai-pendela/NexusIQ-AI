@@ -12,17 +12,16 @@ st.set_page_config(
 )
 
 # ── Navigation state ──────────────────────────────────────────────────────────
-if "nav_to_fusion" not in st.session_state:
-    st.session_state.nav_to_fusion = False
-
-default_idx = 1 if st.session_state.nav_to_fusion else 0
-if st.session_state.nav_to_fusion:
+if "nav_page" not in st.session_state:
+    st.session_state.nav_page = "🏠 Home"
+if st.session_state.get("nav_to_fusion"):
+    st.session_state.nav_page = "🔗 Fusion Agent"
     st.session_state.nav_to_fusion = False
 
 page = st.sidebar.radio(
     "🧠 NexusIQ AI",
     ["🏠 Home", "🔗 Fusion Agent"],
-    index=default_idx
+    key="nav_page"
 )
 
 # ══════════════════════════════════════════════════════════════════════════════

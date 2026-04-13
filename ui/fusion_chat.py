@@ -911,7 +911,7 @@ def run_fusion_chat():
             def _worker():
                 add_script_run_ctx(threading.current_thread(), _ctx)
                 try:
-                    _result["agent"] = get_fusion_agent()
+                    _result["agent"] = get_agent()
                 except Exception as _exc:
                     _result["error"] = _exc
 

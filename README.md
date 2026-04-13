@@ -129,7 +129,7 @@ Includes per-scraper status dashboard and cache invalidation for empty results.
 
 ## Demo
 
-> 🔗 **Live Demo:** [nexusiq-ai.streamlit.app](https://nexusiq-ai.streamlit.app)
+> 🔗 **Live Demo:** [NexusIQ-AI](https://bit.ly/NexusIQ-AI)
 
 **Example interactions:**
 

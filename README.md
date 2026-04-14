@@ -131,6 +131,18 @@ Includes per-scraper status dashboard and cache invalidation for empty results.
 
 > 🔗 **Live Demo:** [NexusIQ-AI](https://bit.ly/NexusIQ-AI)
 
+### Screenshots
+
+| Home | SQL + Chart |
+|------|-------------|
+| ![Home](screenshots/home.png) | ![SQL Chat](screenshots/chat-sql.png) |
+
+| Multi-Agent Fusion | Auto Chart |
+|--------------------|------------|
+| ![Multi-Agent](screenshots/mutli-agent.png) | ![Chart](screenshots/chart.png) |
+
+---
+
 **Example interactions:**
 
 ```

@@ -82,7 +82,7 @@ if page == "🏠 Home":
     with h1:
         st.markdown(
             """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; height:180px;">
+            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
                 <div style="font-size:32px;">💬</div>
                 <h4 style="margin:8px 0 4px 0;">1. Ask in plain English</h4>
                 <p style="color:#94a3b8; font-size:14px; margin:0;">
@@ -96,7 +96,7 @@ if page == "🏠 Home":
     with h2:
         st.markdown(
             """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; height:180px;">
+            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
                 <div style="font-size:32px;">🔍</div>
                 <h4 style="margin:8px 0 4px 0;">2. Agents investigate</h4>
                 <p style="color:#94a3b8; font-size:14px; margin:0;">
@@ -110,7 +110,7 @@ if page == "🏠 Home":
     with h3:
         st.markdown(
             """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; height:180px;">
+            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
                 <div style="font-size:32px;">✅</div>
                 <h4 style="margin:8px 0 4px 0;">3. Cross-validated answer</h4>
                 <p style="color:#94a3b8; font-size:14px; margin:0;">

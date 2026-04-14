@@ -133,7 +133,7 @@ Includes per-scraper status dashboard and cache invalidation for empty results.
 
 ### Screenshots
 
-| Home | SQL + Chart |
+| Home | SQL + Chat |
 |------|-------------|
 | ![Home](Screenshots/home.png) | ![SQL Chat](Screenshots/chat-sql.png) |
 

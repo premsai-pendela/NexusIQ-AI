@@ -135,7 +135,7 @@ Includes per-scraper status dashboard and cache invalidation for empty results.
 
 | Home | SQL + Chart |
 |------|-------------|
-| ![Home](screenshots/home.png) | ![SQL Chat](screenshots/chat-sql.png) |
+| ![Home](Screenshots/home.png) | ![SQL Chat](screenshots/chat-sql.png) |
 
 | Multi-Agent Fusion | Auto Chart |
 |--------------------|------------|

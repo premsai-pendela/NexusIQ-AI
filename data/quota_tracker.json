@@ -1,1 +1,10 @@
-{}
+{
+  "gemini-2.5-flash": {
+    "status": "FAILED",
+    "last_failure": "2026-05-04T20:42:12.110181",
+    "failure_count": 1,
+    "retry_after": "2026-05-04T20:47:12.110181",
+    "last_error": "504 DEADLINE_EXCEEDED. {'error': {'code': 504, 'message': 'The request timed out. Please try again.', 'status': 'DEADLINE_EXCEEDED'}}",
+    "error_type": "DEADLINE_EXCEEDED"
+  }
+}

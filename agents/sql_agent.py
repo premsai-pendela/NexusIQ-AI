@@ -67,6 +67,13 @@ class SQLAgent:
             # Complex queries need SMARTER models first
             # Joins, comparisons, trends, multi-step analysis
             {
+                "name": "publishers/google/models/gemini-2.5-flash",
+                "type": "vertex",
+                "description": "Gemini 2.5 Flash via Vertex AI (GCP)",
+                "quota": "GCP billing",
+                "priority_reason": "Enterprise-grade via Google Cloud Vertex AI"
+            },
+            {
                 "name": "gemini-2.5-flash",
                 "type": "gemini",
                 "description": "Gemini 2.5 Flash (Smart + Fast)",
@@ -235,13 +242,23 @@ class SQLAgent:
                 temperature=0.1
             )
         
+        elif model_type == "vertex":
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            import google.auth
+            credentials, _ = google.auth.default()
+            return ChatGoogleGenerativeAI(
+                model=model_name,
+                credentials=credentials,
+                temperature=0.1
+            )
+
         elif model_type == "ollama":
             from langchain_ollama import ChatOllama
             return ChatOllama(
                 model=model_name,
                 temperature=0.1
             )
-        
+
         else:
             raise Exception(f"Unknown model type: {model_type}")
     

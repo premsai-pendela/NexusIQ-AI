@@ -38,3 +38,4 @@ data/quota_tracker.json
 # OS
 .DS_Store
 Thumbs.db
+data/chroma_db/

@@ -1,0 +1,54 @@
+name: Wake Up NexusIQ Streamlit App
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # Runs every hour. Python script enforces 10h interval internally.
+    - cron: "0 * * * *"
+
+jobs:
+  wake-up:
+    runs-on: ubuntu-22.04
+    env:
+      WAKE_INTERVAL_HOURS: "10"
+      ENFORCE_WAKE_INTERVAL: "1"
+      WAKE_STATE_FILE: "wakeup_state.json"
+      CHROME_BINARY: "/usr/bin/chromium-browser"
+      CHROMEDRIVER_PATH: "/usr/bin/chromedriver"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Restore wake state cache
+        uses: actions/cache@v4
+        with:
+          path: wakeup_state.json
+          key: wakeup-state-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            wakeup-state-${{ runner.os }}-
+
+      - name: Install Chromium and ChromeDriver
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y chromium-browser chromium-chromedriver
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install selenium
+
+      - name: Wake up Streamlit app
+        run: python wake_up_streamlit.py
+
+      - name: Upload log as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wakeup-log
+          path: wakeup_log.txt

@@ -178,16 +178,13 @@ def app_content_loaded(driver) -> bool:
     if any(marker in lowered_body for marker in SLEEP_TEXT_MARKERS):
         return False
 
-    # FIX: require meaningful content length AND a known Streamlit selector
-    # (avoids false positive on partially loaded page returning readyState=interactive)
     if len(body_text) >= 40:
-        try:
-            if any(driver.find_elements(By.CSS_SELECTOR, sel) for sel in APP_CONTENT_SELECTORS):
-                return True
-        except Exception:
-            pass
+        return True
 
-    return False
+    try:
+        return any(driver.find_elements(By.CSS_SELECTOR, sel) for sel in APP_CONTENT_SELECTORS)
+    except Exception:
+        return False
 
 
 def check_site(url: str) -> tuple[str, str]:

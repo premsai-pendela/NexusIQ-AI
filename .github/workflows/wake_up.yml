@@ -17,6 +17,9 @@ jobs:
       WAKE_STATE_FILE: "wakeup_state.json"
       CHROME_BINARY: "/usr/bin/chromium-browser"
       CHROMEDRIVER_PATH: "/usr/bin/chromedriver"
+      # NexusIQ is heavy (sentence-transformers + ChromaDB) — needs longer wait
+      SITE_WAIT_SECONDS: "90"
+      POST_WAKE_VERIFY_SECONDS: "90"
 
     steps:
       - name: Checkout repository

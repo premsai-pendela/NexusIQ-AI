@@ -1209,33 +1209,45 @@ def run_fusion_chat():
         with st.chat_message("assistant", avatar="🔗"):
             status = st.empty()
             insight_box = st.empty()
-            
+            sql_progress = st.empty()
+            rag_progress = st.empty()
+            web_progress = st.empty()
+
             insight_box.info(random.choice(INSIGHTS))
-            
-            status.markdown("🔍 Analyzing question...")
-            time.sleep(0.3)
-            
-            status.markdown("🧠 Routing to appropriate sources...")
-            time.sleep(0.3)
-            
-            status.markdown("⚡ Gathering intelligence...")
-            
-            start_time = time.time()
-            
-            # ✨ Call Fusion Agent (respect user's routing mode selection)
+            status.markdown("🔍 Analyzing question and routing to sources...")
+
             source_filter = st.session_state.get("source_filter", "Auto")
             force_source_map = {
                 "SQL Only": "sql_only",
                 "RAG Only": "rag_only",
                 "Web Only": "web_only",
             }
-            force_source = force_source_map.get(source_filter)  # None when "Auto"
-            result = agent.query(question, force_source=force_source)
-            
+            force_source = force_source_map.get(source_filter)
+
+            # Progressive disclosure: update placeholders as each agent finishes
+            _ctx = get_script_run_ctx()
+            def _progress_cb(source_name: str, agent_result: dict):
+                from streamlit.runtime.scriptrunner import add_script_run_ctx
+                add_script_run_ctx(threading.current_thread(), _ctx)
+                ok = agent_result.get("success", False)
+                t = agent_result.get("time", 0)
+                icon = "✅" if ok else "⚠️"
+                if source_name == "sql":
+                    sql_progress.markdown(f"{icon} **SQL** — {t:.1f}s")
+                elif source_name == "rag":
+                    rag_progress.markdown(f"{icon} **RAG Docs** — {t:.1f}s")
+                elif source_name == "web":
+                    web_progress.markdown(f"{icon} **Web** — {t:.1f}s")
+
+            start_time = time.time()
+            result = agent.query(question, force_source=force_source, progress_cb=_progress_cb)
             total_time = time.time() - start_time
-            
+
             status.empty()
             insight_box.empty()
+            sql_progress.empty()
+            rag_progress.empty()
+            web_progress.empty()
             
             msg_id = str(int(time.time() * 1000))
             

@@ -19,7 +19,7 @@ SITE_WAIT_SECONDS = float(os.getenv("SITE_WAIT_SECONDS", "25"))
 BUTTON_APPEAR_WAIT_SECONDS = float(os.getenv("BUTTON_APPEAR_WAIT_SECONDS", "12"))
 # FIX: post-click verify window — wait up to 45s for app to fully load after waking
 POST_WAKE_VERIFY_SECONDS = float(os.getenv("POST_WAKE_VERIFY_SECONDS", "45"))
-WAKE_INTERVAL_HOURS = float(os.getenv("WAKE_INTERVAL_HOURS", "10"))
+WAKE_INTERVAL_HOURS = 0
 MAX_CONCURRENT_APPS = max(1, int(os.getenv("MAX_CONCURRENT_APPS", "5")))
 STATE_FILE = os.getenv("WAKE_STATE_FILE", "wakeup_state.json")
 LOG_FILE = os.getenv("WAKE_LOG_FILE", "wakeup_log.txt")
@@ -27,9 +27,7 @@ CHROME_BINARY = os.getenv("CHROME_BINARY", "/usr/bin/chromium-browser").strip()
 CHROMEDRIVER_PATH = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver").strip()
 CHROME_USER_DATA_DIR = os.getenv("CHROME_USER_DATA_DIR", "").strip()
 CHROME_PROFILE_DIRECTORY = os.getenv("CHROME_PROFILE_DIRECTORY", "").strip()
-ENFORCE_WAKE_INTERVAL = os.getenv("ENFORCE_WAKE_INTERVAL", "0").strip().lower() in {
-    "1", "true", "yes", "on",
-}
+ENFORCE_WAKE_INTERVAL = False
 
 SLEEP_TEXT_MARKERS = (
     "yes, get this app back up!",

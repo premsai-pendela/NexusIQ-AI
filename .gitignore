@@ -39,3 +39,6 @@ data/quota_tracker.json
 .DS_Store
 Thumbs.db
 data/chroma_db/
+data/chroma_db/
+data/quota_tracker.json
+data/web_cache.json

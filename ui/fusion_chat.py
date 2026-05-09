@@ -855,7 +855,12 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
     # ═══════════════════════════════════════════════════════════
     
     total_time = msg.get("query_time", 0)
-    st.caption(f"⏱️ Total query time: {format_time(total_time)}")
+    from_cache = msg.get("from_cache", False)
+
+    if from_cache:
+        st.caption(f"⚡ Returned from cache in {total_time:.2f}s (original query was slower)")
+    else:
+        st.caption(f"⏱️ Total query time: {format_time(total_time)}")
 
 # ═══════════════════════════════════════════════════════
 #  INITIALIZE AGENT
@@ -968,6 +973,8 @@ def run_fusion_chat():
         st.session_state.chat_messages = []
     if "pending_suggestion" not in st.session_state:
         st.session_state.pending_suggestion = None
+    if "from_history" not in st.session_state:
+        st.session_state.from_history = False
     if "pending_correction" not in st.session_state:
         st.session_state.pending_correction = None   # {"original": str, "corrected": str, "corrections": list}
     if "_last_corrected_q" not in st.session_state:
@@ -1088,6 +1095,7 @@ def run_fusion_chat():
                 
                 if st.button(f"{icon} {short}", key=f"hist_{i}", use_container_width=True):
                     st.session_state.pending_suggestion = item["question"]
+                    st.session_state.from_history = True   # ← flag it
                     st.rerun()
                 
                 st.caption(f"⏱️ {item['time']:.1f}s • {time_ago(item['timestamp'])}")
@@ -1243,6 +1251,11 @@ def run_fusion_chat():
             result = agent.query(question, force_source=force_source, progress_cb=_progress_cb)
             total_time = time.time() - start_time
 
+            # If result came from cache, override with actual retrieval time
+            if result.get('_from_cache'):
+                total_time = time.time() - start_time  # will be <1s
+                result = {**result, 'query_time': total_time}  # override stored time
+
             status.empty()
             insight_box.empty()
             sql_progress.empty()
@@ -1261,7 +1274,8 @@ def run_fusion_chat():
                 "web_result": result.get("web_result"),
                 "validation": result.get("validation"),
                 "sources": result.get("sources", []),
-                "query_time": total_time
+                "query_time": total_time,
+                "from_cache": result.get('_from_cache', False)
             }, is_latest=True)
             
             # Save to chat history
@@ -1279,14 +1293,14 @@ def run_fusion_chat():
             })
             
             # Save to query history
-            add_to_history(question, result, total_time)
+            if not st.session_state.get("from_history", False):
+                add_to_history(question, result, total_time)
         
         st.rerun()
     
     # ═══════════════════════════════════════════════════════
     #  EMPTY STATE (Welcome Screen)
-    # ═══════════════════════════════════════════════════════
-    
+    # ════════════════════════════════════
     if not st.session_state.chat_messages:
         st.markdown("---")
         

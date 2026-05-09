@@ -708,19 +708,33 @@ ANSWER:"""
         progress_cb: Optional[Callable[[str, Dict], None]] = None,
     ) -> tuple:
         """Run requested agents concurrently. Returns (sql_result, rag_result, web_result)."""
-        futures = {}
+
+        # Map future → source name (clean, no inversion needed)
+        future_to_key = {}
+
         with ThreadPoolExecutor(max_workers=3) as pool:
             if run_sql:
-                futures["sql"] = pool.submit(self._run_sql_query, question)
+                future_to_key[pool.submit(self._run_sql_query, question)] = "sql"
             if run_rag:
-                futures["rag"] = pool.submit(self._run_rag_query, question)
+                future_to_key[pool.submit(self._run_rag_query, question)] = "rag"
             if run_web:
-                futures["web"] = pool.submit(self._run_web_query, question)
+                future_to_key[pool.submit(self._run_web_query, question)] = "web"
 
             results = {"sql": None, "rag": None, "web": None}
-            for name, fut in as_completed({v: k for k, v in futures.items()}):
-                key = {v: k for k, v in futures.items()}[name]
-                results[key] = name.result()
+
+            # as_completed yields Future objects one by one as they finish
+            for fut in as_completed(future_to_key):
+                key = future_to_key[fut]        # Future → "sql" / "rag" / "web"
+                try:
+                    results[key] = fut.result()
+                except Exception as e:
+                    logger.error(f"Agent '{key}' raised exception: {e}")
+                    results[key] = {
+                        "success": False,
+                        "error": str(e),
+                        "source": key
+                    }
+
                 if progress_cb:
                     progress_cb(key, results[key])
 

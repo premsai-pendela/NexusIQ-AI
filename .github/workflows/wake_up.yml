@@ -1,5 +1,7 @@
 name: Wake Up NexusIQ Streamlit App
-
+concurrency:
+  group: wakeup-group
+  cancel-in-progress: true
 on:
   push:
     branches:
@@ -12,8 +14,8 @@ jobs:
   wake-up:
     runs-on: ubuntu-22.04
     env:
-      WAKE_INTERVAL_HOURS: "10"
-      ENFORCE_WAKE_INTERVAL: "1"
+      WAKE_INTERVAL_HOURS: "0"
+      ENFORCE_WAKE_INTERVAL: "0"
       WAKE_STATE_FILE: "wakeup_state.json"
       CHROME_BINARY: "/usr/bin/chromium-browser"
       CHROMEDRIVER_PATH: "/usr/bin/chromedriver"

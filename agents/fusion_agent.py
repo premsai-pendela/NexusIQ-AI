@@ -17,7 +17,9 @@ import re
 import json
 import time
 import logging
-from typing import Dict, List, Optional, Tuple
+import queue
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Optional, Tuple, Callable
 from datetime import datetime
 
 import sys
@@ -62,6 +64,12 @@ class FusionAgent:
         # Track timestamps of recent Gemini routing calls (rolling 60s window)
         self._gemini_routing_calls: list = []
         self._gemini_rpm_limit = 4  # stay 1 below hard limit as buffer
+
+        # Query result cache: {question_lower: (result_dict, timestamp)}
+        # TTL = 3600s, max 50 entries (evict oldest on overflow)
+        self._query_cache: Dict[str, tuple] = {}
+        self._cache_ttl = 3600
+        self._cache_max = 50
 
         logger.info("✅ Fusion Agent initialized with SQL + RAG + Web!")
     
@@ -676,17 +684,59 @@ ANSWER:"""
         
         return "\n\n".join(parts)
     
-    def query(self, question: str, force_source: Optional[str] = None) -> Dict:
-        """
-        ✅ UPDATED: Main fusion query method with Web Agent support
+    def _cache_get(self, question: str) -> Optional[Dict]:
+        key = question.strip().lower()
+        entry = self._query_cache.get(key)
+        if entry and (time.time() - entry[1]) < self._cache_ttl:
+            logger.info("Cache hit for query")
+            return dict(entry[0], _from_cache=True)
+        return None
 
-        Routes to appropriate source(s) and combines results.
+    def _cache_set(self, question: str, result: Dict) -> None:
+        key = question.strip().lower()
+        if len(self._query_cache) >= self._cache_max:
+            oldest = min(self._query_cache, key=lambda k: self._query_cache[k][1])
+            del self._query_cache[oldest]
+        self._query_cache[key] = (result, time.time())
 
-        Args:
-            question: The user's question
-            force_source: Override auto-routing. One of "sql_only", "rag_only",
-                          "web_only", or None to use auto-detection.
+    def _run_agents_parallel(
+        self,
+        question: str,
+        run_sql: bool,
+        run_rag: bool,
+        run_web: bool,
+        progress_cb: Optional[Callable[[str, Dict], None]] = None,
+    ) -> tuple:
+        """Run requested agents concurrently. Returns (sql_result, rag_result, web_result)."""
+        futures = {}
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            if run_sql:
+                futures["sql"] = pool.submit(self._run_sql_query, question)
+            if run_rag:
+                futures["rag"] = pool.submit(self._run_rag_query, question)
+            if run_web:
+                futures["web"] = pool.submit(self._run_web_query, question)
+
+            results = {"sql": None, "rag": None, "web": None}
+            for name, fut in as_completed({v: k for k, v in futures.items()}):
+                key = {v: k for k, v in futures.items()}[name]
+                results[key] = name.result()
+                if progress_cb:
+                    progress_cb(key, results[key])
+
+        return results["sql"], results["rag"], results["web"]
+
+    def query(self, question: str, force_source: Optional[str] = None, progress_cb: Optional[Callable[[str, Dict], None]] = None) -> Dict:
         """
+        Main fusion query method. Routes to source(s) and combines results.
+        progress_cb(source_name, result_dict) called as each parallel agent finishes.
+        """
+
+        # Cache check — skip for forced-source overrides
+        if not force_source:
+            cached = self._cache_get(question)
+            if cached:
+                return cached
 
         start_time = datetime.now()
         self._last_routing_model = None
@@ -809,19 +859,17 @@ ANSWER:"""
         # ═══════════════════════════════════════════════════════════
         # MULTI-SOURCE ROUTES (sql_rag, sql_web, rag_web, all)
         # ═══════════════════════════════════════════════════════════
-        
+
         else:
-            logger.info(f"→ Using MULTI-SOURCE fusion: {source_type.upper()}")
-            
-            # Run agents based on source_type
-            if 'sql' in source_type:
-                sql_result = self._run_sql_query(question)
-            
-            if 'rag' in source_type:
-                rag_result = self._run_rag_query(question)
-            
-            if 'web' in source_type:
-                web_result = self._run_web_query(question)
+            logger.info(f"→ Using MULTI-SOURCE fusion (parallel): {source_type.upper()}")
+
+            sql_result, rag_result, web_result = self._run_agents_parallel(
+                question,
+                run_sql='sql' in source_type,
+                run_rag='rag' in source_type,
+                run_web='web' in source_type,
+                progress_cb=progress_cb,
+            )
             
             # Cross-validate if we have SQL + RAG
             if sql_result and rag_result and sql_result.get('success') and rag_result.get('success'):
@@ -842,10 +890,10 @@ ANSWER:"""
             )
             
             query_time = (datetime.now() - start_time).total_seconds()
-            
+
             logger.info(f"✅ Fusion complete in {query_time:.2f}s")
-            
-            return {
+
+            result = {
                 'answer': answer,
                 'source_type': source_type,
                 'sql_result': sql_result,
@@ -857,6 +905,9 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': query_time
             }
+            if not force_source:
+                self._cache_set(question, result)
+            return result
     
     def close(self):
         """Clean up resources"""

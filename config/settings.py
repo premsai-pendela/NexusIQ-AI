@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     max_requests_per_minute: int = 25  # Stay under 30 RPM limit
     
     # Database (defaults to SQLite for zero-setup deployment)
-    database_url: str = "sqlite:///data/sales.db"
+    database_url: str = "postgresql://nagapremsaipendela@localhost:5432/nexusiq_db"
     
     # Vector Store (ChromaDB)
     chroma_persist_directory: str = "./data/chroma_db"

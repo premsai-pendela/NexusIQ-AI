@@ -1,5 +1,5 @@
 """
-TIER 1: Core 23 High-Quality PDFs
+TIER 1: Core 5 High-Quality PDFs
 Production-grade business documents for NexusIQ RAG Agent
 Python 3.13 compatible | ChromaDB 1.5.5 | sentence-transformers 5.3.0
 """

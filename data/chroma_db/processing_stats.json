@@ -1,10 +1,10 @@
 {
-  "pdfs_processed": 23,
-  "chunks_created": 108,
+  "pdfs_processed": 25,
+  "chunks_created": 112,
   "categories": {
     "01_financial": {
-      "pdfs": 5,
-      "chunks": 11
+      "pdfs": 7,
+      "chunks": 15
     },
     "02_market_intelligence": {
       "pdfs": 5,

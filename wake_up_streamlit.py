@@ -18,7 +18,7 @@ BROWSER_PAGELOAD_TIMEOUT_SECONDS = float(os.getenv("BROWSER_PAGELOAD_TIMEOUT_SEC
 SITE_WAIT_SECONDS = float(os.getenv("SITE_WAIT_SECONDS", "25"))
 BUTTON_APPEAR_WAIT_SECONDS = float(os.getenv("BUTTON_APPEAR_WAIT_SECONDS", "12"))
 # FIX: post-click verify window — wait up to 45s for app to fully load after waking
-POST_WAKE_VERIFY_SECONDS = float(os.getenv("POST_WAKE_VERIFY_SECONDS", "45"))
+POST_WAKE_VERIFY_SECONDS = float(os.getenv("POST_WAKE_VERIFY_SECONDS", "120"))
 WAKE_INTERVAL_HOURS = 0
 MAX_CONCURRENT_APPS = max(1, int(os.getenv("MAX_CONCURRENT_APPS", "5")))
 STATE_FILE = os.getenv("WAKE_STATE_FILE", "wakeup_state.json")
@@ -164,7 +164,9 @@ def app_content_loaded(driver) -> bool:
     except Exception:
         ready_state = ""
 
-    if ready_state not in {"interactive", "complete"}:
+    # Require complete load — "interactive" fires during Streamlit's boot spinner,
+    # which looks awake but isn't. Only "complete" means the app actually rendered.
+    if ready_state != "complete":
         return False
 
     try:
@@ -176,13 +178,13 @@ def app_content_loaded(driver) -> bool:
     if any(marker in lowered_body for marker in SLEEP_TEXT_MARKERS):
         return False
 
-    if len(body_text) >= 40:
-        return True
-
+    # Require a Streamlit structural element — body text alone can be the loading spinner.
     try:
-        return any(driver.find_elements(By.CSS_SELECTOR, sel) for sel in APP_CONTENT_SELECTORS)
+        has_streamlit_el = any(driver.find_elements(By.CSS_SELECTOR, sel) for sel in APP_CONTENT_SELECTORS)
     except Exception:
-        return False
+        has_streamlit_el = False
+
+    return has_streamlit_el
 
 
 def check_site(url: str) -> tuple[str, str]:
@@ -211,12 +213,24 @@ def check_site(url: str) -> tuple[str, str]:
                 if not clicked:
                     return "errors", "sleep markers found but wake button never appeared"
 
-                # FIX: verify app actually woke — don't just trust the click succeeded
+                # After clicking wake, Streamlit boots in the background — this takes
+                # 60-120s for heavy apps (sentence-transformers + ChromaDB). Do a fresh
+                # page reload with a long timeout so readyState can reach "complete".
+                time.sleep(5)  # brief pause before reload so boot has started
+                driver.set_page_load_timeout(POST_WAKE_VERIFY_SECONDS)
+                try:
+                    driver.get(url)
+                except (TimeoutException, WebDriverException):
+                    try:
+                        driver.execute_script("window.stop();")
+                    except Exception:
+                        pass
+
                 verify_deadline = time.time() + POST_WAKE_VERIFY_SECONDS
                 while time.time() < verify_deadline:
                     if app_content_loaded(driver):
                         return "woken", "wake button clicked and app confirmed awake"
-                    time.sleep(2)
+                    time.sleep(3)
 
                 return "woken_unverified", "wake button clicked but app load unconfirmed within timeout"
 

@@ -894,6 +894,26 @@ def add_to_history(question, result, execution_time):
 #  PAGE LAYOUT
 # ═══════════════════════════════════════════════════════
 
+
+def _scroll_to_bottom():
+    import streamlit.components.v1 as components
+    components.html("""
+        <script>
+            function scrollToLatest() {
+                var d = window.parent.document;
+                var anchor = d.getElementById('nexusiq-latest-answer');
+                if (anchor) {
+                    anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
+                    return true;
+                }
+                return false;
+            }
+            scrollToLatest();
+            setTimeout(scrollToLatest, 200);
+            setTimeout(scrollToLatest, 500);
+        </script>
+    """, height=1, scrolling=False)
+
 def run_fusion_chat():
     """Main function for Fusion Chat interface"""
     from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
@@ -1125,9 +1145,15 @@ def run_fusion_chat():
             with st.chat_message("user"):
                 st.markdown(msg["content"])
         else:
+            if is_latest:
+                st.markdown('<div id="nexusiq-latest-answer"></div>', unsafe_allow_html=True)
             with st.chat_message("assistant", avatar="🔗"):
                 render_fusion_message(msg, is_latest=is_latest)
-    
+
+    # Auto-scroll to latest message after history replay
+    if total_messages > 0:
+        _scroll_to_bottom()
+
     # ═══════════════════════════════════════════════════════
     #  DID YOU MEAN? (spell-correction prompt)
     # ═══════════════════════════════════════════════════════
@@ -1137,6 +1163,8 @@ def run_fusion_chat():
         correction_labels = " | ".join(
             [f"**{c['from']}** → **{c['to']}**" for c in corr["corrections"]]
         )
+        st.markdown('<div id="nexusiq-latest-answer"></div>', unsafe_allow_html=True)
+        _scroll_to_bottom()
         with st.chat_message("assistant", avatar="🔗"):
             st.info(
                 f"Did you mean: **\"{corr['corrected']}\"**?\n\n"

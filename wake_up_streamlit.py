@@ -18,7 +18,7 @@ BROWSER_PAGELOAD_TIMEOUT_SECONDS = float(os.getenv("BROWSER_PAGELOAD_TIMEOUT_SEC
 SITE_WAIT_SECONDS = float(os.getenv("SITE_WAIT_SECONDS", "25"))
 BUTTON_APPEAR_WAIT_SECONDS = float(os.getenv("BUTTON_APPEAR_WAIT_SECONDS", "12"))
 # FIX: post-click verify window — wait up to 45s for app to fully load after waking
-POST_WAKE_VERIFY_SECONDS = float(os.getenv("POST_WAKE_VERIFY_SECONDS", "120"))
+POST_WAKE_VERIFY_SECONDS = float(os.getenv("POST_WAKE_VERIFY_SECONDS", "150"))
 WAKE_INTERVAL_HOURS = 0
 MAX_CONCURRENT_APPS = max(1, int(os.getenv("MAX_CONCURRENT_APPS", "5")))
 STATE_FILE = os.getenv("WAKE_STATE_FILE", "wakeup_state.json")

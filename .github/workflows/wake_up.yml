@@ -21,7 +21,7 @@ jobs:
       CHROMEDRIVER_PATH: "/usr/bin/chromedriver"
       # NexusIQ is heavy (sentence-transformers + ChromaDB) — needs longer wait
       SITE_WAIT_SECONDS: "90"
-      POST_WAKE_VERIFY_SECONDS: "120"
+      POST_WAKE_VERIFY_SECONDS: "150"
 
     steps:
       - name: Checkout repository

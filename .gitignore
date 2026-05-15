@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .Python
 venv/
+nexusiq_env/
 env/
 ENV/
 
@@ -15,7 +16,9 @@ ENV/
 # Data
 data/synthetic/*.csv
 # SQLite DB and ChromaDB are committed for zero-setup deployment
-# data/chroma_db/
+# Keep tracked baseline ChromaDB files, but hide new local segment folders.
+data/chroma_db/
+data/chroma_db_local/
 # data/sales.db
 
 # IDE
@@ -31,6 +34,7 @@ logs/
 # Runtime data (auto-generated)
 data/web_cache.json
 data/quota_tracker.json
+data/nexusiq.db
 
 # Test reports (auto-generated)
 .gstack/
@@ -38,7 +42,3 @@ data/quota_tracker.json
 # OS
 .DS_Store
 Thumbs.db
-data/chroma_db/
-data/chroma_db/
-data/quota_tracker.json
-data/web_cache.json

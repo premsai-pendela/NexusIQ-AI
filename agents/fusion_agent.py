@@ -404,33 +404,100 @@ Reply with ONLY this JSON (no extra text):
                 'source': 'Web Scraping'
             }
     
-    def _extract_numbers(self, text: str) -> List[float]:
-        """Extract dollar amounts from text"""
-        
-        numbers = []
-        
+    def _infer_number_context(self, text: str, fallback: str = "value") -> str:
+        """Infer a rough business context so close but different facts do not merge."""
+        text_lower = str(text or "").lower()
+        context_keywords = {
+            "revenue": ["revenue", "sales", "total_amount", "amount"],
+            "expense": ["expense", "cost", "spend"],
+            "profit": ["profit", "income", "earnings"],
+            "margin": ["margin"],
+            "price": ["price", "pricing"],
+            "quantity": ["quantity", "units"],
+            "count": ["count", "transactions_analyzed", "transaction_count"],
+        }
+        for context, keywords in context_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                return context
+        return fallback
+
+    def _extract_number_facts(self, text: str, source: str, label: str = "answer") -> List[Dict]:
+        """Extract monetary/large-number facts with lightweight context."""
+        facts = []
+        if not text:
+            return facts
+
         # Match patterns like $45.2M, $15,400,000, $38.7 million
-        patterns = [
-            r'\$?([\d,]+(?:\.\d+)?)\s*(?:M|million)',  # $45.2M
-            r'\$?([\d,]+(?:\.\d+)?)\s*(?:B|billion)',   # $1.5B
-            r'\$([\d,]+(?:\.\d+)?)',                      # $15,400,000
-        ]
-        
-        for pattern in patterns:
-            matches = re.findall(pattern, text, re.IGNORECASE)
-            for match in matches:
-                cleaned = match.replace(',', '').strip()
-                if not cleaned:
+        pattern = re.compile(
+            r'\$?([\d,]+(?:\.\d+)?)\s*(M|million|B|billion)?',
+            re.IGNORECASE
+        )
+
+        for match in pattern.finditer(text):
+            raw_number, scale = match.groups()
+            has_dollar = match.group(0).strip().startswith("$")
+            has_scale = bool(scale)
+            if not has_dollar and not has_scale:
+                continue
+
+            cleaned = raw_number.replace(',', '').strip()
+            if not cleaned:
+                continue
+
+            try:
+                value = float(cleaned)
+            except ValueError:
+                continue
+
+            scale_lower = (scale or "").lower()
+            if scale_lower in {"m", "million"}:
+                value *= 1_000_000
+            elif scale_lower in {"b", "billion"}:
+                value *= 1_000_000_000
+
+            window = text[max(0, match.start() - 45):match.end() + 45]
+            facts.append({
+                'value': value,
+                'label': label,
+                'context': self._infer_number_context(window, fallback=label),
+                'source': source,
+            })
+
+        return facts
+
+    def _extract_numbers(self, text: str) -> List[float]:
+        """Extract dollar amounts from text."""
+        return [fact['value'] for fact in self._extract_number_facts(text, source="text")]
+
+    def _dedupe_number_facts(self, facts: List[Dict], tolerance_pct: float = 0.1) -> List[Dict]:
+        """Dedupe near-identical facts within the same source/context."""
+        deduped = []
+        for fact in facts:
+            value = fact.get('value')
+            context = fact.get('context', 'value')
+            if value is None:
+                continue
+
+            duplicate = False
+            for existing in deduped:
+                if existing.get('context') != context:
                     continue
-                num = float(cleaned)
-                # Normalize to actual value
-                if 'M' in text[text.find(match):text.find(match)+len(match)+5].upper() or 'million' in text[text.find(match):text.find(match)+len(match)+10].lower():
-                    num = num * 1_000_000
-                elif 'B' in text[text.find(match):text.find(match)+len(match)+5].upper():
-                    num = num * 1_000_000_000
-                numbers.append(num)
-        
-        return numbers
+                existing_value = existing.get('value', 0)
+                if existing_value == 0:
+                    continue
+                pct_diff = abs(existing_value - value) / abs(existing_value) * 100
+                if pct_diff <= tolerance_pct:
+                    duplicate = True
+                    break
+            if not duplicate:
+                deduped.append(fact)
+
+        return deduped
+
+    def _contexts_compatible(self, left: str, right: str) -> bool:
+        if left == right:
+            return True
+        return "value" in {left, right} or "answer" in {left, right} or "extracted" in {left, right}
     
     def _cross_validate(self, sql_result: Dict, rag_result: Dict) -> Dict:
         """
@@ -450,60 +517,86 @@ Reply with ONLY this JSON (no extra text):
         
         logger.info("🔍 Cross-validating sources...")
         
-        # Extract numbers from both sources
+        # Extract numbers from both sources. Prefer structured SQL result rows;
+        # SQL answer text is fallback evidence because it can repeat/round values.
         sql_numbers = []
         if sql_result.get('success'):
-            # Primary: extract formatted numbers from the SQL answer text
-            # (catches aggregated totals like "$45.2M" that row-level data misses)
-            answer_nums = self._extract_numbers(sql_result.get('answer', ''))
-            for n in answer_nums:
-                sql_numbers.append({'value': n, 'label': 'answer', 'source': 'SQL'})
-
-            # Secondary: row-level numeric values (single-row results only —
-            # multi-row results contain per-item amounts that don't match RAG totals)
+            # Primary: row-level numeric values (single-row results only —
+            # multi-row results contain per-item amounts that don't match RAG totals).
             rows = sql_result.get('results', [])
             if len(rows) == 1:
                 for key, value in rows[0].items():
                     if isinstance(value, (int, float)) and value > 1000:
-                        sql_numbers.append({'value': float(value), 'label': key, 'source': 'SQL'})
+                        sql_numbers.append({
+                            'value': float(value),
+                            'label': key,
+                            'context': self._infer_number_context(key, fallback=key),
+                            'source': 'SQL'
+                        })
+                    elif hasattr(value, "__float__"):
+                        try:
+                            num = float(value)
+                            if num > 1000:
+                                sql_numbers.append({
+                                    'value': num,
+                                    'label': key,
+                                    'context': self._infer_number_context(key, fallback=key),
+                                    'source': 'SQL'
+                                })
+                        except (TypeError, ValueError):
+                            pass
 
-        rag_numbers = self._extract_numbers(rag_result.get('answer', ''))
-        rag_number_dicts = [{'value': n, 'label': 'extracted', 'source': 'RAG'} for n in rag_numbers]
+            if not sql_numbers:
+                sql_numbers.extend(self._extract_number_facts(sql_result.get('answer', ''), source="SQL"))
+
+        rag_number_dicts = self._extract_number_facts(
+            rag_result.get('answer', ''),
+            source="RAG",
+            label="extracted"
+        )
+        sql_numbers = self._dedupe_number_facts(sql_numbers)
+        rag_number_dicts = self._dedupe_number_facts(rag_number_dicts)
         
-        # Compare numbers
+        # Compare facts one-to-one so one repeated PDF value cannot validate
+        # multiple duplicated SQL values.
+        candidates = []
+        for sql_idx, sql_num in enumerate(sql_numbers):
+            sql_val = sql_num['value']
+            if sql_val <= 0:
+                continue
+            for rag_idx, rag_num in enumerate(rag_number_dicts):
+                if not self._contexts_compatible(sql_num.get('context'), rag_num.get('context')):
+                    continue
+                rag_val = rag_num['value']
+                pct_diff = abs(sql_val - rag_val) / sql_val * 100
+                candidates.append((pct_diff, sql_idx, rag_idx, {
+                    'sql_value': sql_val,
+                    'rag_value': rag_val,
+                    'difference': abs(sql_val - rag_val),
+                    'pct_difference': round(pct_diff, 4),
+                    'label': sql_num.get('context') or sql_num.get('label', 'value'),
+                    'sql_label': sql_num.get('label', 'value'),
+                    'rag_label': rag_num.get('label', 'value'),
+                }))
+
         matches = []
         discrepancies = []
-        
-        for sql_num in sql_numbers:
-            sql_val = sql_num['value']
-            best_match = None
-            best_diff = float('inf')
-            
-            for rag_num in rag_number_dicts:
-                rag_val = rag_num['value']
-                
-                # Check if values are close (within 1% tolerance)
-                if sql_val > 0:
-                    pct_diff = abs(sql_val - rag_val) / sql_val * 100
-                    
-                    if pct_diff < best_diff:
-                        best_diff = pct_diff
-                        best_match = {
-                            'sql_value': sql_val,
-                            'rag_value': rag_val,
-                            'difference': abs(sql_val - rag_val),
-                            'pct_difference': round(pct_diff, 4),
-                            'label': sql_num['label']
-                        }
-            
-            if best_match:
-                if best_match['pct_difference'] < 1.0:  # Within 1%
-                    matches.append(best_match)
-                elif best_match['pct_difference'] < 10.0:  # Within 10%
-                    best_match['note'] = 'Close but not exact match'
-                    matches.append(best_match)
-                else:
-                    discrepancies.append(best_match)
+        used_sql = set()
+        used_rag = set()
+
+        for pct_diff, sql_idx, rag_idx, candidate in sorted(candidates, key=lambda item: item[0]):
+            if sql_idx in used_sql or rag_idx in used_rag:
+                continue
+            used_sql.add(sql_idx)
+            used_rag.add(rag_idx)
+
+            if pct_diff < 1.0:
+                matches.append(candidate)
+            elif pct_diff < 10.0:
+                candidate['note'] = 'Close but not exact match'
+                matches.append(candidate)
+            else:
+                discrepancies.append(candidate)
         
         # Calculate confidence
         total_comparisons = len(matches) + len(discrepancies)
@@ -515,7 +608,8 @@ Reply with ONLY this JSON (no extra text):
         elif len(discrepancies) == 0 and len(matches) > 0:
             confidence = "HIGH"
             confidence_score = 0.95
-            confidence_reason = f"{len(matches)} numbers match across sources"
+            fact_label = "fact" if len(matches) == 1 else "facts"
+            confidence_reason = f"{len(matches)} validated {fact_label} across sources"
         elif len(matches) > len(discrepancies):
             confidence = "MEDIUM"
             confidence_score = 0.7
@@ -533,7 +627,7 @@ Reply with ONLY this JSON (no extra text):
             'matches': matches,
             'discrepancies': discrepancies,
             'sql_numbers_found': len(sql_numbers),
-            'rag_numbers_found': len(rag_numbers)
+            'rag_numbers_found': len(rag_number_dicts)
         }
         
         logger.info(f"  Validation: {confidence} confidence ({confidence_reason})")
@@ -552,6 +646,7 @@ Reply with ONLY this JSON (no extra text):
         
         # Build source summaries
         sources_text = ""
+        sql_source_summary = self._describe_sql_source(sql_result)
         
         if sql_result and sql_result.get('success'):
             sources_text += f"""
@@ -591,7 +686,7 @@ SOURCE 3 - WEB SCRAPING (Competitor & industry data):
             validation_text = f"""
 CROSS-VALIDATION RESULTS:
 - Confidence: {validation['confidence']} ({validation['confidence_reason']})
-- Matches: {len(validation['matches'])} numbers verified across sources
+- Validated facts: {len(validation['matches'])}
 - Discrepancies: {len(validation['discrepancies'])}{discrepancy_note}
 """
         
@@ -621,7 +716,7 @@ FORMAT:
 - [Bullet points combining precision from SQL + context from PDFs + market data from Web]
 
 **Sources Used:**
-{f"- 🗄️ SQL Database: {sql_result.get('row_count', 0)} transactions analyzed" if sql_result and sql_result.get('success') else ""}
+{f"- 🗄️ SQL Database: {sql_source_summary}" if sql_result and sql_result.get('success') else ""}
 {f"- 📄 Documents: {rag_result.get('chunks_retrieved', 0)} document excerpts" if rag_result and rag_result.get('success') else ""}
 {f"- 🌐 Web Scraping: {web_result.get('category', 'General')} data" if web_result and web_result.get('success') else ""}
 
@@ -657,6 +752,27 @@ ANSWER:"""
         # Fallback: Simple combination without LLM
         logger.warning("All LLM models failed, using simple fusion")
         return self._simple_fusion(sql_result, rag_result, web_result, validation)
+
+    def _describe_sql_source(self, sql_result: Optional[Dict]) -> str:
+        if not sql_result or not sql_result.get('success'):
+            return "unavailable"
+
+        rows = sql_result.get('results') or []
+        row_count = sql_result.get('row_count', len(rows))
+        if rows:
+            first_row = rows[0]
+            for key, value in first_row.items():
+                key_lower = str(key).lower()
+                if key_lower in {"transactions_analyzed", "transaction_count", "transactions_count", "row_count"}:
+                    try:
+                        analyzed = int(float(value))
+                        row_label = "result row" if row_count == 1 else "result rows"
+                        return f"{analyzed:,} transactions analyzed · {row_count} {row_label}"
+                    except (TypeError, ValueError):
+                        break
+
+        row_label = "result row" if row_count == 1 else "result rows"
+        return f"{row_count} {row_label} returned"
     
     def _simple_fusion(
         self, 

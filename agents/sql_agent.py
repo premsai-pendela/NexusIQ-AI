@@ -397,6 +397,7 @@ RULES:
 5. NEVER use DELETE, DROP, UPDATE, INSERT
 6. Return ONLY the SQL query, no explanations
 7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
+8. For single aggregate questions over sales_transactions, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
 
 SQL QUERY:"""
 

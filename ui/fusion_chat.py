@@ -148,6 +148,61 @@ def time_ago(timestamp: datetime) -> str:
     else:
         return f"{int(seconds // 86400)}d ago"
 
+def _humanize_column_name(col: str) -> str:
+    return str(col).replace("_", " ").strip().title()
+
+def _format_metric_value(col: str, value) -> str:
+    if value is None:
+        return "N/A"
+    col_lower = str(col).lower()
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+
+    if any(term in col_lower for term in ["revenue", "amount", "sales", "price", "cost"]):
+        return f"${number:,.2f}"
+    if any(term in col_lower for term in ["rate", "margin", "percent", "pct"]):
+        return f"{number:,.2f}%"
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.2f}"
+
+def prepare_visualization_dataframe(df):
+    """Return a plotting copy with numeric-looking object columns coerced."""
+    pd = _get_pd()
+    plot_df = df.copy()
+    numeric_cols = plot_df.select_dtypes(include=['number']).columns.tolist()
+
+    for col in plot_df.columns:
+        if col in numeric_cols:
+            continue
+        converted = pd.to_numeric(plot_df[col], errors="coerce")
+        non_null = plot_df[col].notna().sum()
+        if non_null and converted.notna().sum() == non_null:
+            plot_df[col] = converted
+            numeric_cols.append(col)
+
+    return plot_df, numeric_cols
+
+def render_kpi_summary(df) -> bool:
+    """Render single-row aggregate results as metrics. Returns True if rendered."""
+    if df is None or df.empty or len(df) != 1:
+        return False
+
+    plot_df, numeric_cols = prepare_visualization_dataframe(df)
+    if not numeric_cols:
+        return False
+
+    st.markdown("**📌 Key Metrics:**")
+    metric_cols = st.columns(min(len(numeric_cols), 4))
+    row = plot_df.iloc[0]
+    for idx, col in enumerate(numeric_cols):
+        with metric_cols[idx % len(metric_cols)]:
+            st.metric(_humanize_column_name(col), _format_metric_value(col, row[col]))
+
+    return True
+
 def can_visualize(df) -> dict:
     """Check if dataframe can be visualized"""
     if df is None or df.empty:
@@ -168,7 +223,7 @@ def can_visualize(df) -> dict:
             "date_cols": []
         }
 
-    numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+    plot_df, numeric_cols = prepare_visualization_dataframe(df)
     text_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
     date_cols = [
         col for col in df.columns
@@ -176,13 +231,24 @@ def can_visualize(df) -> dict:
         or 'year' in col.lower() or 'time' in col.lower()
     ]
 
+    if len(df) == 1:
+        return {
+            "can_chart": False,
+            "reason": "Single-row aggregate shown as KPI",
+            "numeric_cols": numeric_cols,
+            "text_cols": text_cols,
+            "date_cols": date_cols,
+            "plot_df": plot_df
+        }
+
     if not numeric_cols:
         return {
             "can_chart": False,
-            "reason": "No numeric columns to plot",
+            "reason": "No chartable numeric fields found",
             "numeric_cols": [],
             "text_cols": text_cols,
-            "date_cols": date_cols
+            "date_cols": date_cols,
+            "plot_df": plot_df
         }
 
     return {
@@ -191,7 +257,8 @@ def can_visualize(df) -> dict:
         "numeric_cols": numeric_cols,
         "text_cols": text_cols,
         "date_cols": date_cols,
-        "row_count": len(df)
+        "row_count": len(df),
+        "plot_df": plot_df
     }
 
 def generate_chart(df, chart_type: str, x_col: str, y_col: str, color_col: str = None):
@@ -281,8 +348,11 @@ def render_chart_builder(msg_id: str, df):
     viz_info = can_visualize(df)
     
     if not viz_info["can_chart"]:
-        st.warning(f"📊 Cannot visualize: {viz_info['reason']}")
+        if viz_info["reason"] != "Single-row aggregate shown as KPI":
+            st.caption(f"📊 {viz_info['reason']}")
         return None
+    
+    df = viz_info["plot_df"]
 
     st.markdown("**🎨 Build Your Chart**")
     
@@ -479,7 +549,8 @@ def render_confidence_badge(validation: dict):
     if matches or discrepancies:
         with st.expander("🔍 Validation Details", expanded=False):
             if matches:
-                st.markdown(f"**✅ Validated Numbers ({len(matches)} matches):**")
+                fact_label = "fact" if len(matches) == 1 else "facts"
+                st.markdown(f"**✅ Validated {fact_label.title()} ({len(matches)}):**")
                 for match in matches[:5]:  # Show top 5
                     sql_val = match.get('sql_value', 'N/A')
                     rag_val = match.get('rag_value', 'N/A')
@@ -523,8 +594,11 @@ def render_sql_section(msg_id: str, sql_result: dict, is_latest: bool = False):
         if sql_result.get('results'):
             df = pd.DataFrame(sql_result['results'])
             
-            st.markdown(f"**📊 Data Table ({sql_result.get('row_count', len(df))} rows):**")
+            row_count = sql_result.get('row_count', len(df))
+            row_label = "result row" if row_count == 1 else "result rows"
+            st.markdown(f"**📊 Data Table ({row_count} {row_label}):**")
             st.dataframe(df, use_container_width=True)
+            render_kpi_summary(df)
             
             # Export buttons
             st.markdown("**📥 Export Data:**")
@@ -1014,6 +1088,10 @@ def run_fusion_chat():
         "</p>",
         unsafe_allow_html=True,
     )
+    st.caption(
+        f"Routing: {st.session_state.source_filter} · "
+        f"Web category: {st.session_state.web_category}"
+    )
     
     # ═══════════════════════════════════════════════════════
     #  SIDEBAR
@@ -1045,17 +1123,14 @@ def run_fusion_chat():
             )
             st.session_state.web_category = web_category
         
-        st.markdown("---")
-        st.subheader("📊 Database Schema")
-        
-        with st.expander("📋 sales_transactions"):
+        with st.expander("📊 Database Schema", expanded=False):
+            st.markdown("**📋 sales_transactions**")
             st.code(
                 "• transaction_date\n• region (5 regions)\n• store_id\n"
                 "• product_category\n• product_name\n• quantity, unit_price\n"
                 "• total_amount\n• customer_id\n• payment_method"
             )
-        
-        with st.expander("👥 customers"):
+            st.markdown("**👥 customers**")
             st.code(
                 "• customer_id\n• name, email, region\n"
                 "• signup_date\n• total_purchases"
@@ -1078,29 +1153,27 @@ def run_fusion_chat():
                 st.rerun()
             st.caption(f"→ {hint}")
         
-        st.markdown("---")
-        st.subheader("📊 Model Status")
-        
-        # Show Gemini Pro status
-        settings = _get_settings()
-        if settings.use_gemini_pro:
-            st.warning("🟡 Gemini Pro: **ENABLED** (may exhaust quickly)")
-        else:
-            st.info("🔵 Gemini Pro: **DISABLED** (free tier protection)")
-        
-        # Get quota status from SQL agent (Fusion uses same models)
-        quota_status = agent.sql_agent.get_quota_status()
-        if quota_status:
-            for model, status in quota_status.items():
-                if "pro" in model.lower() and not settings.use_gemini_pro:
-                    continue
-                st.caption(f"{status['status']} {model.split('-')[0]}")
-        else:
-            st.caption("🟢 All models available")
-        
-        if st.button("🔄 Reset Quota Tracking", use_container_width=True):
-            agent.sql_agent.reset_quota_tracking()
-            st.rerun()
+        with st.expander("📊 Model Status", expanded=False):
+            # Show Gemini Pro status
+            settings = _get_settings()
+            if settings.use_gemini_pro:
+                st.warning("🟡 Gemini Pro: **ENABLED** (may exhaust quickly)")
+            else:
+                st.info("🔵 Gemini Pro: **DISABLED** (free tier protection)")
+            
+            # Get quota status from SQL agent (Fusion uses same models)
+            quota_status = agent.sql_agent.get_quota_status()
+            if quota_status:
+                for model, status in quota_status.items():
+                    if "pro" in model.lower() and not settings.use_gemini_pro:
+                        continue
+                    st.caption(f"{status['status']} {model.split('-')[0]}")
+            else:
+                st.caption("🟢 All models available")
+            
+            if st.button("🔄 Reset Quota Tracking", use_container_width=True):
+                agent.sql_agent.reset_quota_tracking()
+                st.rerun()
         
         st.markdown("---")
         st.subheader("📜 Query History")

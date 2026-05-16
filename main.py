@@ -2,7 +2,186 @@
 NexusIQ AI — Main Application
 """
 import streamlit as st
-import requests
+COMMAND_CENTER_PROMPTS = [
+    {
+        "title": "Validate Q4 Electronics revenue",
+        "question": "Validate Q4 Electronics revenue across SQL and PDF reports.",
+        "route": "SQL + RAG",
+        "signal": "Cross-source revenue validation",
+    },
+    {
+        "title": "Compare Q3 and Q4 performance",
+        "question": "Compare Q3 and Q4 2024 performance across all metrics.",
+        "route": "RAG comparison",
+        "signal": "Multi-document synthesis",
+    },
+    {
+        "title": "Explain West vs South",
+        "question": "Explain why West region outperformed South in 2024.",
+        "route": "SQL + RAG",
+        "signal": "Numbers plus business context",
+    },
+    {
+        "title": "Find competitor pricing",
+        "question": "What are competitor prices for electronics?",
+        "route": "Live web",
+        "signal": "External market data",
+    },
+    {
+        "title": "Summarize return policy",
+        "question": "What is the return policy for Electronics?",
+        "route": "RAG",
+        "signal": "Internal policy retrieval",
+    },
+    {
+        "title": "Count October transactions",
+        "question": "Show October 2024 transaction count from the database.",
+        "route": "SQL",
+        "signal": "Exact database query",
+    },
+]
+
+
+def launch_fusion(question: str | None = None, show_command_center: bool = False):
+    if question:
+        st.session_state.pending_suggestion = question
+    st.session_state.show_fusion_command_center = show_command_center
+    st.session_state.nav_to_fusion = True
+    st.rerun()
+
+
+def render_command_center_styles():
+    st.markdown(
+        """
+        <style>
+            .nexusiq-shell {
+                padding: 20px 0 6px;
+            }
+            .nexusiq-eyebrow {
+                color: #38bdf8;
+                font-size: 0.78rem;
+                font-weight: 800;
+                letter-spacing: 0;
+                text-transform: uppercase;
+                margin-bottom: 8px;
+            }
+            .nexusiq-hero {
+                border: 1px solid rgba(148, 163, 184, 0.28);
+                border-radius: 8px;
+                padding: 28px;
+                background:
+                    linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.96)),
+                    radial-gradient(circle at 20% 10%, rgba(56, 189, 248, 0.22), transparent 32%);
+                box-shadow: 0 18px 45px rgba(2, 6, 23, 0.22);
+            }
+            .nexusiq-hero h1 {
+                margin: 0;
+                color: #f8fafc;
+                font-size: clamp(2.1rem, 5vw, 4.3rem);
+                line-height: 1.02;
+                letter-spacing: 0;
+                font-weight: 900;
+            }
+            .nexusiq-hero p {
+                max-width: 760px;
+                margin: 14px 0 0;
+                color: #cbd5e1;
+                font-size: 1.04rem;
+                line-height: 1.65;
+            }
+            .nexusiq-chip {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                min-height: 30px;
+                padding: 6px 10px;
+                border-radius: 999px;
+                border: 1px solid rgba(56, 189, 248, 0.28);
+                background: rgba(8, 47, 73, 0.42);
+                color: #e0f2fe;
+                font-size: 0.78rem;
+                font-weight: 700;
+                margin: 6px 6px 0 0;
+            }
+            .nexusiq-chip span {
+                width: 8px;
+                height: 8px;
+                border-radius: 999px;
+                background: #22c55e;
+                box-shadow: 0 0 14px rgba(34, 197, 94, 0.72);
+            }
+            .nexusiq-band {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 8px;
+                padding: 18px;
+                background: #f8fafc;
+                min-height: 122px;
+            }
+            .nexusiq-band strong {
+                display: block;
+                font-size: 0.9rem;
+                color: #0f172a;
+                margin-bottom: 6px;
+            }
+            .nexusiq-band p {
+                color: #475569;
+                font-size: 0.88rem;
+                line-height: 1.45;
+                margin: 0;
+            }
+            .nexusiq-flow {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(120px, 1fr));
+                gap: 10px;
+                align-items: stretch;
+                margin-top: 12px;
+            }
+            .nexusiq-flow-step {
+                border: 1px solid rgba(14, 116, 144, 0.22);
+                border-radius: 8px;
+                padding: 14px;
+                background: #f8fafc;
+                min-height: 112px;
+            }
+            .nexusiq-flow-step b {
+                display: block;
+                color: #0f172a;
+                font-size: 0.92rem;
+                margin-bottom: 5px;
+            }
+            .nexusiq-flow-step small {
+                color: #64748b;
+                line-height: 1.35;
+            }
+            .nexusiq-answer {
+                border-left: 5px solid #0ea5e9;
+                border-radius: 8px;
+                padding: 18px 20px;
+                background: #f8fafc;
+                color: #0f172a;
+            }
+            .nexusiq-answer h4 {
+                margin: 0 0 10px;
+                color: #0f172a;
+            }
+            .nexusiq-answer p {
+                margin: 6px 0;
+                color: #334155;
+                line-height: 1.48;
+            }
+            @media (max-width: 900px) {
+                .nexusiq-hero {
+                    padding: 22px;
+                }
+                .nexusiq-flow {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 
 st.set_page_config(
     page_title="NexusIQ AI",
@@ -30,122 +209,124 @@ page = st.sidebar.radio(
 # ══════════════════════════════════════════════════════════════════════════════
 
 if page == "🏠 Home":
+    render_command_center_styles()
 
     # ── Hero ─────────────────────────────────────────────────────────────────
     st.markdown(
         """
-        <div style="text-align:center; padding: 32px 0 8px 0;">
-            <div style="font-size:64px; margin-bottom:8px;">🧠</div>
-            <h1 style="font-size:3rem; font-weight:900; margin:0; letter-spacing:-1px;">NexusIQ AI</h1>
-            <p style="font-size:1.25rem; color:#9ca3af; margin-top:12px; font-weight:400;">
-                Ask a business question. Get a cross-validated answer — from SQL, PDFs, and live web data.
-            </p>
+        <div class="nexusiq-shell">
+            <div class="nexusiq-hero">
+                <div class="nexusiq-eyebrow">Guided Intelligence Command Center</div>
+                <h1>NexusIQ AI</h1>
+                <p>
+                    A production-minded AI intelligence system that routes business questions across
+                    SQL transactions, indexed business documents, and live web sources, then validates
+                    the answer before showing confidence and citations.
+                </p>
+                <div style="margin-top:16px;">
+                    <div class="nexusiq-chip"><span></span>90,500 transactions indexed</div>
+                    <div class="nexusiq-chip"><span></span>23 business documents indexed</div>
+                    <div class="nexusiq-chip"><span></span>SQL + RAG validation</div>
+                    <div class="nexusiq-chip"><span></span>Live web intelligence</div>
+                </div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
     # ── CTA button ───────────────────────────────────────────────────────────
-    st.markdown("<br>", unsafe_allow_html=True)
-    col_l, col_c, col_r = st.columns([1.5, 2, 1.5])
-    with col_c:
-        if st.button("🚀  Launch Fusion Agent  →", type="primary", use_container_width=True):
-            st.session_state.nav_to_fusion = True
-            st.rerun()
-        st.markdown(
-            "<p style='text-align:center; color:#6b7280; font-size:13px; margin-top:6px;'>"
-            "Cross-validates answers across 3 live data sources</p>",
-            unsafe_allow_html=True,
-        )
+    st.markdown("")
+    cta_left, cta_right = st.columns([1, 1])
+    with cta_left:
+        if st.button("Launch Guided Fusion Demo", type="primary", use_container_width=True):
+            launch_fusion("Validate Q4 Electronics revenue across SQL and PDF reports.")
+    with cta_right:
+        if st.button("Open Command Center", use_container_width=True):
+            launch_fusion(show_command_center=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
     st.divider()
 
     # ── Metrics strip ────────────────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("📦 Transactions", "100,000", "PostgreSQL")
+        st.metric("Transactions Indexed", "90,500", "SQL source")
     with m2:
-        st.metric("📄 Business Docs", "23 PDFs", "ChromaDB + BM25")
+        st.metric("Business Docs", "23", "BM25 + vector RAG")
     with m3:
-        st.metric("🤖 AI Agents", "4 Active", "Always on")
+        st.metric("Agents Active", "4", "SQL, RAG, Web, Fusion")
     with m4:
-        st.metric("🌐 Data Sources", "3 Types", "SQL · RAG · Web")
+        st.metric("Validation Mode", "3-way", "SQL · RAG · Web")
 
     st.divider()
 
-    # ── How it works ─────────────────────────────────────────────────────────
-    st.markdown("### ⚡ How It Works")
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    h1, h2, h3 = st.columns(3)
-    with h1:
+    st.markdown("### Guided Demo Path")
+    demo_col, answer_col = st.columns([1.12, 0.88])
+    with demo_col:
         st.markdown(
             """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
-                <div style="font-size:32px;">💬</div>
-                <h4 style="margin:8px 0 4px 0;">1. Ask in plain English</h4>
-                <p style="color:#94a3b8; font-size:14px; margin:0;">
-                    No SQL. No keyword search.<br>
-                    <em>"What was our best region in Q4 2024?"</em>
-                </p>
+            <div class="nexusiq-flow">
+                <div class="nexusiq-flow-step"><b>Question</b><small>User clicks a proven business prompt.</small></div>
+                <div class="nexusiq-flow-step"><b>Router</b><small>System chooses SQL, RAG, Web, or multi-source fusion.</small></div>
+                <div class="nexusiq-flow-step"><b>Agents</b><small>Independent agents run in parallel where possible.</small></div>
+                <div class="nexusiq-flow-step"><b>Validation</b><small>Numbers are reconciled across exact and document sources.</small></div>
+                <div class="nexusiq-flow-step"><b>Answer</b><small>Final response includes confidence, route, and citations.</small></div>
             </div>
             """,
             unsafe_allow_html=True,
         )
-    with h2:
+    with answer_col:
         st.markdown(
             """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
-                <div style="font-size:32px;">🔍</div>
-                <h4 style="margin:8px 0 4px 0;">2. Agents investigate</h4>
-                <p style="color:#94a3b8; font-size:14px; margin:0;">
-                    SQL Agent queries the database. RAG Agent scans PDFs.
-                    Web Agent scrapes live competitor prices — in parallel.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with h3:
-        st.markdown(
-            """
-            <div style="background:#1e293b; border-radius:12px; padding:24px; min-height:180px;">
-                <div style="font-size:32px;">✅</div>
-                <h4 style="margin:8px 0 4px 0;">3. Cross-validated answer</h4>
-                <p style="color:#94a3b8; font-size:14px; margin:0;">
-                    Results are compared across sources. Discrepancies flagged.
-                    Confidence score shown with every answer.
-                </p>
+            <div class="nexusiq-answer">
+                <h4>Featured validation preview</h4>
+                <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
+                <p><b>Expected result:</b> SQL and RAG validate Q4 Electronics revenue at about <b>$15.2M</b>, with source difference and confidence shown in the answer.</p>
+                <p><b>Route:</b> SQL Agent + RAG Agent → Fusion Agent → validated answer.</p>
+                <p><b>Sources:</b> sales_transactions, Q4 2024 Financial Report.</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.divider()
+
+    st.markdown("### Guided Demo Prompts")
+    prompt_cols = st.columns(3)
+    for idx, prompt in enumerate(COMMAND_CENTER_PROMPTS):
+        with prompt_cols[idx % 3]:
+            st.markdown(
+                f"""
+                <div class="nexusiq-band">
+                    <strong>{prompt["title"]}</strong>
+                    <p>{prompt["signal"]}<br><b>Route:</b> {prompt["route"]}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Run this demo", key=f"home_prompt_{idx}", use_container_width=True):
+                launch_fusion(prompt["question"])
+
     st.divider()
 
     # ── Features ─────────────────────────────────────────────────────────────
-    st.markdown("### 🛠️ What's Under the Hood")
-    st.markdown("<br>", unsafe_allow_html=True)
-
+    st.markdown("### Production Signals")
     f1, f2 = st.columns(2)
     with f1:
         st.markdown("""
-**Core Agents**
-- 🔗 **Fusion Agent** — Orchestrates all agents, merges results, validates
-- 🗄️ **SQL Agent** — Natural language → PostgreSQL via LLM
-- 📄 **RAG Agent** — Hybrid BM25 + vector search over 23 documents
-- 🌐 **Web Agent** — Live competitor price scraping (Newegg + more)
+**System intelligence**
+- Fusion Agent orchestrates SQL, RAG, and Web agents.
+- Hybrid BM25 + vector search fixes keyword-vs-semantic retrieval misses.
+- Cross-validation compares exact database values with document-reported values.
+- Progressive status updates show which source finished and how long it took.
         """)
     with f2:
         st.markdown("""
-**Intelligence Layer**
-- 🔍 **Cross-Validation Engine** — Compares SQL vs PDF numbers automatically
-- ⚡ **Circuit Breaker** — Switches LLM models if quota exceeded
-- 🧠 **Smart Routing** — Detects query type, picks the best agent
-- 📊 **Chart Builder** — Auto-generates Plotly charts from SQL results
-- 💬 **Export** — Download answers as CSV, JSON, Excel, or Markdown
+**Trust and demo readiness**
+- Circuit breaker moves between Gemini and Groq when quota is exhausted.
+- Query cache returns repeat questions quickly without stale unbounded memory.
+- SQL results expose generated queries and exportable result tables.
+- Source badges make Database, PDF Reports, Live Web, and Fusion routes visible.
         """)
 
     st.divider()
@@ -180,9 +361,8 @@ if page == "🏠 Home":
     )
     col_l2, col_c2, col_r2 = st.columns([1.5, 2, 1.5])
     with col_c2:
-        if st.button("🚀  Try It Now — Launch Fusion Agent", type="primary", use_container_width=True):
-            st.session_state.nav_to_fusion = True
-            st.rerun()
+        if st.button("Start with the strongest validation demo", type="primary", use_container_width=True):
+            launch_fusion("Validate Q4 Electronics revenue across SQL and PDF reports.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FUSION AGENT PAGE

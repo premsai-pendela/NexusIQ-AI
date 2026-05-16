@@ -82,6 +82,45 @@ SOURCE_ICONS = {
     "fusion": "🔗"
 }
 
+RECRUITER_DEMO_PROMPTS = [
+    {
+        "title": "Validate Q4 Electronics revenue",
+        "question": "Validate Q4 Electronics revenue across SQL and PDF reports.",
+        "route": "SQL + RAG",
+        "proof": "Shows exact database value, document value, source difference, and confidence.",
+    },
+    {
+        "title": "Compare Q3 and Q4 performance",
+        "question": "Compare Q3 and Q4 2024 performance across all metrics.",
+        "route": "RAG comparison",
+        "proof": "Demonstrates hybrid retrieval and multi-document synthesis.",
+    },
+    {
+        "title": "Explain West vs South",
+        "question": "Explain why West region outperformed South in 2024.",
+        "route": "SQL + RAG",
+        "proof": "Combines region numbers with strategic and market context.",
+    },
+    {
+        "title": "Find competitor pricing",
+        "question": "What are competitor prices for electronics?",
+        "route": "Live web",
+        "proof": "Uses external market data instead of only prepared local documents.",
+    },
+    {
+        "title": "Summarize return policy",
+        "question": "What is the return policy for Electronics?",
+        "route": "RAG",
+        "proof": "Retrieves internal policy details with document citations.",
+    },
+    {
+        "title": "Count October transactions",
+        "question": "Show October 2024 transaction count from the database.",
+        "route": "SQL",
+        "proof": "Runs an exact structured query over transaction data.",
+    },
+]
+
 # ═══════════════════════════════════════════════════════
 #  LAZY LOADERS — heavy modules loaded only when needed
 # ═══════════════════════════════════════════════════════
@@ -444,6 +483,188 @@ def render_chart_builder(msg_id: str, df):
 # ═══════════════════════════════════════════════════════
 #  ✨ NEW: FUSION-SPECIFIC UI COMPONENTS
 # ═══════════════════════════════════════════════════════
+
+def render_guided_command_center():
+    """Render the guided first screen for the command-center demo."""
+    st.markdown(
+        """
+        <style>
+            .fusion-command {
+                border: 1px solid rgba(148, 163, 184, 0.26);
+                border-radius: 8px;
+                padding: 24px;
+                background:
+                    linear-gradient(135deg, rgba(15, 23, 42, 0.98), rgba(17, 24, 39, 0.96)),
+                    radial-gradient(circle at 14% 0%, rgba(14, 165, 233, 0.22), transparent 34%);
+                color: #f8fafc;
+                margin-top: 12px;
+            }
+            .fusion-command h2 {
+                margin: 0;
+                color: #f8fafc;
+                font-size: clamp(1.7rem, 3vw, 2.6rem);
+                line-height: 1.08;
+                letter-spacing: 0;
+            }
+            .fusion-command p {
+                max-width: 820px;
+                margin: 12px 0 0;
+                color: #cbd5e1;
+                line-height: 1.58;
+                font-size: 1rem;
+            }
+            .fusion-chip-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 16px;
+            }
+            .fusion-chip {
+                border: 1px solid rgba(56, 189, 248, 0.28);
+                border-radius: 999px;
+                padding: 6px 10px;
+                color: #e0f2fe;
+                background: rgba(8, 47, 73, 0.42);
+                font-size: 0.78rem;
+                font-weight: 700;
+            }
+            .fusion-agent-flow {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(116px, 1fr));
+                gap: 10px;
+                margin: 16px 0 4px;
+            }
+            .fusion-agent-step {
+                min-height: 104px;
+                padding: 13px;
+                border-radius: 8px;
+                border: 1px solid rgba(14, 116, 144, 0.22);
+                background: #f8fafc;
+            }
+            .fusion-agent-step b {
+                display: block;
+                color: #0f172a;
+                font-size: 0.9rem;
+                margin-bottom: 5px;
+            }
+            .fusion-agent-step small {
+                color: #64748b;
+                line-height: 1.35;
+            }
+            .fusion-preview {
+                border-left: 5px solid #0ea5e9;
+                border-radius: 8px;
+                padding: 18px 20px;
+                background: #f8fafc;
+                margin-top: 10px;
+            }
+            .fusion-preview h4 {
+                margin: 0 0 8px;
+                color: #0f172a;
+            }
+            .fusion-preview p {
+                margin: 6px 0;
+                color: #334155;
+                line-height: 1.48;
+            }
+            .fusion-prompt-card {
+                border: 1px solid rgba(148, 163, 184, 0.22);
+                border-radius: 8px;
+                padding: 15px;
+                min-height: 126px;
+                background: #f8fafc;
+            }
+            .fusion-prompt-card strong {
+                display: block;
+                color: #0f172a;
+                margin-bottom: 5px;
+            }
+            .fusion-prompt-card p {
+                margin: 0;
+                color: #475569;
+                font-size: 0.86rem;
+                line-height: 1.42;
+            }
+            @media (max-width: 900px) {
+                .fusion-command {
+                    padding: 20px;
+                }
+                .fusion-agent-flow {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <div class="fusion-command">
+            <h2>Guided Intelligence Command Center</h2>
+            <p>
+                Start with a guided question that proves the system is more than a chatbot:
+                it routes across structured data, business documents, and web sources, then
+                explains how trustworthy the answer is.
+            </p>
+            <div class="fusion-chip-row">
+                <div class="fusion-chip">90,500 transactions</div>
+                <div class="fusion-chip">23 business PDFs</div>
+                <div class="fusion-chip">Hybrid BM25 + vector RAG</div>
+                <div class="fusion-chip">SQL + RAG validation</div>
+                <div class="fusion-chip">Live web pricing</div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    flow_col, preview_col = st.columns([1.1, 0.9])
+    with flow_col:
+        st.markdown(
+            """
+            <div class="fusion-agent-flow">
+                <div class="fusion-agent-step"><b>SQL Agent</b><small>Queries exact transaction facts.</small></div>
+                <div class="fusion-agent-step"><b>RAG Agent</b><small>Retrieves from indexed business docs.</small></div>
+                <div class="fusion-agent-step"><b>Web Agent</b><small>Checks live competitor context.</small></div>
+                <div class="fusion-agent-step"><b>Fusion Agent</b><small>Reconciles outputs and conflicts.</small></div>
+                <div class="fusion-agent-step"><b>Validated Answer</b><small>Shows confidence, route, and sources.</small></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with preview_col:
+        st.markdown(
+            """
+            <div class="fusion-preview">
+                <h4>Featured answer preview</h4>
+                <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
+                <p><b>Expected result:</b> SQL and RAG validate about <b>$15.2M</b>, then show source difference and confidence.</p>
+                <p><b>Evidence:</b> sales_transactions + Q4 2024 Financial Report.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("### Run a Guided Demo")
+    prompt_cols = st.columns(3)
+    for idx, prompt in enumerate(RECRUITER_DEMO_PROMPTS):
+        with prompt_cols[idx % 3]:
+            st.markdown(
+                f"""
+                <div class="fusion-prompt-card">
+                    <strong>{prompt["title"]}</strong>
+                    <p>{prompt["proof"]}<br><b>Route:</b> {prompt["route"]}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button("Run prompt", key=f"command_center_prompt_{idx}", use_container_width=True):
+                st.session_state.pending_suggestion = prompt["question"]
+                st.session_state.show_fusion_command_center = False
+                st.rerun()
+
+    st.info("Use Auto routing for the best demo path. Manual SQL, RAG, or Web modes are available in the sidebar for deeper inspection.")
 
 def render_routing_badge(source_type: str):
     """
@@ -969,22 +1190,77 @@ def add_to_history(question, result, execution_time):
 # ═══════════════════════════════════════════════════════
 
 
+def _scroll_to_anchor(anchor_id: str, offset: int = 16):
+    import streamlit.components.v1 as components
+    script = """
+        <script>
+            function scrollToAnchor() {
+                var d = window.parent.document;
+                var anchor = d.getElementById('__ANCHOR_ID__');
+                if (!anchor) return false;
+
+                var scrollers = Array.from(d.querySelectorAll('*')).filter(function(el) {
+                    return el.scrollHeight > el.clientHeight + 20;
+                });
+                var main = scrollers.find(function(el) {
+                    return el.matches && (
+                        el.matches('section.stMain') ||
+                        el.getAttribute('data-testid') === 'stAppScrollToBottomContainer'
+                    );
+                }) || d.scrollingElement || d.documentElement;
+
+                var mainRect = main.getBoundingClientRect ? main.getBoundingClientRect() : {top: 0};
+                var anchorRect = anchor.getBoundingClientRect();
+                var currentTop = main === d.scrollingElement || main === d.documentElement
+                    ? (window.parent.pageYOffset || d.documentElement.scrollTop || 0)
+                    : main.scrollTop;
+                var targetTop = currentTop + anchorRect.top - mainRect.top - __OFFSET__;
+
+                if (main.scrollTo) {
+                    main.scrollTo({top: Math.max(0, targetTop), behavior: 'smooth'});
+                } else {
+                    anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
+                }
+                return true;
+            }
+            scrollToAnchor();
+            setTimeout(scrollToAnchor, 150);
+            setTimeout(scrollToAnchor, 350);
+            setTimeout(scrollToAnchor, 700);
+        </script>
+    """
+    components.html(
+        script.replace("__ANCHOR_ID__", anchor_id).replace("__OFFSET__", str(offset)),
+        height=1,
+        scrolling=False,
+    )
+
 def _scroll_to_bottom():
+    _scroll_to_anchor("nexusiq-latest-answer", offset=20)
+
+def _scroll_to_question():
+    _scroll_to_anchor("nexusiq-latest-question", offset=20)
+
+def _scroll_to_command_center():
+    _scroll_to_anchor("nexusiq-command-center", offset=20)
+
+def _scroll_to_top():
     import streamlit.components.v1 as components
     components.html("""
         <script>
-            function scrollToLatest() {
+            function scrollToTop() {
                 var d = window.parent.document;
-                var anchor = d.getElementById('nexusiq-latest-answer');
-                if (anchor) {
-                    anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
+                var main = d.querySelector('section.stMain') || d.querySelector('[data-testid="stAppViewContainer"]');
+                if (main) {
+                    main.scrollTo({top: 0, behavior: 'smooth'});
                     return true;
                 }
+                window.parent.scrollTo({top: 0, behavior: 'smooth'});
                 return false;
             }
-            scrollToLatest();
-            setTimeout(scrollToLatest, 200);
-            setTimeout(scrollToLatest, 500);
+            scrollToTop();
+            setTimeout(scrollToTop, 200);
+            setTimeout(scrollToTop, 500);
         </script>
     """, height=1, scrolling=False)
 
@@ -1077,6 +1353,12 @@ def run_fusion_chat():
         st.session_state.source_filter = "Auto"  # ✨ NEW: Default to auto-routing
     if "web_category" not in st.session_state:
         st.session_state.web_category = "electronics"  # ✨ NEW: Default web category
+    if "show_fusion_command_center" not in st.session_state:
+        st.session_state.show_fusion_command_center = False
+    if "pending_query_to_process" not in st.session_state:
+        st.session_state.pending_query_to_process = None
+    if "scroll_target" not in st.session_state:
+        st.session_state.scroll_target = None
     
     st.title("🔗 Fusion Agent — Multi-Source Intelligence")
     st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
@@ -1098,6 +1380,13 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
     
     with st.sidebar:
+        if st.button("🧭 Show Demo Guide", key="show_demo_guide_top", use_container_width=True):
+            st.session_state.show_fusion_command_center = True
+            st.session_state.scroll_target = None
+            st.session_state.pending_query_to_process = None
+            st.rerun()
+
+        st.markdown("---")
         st.header("⚙️ Source Controls")
         
         # ✨ NEW: Source Filter
@@ -1150,6 +1439,7 @@ def run_fusion_chat():
         for eq, hint in example_questions:
             if st.button(f"💬 {eq}", key=f"ex_{eq[:20]}", use_container_width=True):
                 st.session_state.pending_suggestion = eq
+                st.session_state.show_fusion_command_center = False
                 st.rerun()
             st.caption(f"→ {hint}")
         
@@ -1188,6 +1478,7 @@ def run_fusion_chat():
                 
                 if st.button(f"{icon} {short}", key=f"hist_{i}", use_container_width=True):
                     st.session_state.pending_suggestion = item["question"]
+                    st.session_state.show_fusion_command_center = False
                     st.session_state.from_history = True   # ← flag it
                     st.rerun()
                 
@@ -1196,6 +1487,8 @@ def run_fusion_chat():
             if st.button("🗑️ Clear All", use_container_width=True):
                 st.session_state.query_history = []
                 st.session_state.chat_messages = []
+                st.session_state.show_fusion_command_center = False
+                st.session_state.scroll_target = None
                 # Clear chart state
                 keys_to_clear = [k for k in st.session_state.keys() 
                                 if k.startswith(('chart_', 'generated_chart_', 'x_col_', 'y_col_', 'color_col_'))]
@@ -1208,13 +1501,24 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
     #  REPLAY CHAT HISTORY
     # ═══════════════════════════════════════════════════════
+
+    if st.session_state.get("show_fusion_command_center"):
+        st.markdown("---")
+        st.session_state.scroll_target = None
+        st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
+        _scroll_to_command_center()
+        render_guided_command_center()
+        st.stop()
     
     total_messages = len(st.session_state.chat_messages)
     
     for idx, msg in enumerate(st.session_state.chat_messages):
         is_latest = (idx == total_messages - 1) and msg["role"] == "assistant"
+        is_latest_user = (idx == total_messages - 1) and msg["role"] == "user"
         
         if msg["role"] == "user":
+            if is_latest_user:
+                st.markdown('<div id="nexusiq-latest-question"></div>', unsafe_allow_html=True)
             with st.chat_message("user"):
                 st.markdown(msg["content"])
         else:
@@ -1224,8 +1528,16 @@ def run_fusion_chat():
                 render_fusion_message(msg, is_latest=is_latest)
 
     # Auto-scroll to latest message after history replay
-    if total_messages > 0:
+    if st.session_state.get("scroll_target") == "question":
+        _scroll_to_question()
+        if st.session_state.get("pending_query_to_process"):
+            time.sleep(0.7)
+            st.session_state.scroll_target = None
+            st.rerun()
+        st.session_state.scroll_target = None
+    elif st.session_state.get("scroll_target") == "answer":
         _scroll_to_bottom()
+        st.session_state.scroll_target = None
 
     # ═══════════════════════════════════════════════════════
     #  DID YOU MEAN? (spell-correction prompt)
@@ -1268,7 +1580,10 @@ def run_fusion_chat():
     #  HANDLE INPUT
     # ═══════════════════════════════════════════════════════
 
-    if st.session_state.pending_suggestion:
+    if st.session_state.pending_query_to_process:
+        question = st.session_state.pending_query_to_process
+        st.session_state.pending_query_to_process = None
+    elif st.session_state.pending_suggestion:
         question = st.session_state.pending_suggestion
         st.session_state.pending_suggestion = None
     else:
@@ -1280,6 +1595,7 @@ def run_fusion_chat():
     
     if question:
         from utils.validators import auto_correct_question
+        st.session_state.show_fusion_command_center = False
 
         # Check for spelling corrections BEFORE running the query.
         # Only intercept on fresh user input — not when re-running a corrected query.
@@ -1289,6 +1605,7 @@ def run_fusion_chat():
         if correction["corrected"] and not is_corrected_rerun:
             # Show the user's original message in chat
             st.session_state.chat_messages.append({"role": "user", "content": question})
+            st.session_state.scroll_target = "question"
             with st.chat_message("user"):
                 st.markdown(question)
 
@@ -1306,13 +1623,19 @@ def run_fusion_chat():
             st.session_state["_last_corrected_q"] = None
 
         # Add user message
-        st.session_state.chat_messages.append({
-            "role": "user",
-            "content": question
-        })
-
-        with st.chat_message("user"):
-            st.markdown(question)
+        already_visible = (
+            st.session_state.chat_messages
+            and st.session_state.chat_messages[-1].get("role") == "user"
+            and st.session_state.chat_messages[-1].get("content") == question
+        )
+        if not already_visible:
+            st.session_state.chat_messages.append({
+                "role": "user",
+                "content": question
+            })
+            st.session_state.pending_query_to_process = question
+            st.session_state.scroll_target = "question"
+            st.rerun()
 
         # Process with Fusion Agent
         with st.chat_message("assistant", avatar="🔗"):
@@ -1366,6 +1689,7 @@ def run_fusion_chat():
             msg_id = str(int(time.time() * 1000))
             
             # Render the fusion result
+            st.markdown('<div id="nexusiq-latest-answer"></div>', unsafe_allow_html=True)
             render_fusion_message({
                 "id": msg_id,
                 "answer": result.get("answer", "No answer generated"),
@@ -1392,6 +1716,7 @@ def run_fusion_chat():
                 "sources": result.get("sources", []),
                 "query_time": total_time
             })
+            st.session_state.scroll_target = "answer"
             
             # Save to query history
             if not st.session_state.get("from_history", False):
@@ -1402,73 +1727,11 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
     #  EMPTY STATE (Welcome Screen)
     # ════════════════════════════════════
-    if not st.session_state.chat_messages:
+    if not st.session_state.chat_messages and not st.session_state.get("show_fusion_command_center"):
         st.markdown("---")
-        
-        st.markdown(
-            """
-            <div style='text-align:center; padding:32px 0 16px 0;'>
-                <h2 style='font-size:2rem; font-weight:800; margin-bottom:8px;'>
-                    What do you want to know?
-                </h2>
-                <p style='color:#9ca3af; font-size:1.05em; margin:0;'>
-                    Type any business question — the agent decides whether to query SQL, search PDFs, or scrape the web.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Metrics strip
-        sq1, sq2, sq3, sq4 = st.columns(4)
-        with sq1:
-            st.metric("Transactions", "100K", "in PostgreSQL")
-        with sq2:
-            st.metric("Documents", "23 PDFs", "vector-indexed")
-        with sq3:
-            st.metric("LLM Models", "2 Active", "Gemini + Groq")
-        with sq4:
-            st.metric("Web Sources", "5 Sites", "live scraping")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 🚀 Quick Start — click any question below")
-
-        qs1, qs2, qs3 = st.columns(3)
-
-        with qs1:
-            st.markdown("**📊 Cross-Validated Queries**")
-            st.caption("SQL answer checked against PDF reports")
-            if st.button("💰 Q4 2024 revenue validated?", use_container_width=True, key="qs1"):
-                st.session_state.pending_suggestion = "What was Q4 2024 revenue?"
-                st.rerun()
-            if st.button("📈 Compare Q3 vs Q4 performance", use_container_width=True, key="qs2"):
-                st.session_state.pending_suggestion = "Compare Q3 and Q4 2024 performance"
-                st.rerun()
-
-        with qs2:
-            st.markdown("**📄 Document Intelligence**")
-            st.caption("Searches 23 indexed business PDFs")
-            if st.button("📋 What is the return policy?", use_container_width=True, key="qs3"):
-                st.session_state.pending_suggestion = "What is the return policy for Electronics?"
-                st.rerun()
-            if st.button("🌐 West region expansion plan?", use_container_width=True, key="qs4"):
-                st.session_state.pending_suggestion = "What is the West region expansion plan?"
-                st.rerun()
-
-        with qs3:
-            st.markdown("**🛒 Competitor Intelligence**")
-            st.caption("Live prices scraped from competitor sites")
-            if st.button("💻 Electronics competitor pricing?", use_container_width=True, key="qs5"):
-                st.session_state.pending_suggestion = "What are competitor prices for electronics?"
-                st.rerun()
-            if st.button("🏠 Home goods vs competitors?", use_container_width=True, key="qs6"):
-                st.session_state.pending_suggestion = "Compare our home goods prices to competitors"
-                st.rerun()
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.info("💡 **Tip:** Use the sidebar to force SQL / RAG / Web only, or leave it on **Auto** to let the agent decide.")
+        st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
+        _scroll_to_command_center()
+        render_guided_command_center()
 
 # Run the app
 if __name__ == "__main__":

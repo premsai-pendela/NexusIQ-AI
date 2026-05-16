@@ -497,7 +497,29 @@ Reply with ONLY this JSON (no extra text):
     def _contexts_compatible(self, left: str, right: str) -> bool:
         if left == right:
             return True
-        return "value" in {left, right} or "answer" in {left, right} or "extracted" in {left, right}
+
+        generic_contexts = {"value", "answer", "extracted", None}
+        strict_contexts = {"count", "quantity"}
+
+        # Counts are often supporting metadata in SQL answers
+        # (for example, "transactions_analyzed") while RAG reports contain
+        # large revenue figures. Never let a generic/extracted document
+        # number validate or contradict a structured SQL count.
+        if left in strict_contexts or right in strict_contexts:
+            return False
+
+        return left in generic_contexts or right in generic_contexts
+
+    def _is_validation_metadata(self, label: str) -> bool:
+        """Return True for helper metrics that should not be cross-source facts."""
+        label_lower = str(label or "").lower()
+        metadata_labels = {
+            "transactions_analyzed",
+            "row_count",
+            "result_count",
+            "result_rows",
+        }
+        return label_lower in metadata_labels
     
     def _cross_validate(self, sql_result: Dict, rag_result: Dict) -> Dict:
         """
@@ -526,6 +548,8 @@ Reply with ONLY this JSON (no extra text):
             rows = sql_result.get('results', [])
             if len(rows) == 1:
                 for key, value in rows[0].items():
+                    if self._is_validation_metadata(key):
+                        continue
                     if isinstance(value, (int, float)) and value > 1000:
                         sql_numbers.append({
                             'value': float(value),

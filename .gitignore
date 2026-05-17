@@ -39,6 +39,7 @@ data/nexusiq.db
 # Test reports (auto-generated)
 .gstack/
 eval-reports/
+traces/
 
 # OS
 .DS_Store

@@ -1,4 +1,5 @@
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -20,8 +21,11 @@ from evals.golden_eval import (
     resolve_replay_path,
     response_has_transient_failure,
     score_case_rules,
+    summarize_trace_for_report,
 )
 from evals.refresh_golden_truth import update_cases
+from observability.inspect_traces import format_trace_summary, get_trace_diagnostics
+from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
 from utils.validators import validate_question
 
@@ -296,6 +300,112 @@ class GoldenEvalTests(unittest.TestCase):
         self.assertIn("average_score", content)
         self.assertIn("2026-05-17T00:00:00", content)
         self.assertIn("100.0", content)
+
+
+class ObservabilityTests(unittest.TestCase):
+    def test_trace_session_writes_local_json_without_llm_calls(self):
+        previous_dir = os.environ.get("NEXUSIQ_TRACE_DIR")
+        previous_enabled = os.environ.get("NEXUSIQ_TRACE_ENABLED")
+        with TemporaryDirectory() as tmp:
+            os.environ["NEXUSIQ_TRACE_DIR"] = tmp
+            os.environ["NEXUSIQ_TRACE_ENABLED"] = "1"
+            trace = get_tracer().start_trace("What was Q4 revenue?", {"force_source": None})
+            with trace.span("routing") as span:
+                span["metadata"]["source_type"] = "sql_rag"
+            path = trace.finish({"source_type": "sql_rag", "from_cache": False})
+
+            self.assertTrue(path.exists())
+            payload = json.loads(path.read_text())
+            self.assertEqual(payload["schema_version"], "1.0")
+            self.assertEqual(payload["question"], "What was Q4 revenue?")
+            self.assertEqual(payload["final"]["source_type"], "sql_rag")
+            self.assertEqual(payload["spans"][0]["name"], "routing")
+            self.assertIn("span_id", payload["spans"][0])
+
+        if previous_dir is None:
+            os.environ.pop("NEXUSIQ_TRACE_DIR", None)
+        else:
+            os.environ["NEXUSIQ_TRACE_DIR"] = previous_dir
+        if previous_enabled is None:
+            os.environ.pop("NEXUSIQ_TRACE_ENABLED", None)
+        else:
+            os.environ["NEXUSIQ_TRACE_ENABLED"] = previous_enabled
+
+    def test_agent_result_summary_keeps_debug_fields_compact(self):
+        summary = summarize_agent_result(
+            {
+                "success": True,
+                "answer": "A" * 700,
+                "query": "SELECT SUM(total_amount) FROM sales_transactions",
+                "row_count": 1,
+                "model_used": "gemini-2.5-flash",
+                "source": "SQL Database",
+                "time": 1.2,
+            }
+        )
+
+        self.assertEqual(summary["row_count"], 1)
+        self.assertEqual(summary["model_used"], "gemini-2.5-flash")
+        self.assertLessEqual(len(summary["answer_preview"]), 500)
+
+    def test_trace_summary_formats_key_spans(self):
+        trace = {
+            "schema_version": "1.0",
+            "trace_id": "abc123",
+            "question": "Q",
+            "duration_s": 1.5,
+            "final": {
+                "source_type": "sql_only",
+                "routing_model": "keyword fallback",
+                "validation": None,
+                "from_cache": False,
+            },
+            "spans": [
+                {"name": "routing", "status": "ok", "duration_s": 0.1},
+                {"name": "fusion.answer_generation", "status": "ok", "duration_s": 3.4},
+            ],
+        }
+
+        summary = format_trace_summary(trace, Path("trace.json"))
+
+        self.assertIn("Trace: abc123", summary)
+        self.assertIn("Route: sql_only", summary)
+        self.assertIn("routing", summary)
+        self.assertIn("Slowest span: fusion.answer_generation", summary)
+        self.assertIn("slow", summary)
+
+        diagnostics = get_trace_diagnostics(trace)
+        self.assertEqual(diagnostics["slowest_span"]["name"], "fusion.answer_generation")
+
+    def test_trace_previews_can_be_disabled(self):
+        previous = os.environ.get("NEXUSIQ_TRACE_INCLUDE_PREVIEWS")
+        os.environ["NEXUSIQ_TRACE_INCLUDE_PREVIEWS"] = "0"
+        try:
+            summary = summarize_agent_result({"success": True, "answer": "Sensitive answer"})
+            self.assertEqual(summary["answer_preview"], "[preview disabled]")
+        finally:
+            if previous is None:
+                os.environ.pop("NEXUSIQ_TRACE_INCLUDE_PREVIEWS", None)
+            else:
+                os.environ["NEXUSIQ_TRACE_INCLUDE_PREVIEWS"] = previous
+
+    def test_eval_report_trace_summary_highlights_slow_and_error_spans(self):
+        trace = {
+            "trace_id": "abc123",
+            "spans": [
+                {"name": "routing", "status": "ok", "duration_s": 0.2},
+                {"name": "agent.sql", "status": "error", "duration_s": 4.2, "error": "quota"},
+            ],
+        }
+
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "trace.json"
+            path.write_text(json.dumps(trace))
+            summary = summarize_trace_for_report(str(path))
+
+        self.assertIn("slowest `agent.sql` 4.2s", summary)
+        self.assertIn("errors `agent.sql`", summary)
+        self.assertIn("slow spans `agent.sql` 4.2s", summary)
 
 
 if __name__ == "__main__":

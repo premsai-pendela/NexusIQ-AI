@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from run_tests import routing_matches
+from observability.inspect_traces import get_trace_diagnostics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -280,6 +281,8 @@ def build_case_result(
         "expected_confidence": case.get("expected_confidence"),
         "answer_snippet": (response.get("answer") or "")[:300].replace("\n", " "),
         "response": response,
+        "trace_id": response.get("trace_id"),
+        "trace_path": response.get("trace_path"),
         "transient_failure": response_has_transient_failure(response),
         "elapsed_s": round(elapsed_s, 2),
     }
@@ -563,12 +566,46 @@ def build_markdown_report(report: Dict[str, Any]) -> str:
             lines.append(f"Question: {result['question']}")
             lines.append("")
             lines.append(f"Answer snippet: {result.get('answer_snippet') or result.get('error')}")
+            if result.get("trace_path"):
+                lines.append("")
+                lines.append(f"Trace: `{result.get('trace_path')}`")
+                trace_summary = summarize_trace_for_report(result.get("trace_path"))
+                if trace_summary:
+                    lines.append(trace_summary)
             lines.append("")
             for name, check in result.get("checks", {}).items():
                 lines.append(f"- {name}: {check.get('points')}/{check.get('max_points')} - {check.get('detail')}")
             lines.append("")
 
     return "\n".join(lines) + "\n"
+
+
+def summarize_trace_for_report(trace_path: Optional[str]) -> str:
+    if not trace_path:
+        return ""
+    try:
+        trace = json.loads(Path(trace_path).read_text())
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+    diagnostics = get_trace_diagnostics(trace)
+    parts = []
+    slowest = diagnostics.get("slowest_span")
+    if slowest:
+        parts.append(f"slowest `{slowest.get('name')}` {slowest.get('duration_s')}s")
+    error_spans = diagnostics.get("error_spans") or []
+    if error_spans:
+        parts.append(
+            "errors "
+            + ", ".join(f"`{span.get('name')}`" for span in error_spans)
+        )
+    slow_spans = diagnostics.get("slow_spans") or []
+    if slow_spans:
+        parts.append(
+            "slow spans "
+            + ", ".join(f"`{span.get('name')}` {span.get('duration_s')}s" for span in slow_spans[:3])
+        )
+    return f"Trace summary: {'; '.join(parts)}" if parts else ""
 
 
 def write_reports(report: Dict[str, Any], out_dir: Path) -> Tuple[Path, Path]:

@@ -29,6 +29,8 @@ import plotly.graph_objects as go
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+from observability.inspect_traces import SLOW_SPAN_SECONDS, get_trace_diagnostics
+
 from agents.fusion_agent import get_fusion_agent
 from config.settings import settings
 from utils.validators import VALID_REGIONS, VALID_CATEGORIES'''
@@ -1068,6 +1070,88 @@ def render_model_journey(models_tried: list):
                 unsafe_allow_html=True
             )
 
+def _load_trace(trace_path: str) -> dict:
+    if not trace_path:
+        return {}
+    try:
+        path = Path(trace_path)
+        if not path.exists():
+            return {}
+        return json.loads(path.read_text())
+    except Exception:
+        return {}
+
+def _format_span_duration(seconds) -> str:
+    try:
+        value = float(seconds or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return f"{value:.2f}s"
+
+def render_observability_panel(msg: dict):
+    """Render local trace metadata for a Fusion response."""
+    trace_id = msg.get("trace_id")
+    trace_path = msg.get("trace_path")
+    if not trace_id and not trace_path:
+        return
+
+    trace = _load_trace(trace_path)
+    final = trace.get("final") or {}
+    spans = trace.get("spans") or []
+    diagnostics = get_trace_diagnostics(trace, slow_threshold=SLOW_SPAN_SECONDS)
+    slowest = diagnostics["slowest_span"]
+    slow_spans = diagnostics["slow_spans"]
+    error_spans = diagnostics["error_spans"]
+
+    route = final.get("source_type") or msg.get("source_type", "unknown")
+    total_duration = trace.get("duration_s") or msg.get("query_time", 0)
+    routing_model = final.get("routing_model") or msg.get("routing_model") or "n/a"
+    validation = final.get("validation") or msg.get("validation") or {}
+    validation_label = validation.get("confidence") or "n/a"
+
+    with st.expander("🧭 How NexusIQ Ran This Answer", expanded=False):
+        metric_cols = st.columns(4)
+        metric_cols[0].metric("Route", route)
+        metric_cols[1].metric("Total Time", _format_span_duration(total_duration))
+        metric_cols[2].metric("Validation", validation_label)
+        metric_cols[3].metric("Router", str(routing_model))
+
+        if slowest:
+            slow_label = "⚠️ " if (slowest.get("duration_s") or 0) > SLOW_SPAN_SECONDS else ""
+            st.caption(
+                f"{slow_label}Slowest step: **{slowest.get('name')}** "
+                f"({_format_span_duration(slowest.get('duration_s'))})"
+            )
+
+        if error_spans:
+            st.warning(
+                "One or more trace steps recorded an error: "
+                + ", ".join(span.get("name", "unknown") for span in error_spans)
+            )
+        elif slow_spans:
+            st.info(
+                "Slow steps over 3s: "
+                + ", ".join(
+                    f"{span.get('name')} ({_format_span_duration(span.get('duration_s'))})"
+                    for span in slow_spans
+                )
+            )
+
+        if spans:
+            st.markdown("**Trace timeline**")
+            for span in spans:
+                status_icon = "✅" if span.get("status") == "ok" else "⚠️"
+                slow_icon = " ⏳" if (span.get("duration_s") or 0) > SLOW_SPAN_SECONDS else ""
+                st.caption(
+                    f"{status_icon}{slow_icon} {span.get('name')} · "
+                    f"{_format_span_duration(span.get('duration_s'))}"
+                )
+
+        trace_col, path_col = st.columns([0.4, 0.6])
+        trace_col.caption(f"Trace ID: `{trace_id or trace.get('trace_id')}`")
+        if trace_path:
+            path_col.caption(f"Trace file: `{trace_path}`")
+
 # ─────────────────────────────────────────────────────
 #  ✨ NEW: FUSION MESSAGE RENDERER
 # ─────────────────────────────────────────────────────
@@ -1144,9 +1228,15 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
     
     if all_models_tried:
         render_model_journey(all_models_tried)
+
+    # ═══════════════════════════════════════════════════════════
+    # 6. OBSERVABILITY TRACE
+    # ═══════════════════════════════════════════════════════════
+
+    render_observability_panel(msg)
     
     # ═══════════════════════════════════════════════════════════
-    # 6. TIMING INFO
+    # 7. TIMING INFO
     # ═══════════════════════════════════════════════════════════
     
     total_time = msg.get("query_time", 0)
@@ -1179,6 +1269,10 @@ def add_to_history(question, result, execution_time):
         "web_result": result.get("web_result"),
         "validation": result.get("validation"),
         "sources": result.get("sources", []),
+        "trace_id": result.get("trace_id"),
+        "trace_path": result.get("trace_path"),
+        "routing_model": result.get("routing_model"),
+        "routing_fallback": result.get("routing_fallback"),
         "time": execution_time,
         "timestamp": datetime.now(),
         "success": True
@@ -1700,7 +1794,11 @@ def run_fusion_chat():
                 "validation": result.get("validation"),
                 "sources": result.get("sources", []),
                 "query_time": total_time,
-                "from_cache": result.get('_from_cache', False)
+                "from_cache": result.get('_from_cache', False),
+                "trace_id": result.get("trace_id"),
+                "trace_path": result.get("trace_path"),
+                "routing_model": result.get("routing_model"),
+                "routing_fallback": result.get("routing_fallback")
             }, is_latest=True)
             
             # Save to chat history
@@ -1714,7 +1812,11 @@ def run_fusion_chat():
                 "web_result": result.get("web_result"),
                 "validation": result.get("validation"),
                 "sources": result.get("sources", []),
-                "query_time": total_time
+                "query_time": total_time,
+                "trace_id": result.get("trace_id"),
+                "trace_path": result.get("trace_path"),
+                "routing_model": result.get("routing_model"),
+                "routing_fallback": result.get("routing_fallback")
             })
             st.session_state.scroll_target = "answer"
             

@@ -30,6 +30,7 @@ from agents.sql_agent import SQLAgent
 from agents.rag_agent import get_rag_agent
 from agents.web_agent import get_web_agent  # ✅ NEW: Import Web Agent
 from config.settings import settings
+from observability.tracer import TraceSession, get_tracer, summarize_agent_result
 from utils.quota_tracker import get_tracker
 
 logging.basicConfig(level=logging.INFO)
@@ -839,6 +840,49 @@ ANSWER:"""
             del self._query_cache[oldest]
         self._query_cache[key] = (result, time.time())
 
+    def _finalize_trace(self, trace: TraceSession, result: Dict, cached: bool = False) -> Dict:
+        """Attach trace metadata to the response after writing the trace file."""
+        final_summary = {
+            "source_type": result.get("source_type"),
+            "routing_model": result.get("routing_model"),
+            "routing_fallback": result.get("routing_fallback"),
+            "query_time_s": round(float(result.get("query_time", 0) or 0), 3),
+            "from_cache": cached or bool(result.get("_from_cache")),
+            "answer_preview": str(result.get("answer") or "")[:500],
+            "validation": {
+                "confidence": (result.get("validation") or {}).get("confidence"),
+                "confidence_reason": (result.get("validation") or {}).get("confidence_reason"),
+            }
+            if result.get("validation")
+            else None,
+            "sql": summarize_agent_result(result.get("sql_result")),
+            "rag": summarize_agent_result(result.get("rag_result")),
+            "web": summarize_agent_result(result.get("web_result")),
+        }
+        trace_path = trace.finish(final_summary)
+        result["trace_id"] = trace.trace_id
+        if trace_path:
+            result["trace_path"] = str(trace_path)
+        return result
+
+    def _run_agent_with_trace(
+        self,
+        trace: Optional[TraceSession],
+        key: str,
+        runner: Callable[[str], Dict],
+        question: str,
+    ) -> Dict:
+        if trace is None:
+            return runner(question)
+
+        with trace.span(f"agent.{key}", {"source": key}) as span:
+            result = runner(question)
+            span["metadata"]["result"] = summarize_agent_result(result)
+            span["status"] = "ok" if result.get("success") else "error"
+            if result.get("error"):
+                span["error"] = str(result.get("error"))[:500]
+            return result
+
     def _run_agents_parallel(
         self,
         question: str,
@@ -846,6 +890,7 @@ ANSWER:"""
         run_rag: bool,
         run_web: bool,
         progress_cb: Optional[Callable[[str, Dict], None]] = None,
+        trace: Optional[TraceSession] = None,
     ) -> tuple:
         """Run requested agents concurrently. Returns (sql_result, rag_result, web_result)."""
 
@@ -854,11 +899,11 @@ ANSWER:"""
 
         with ThreadPoolExecutor(max_workers=3) as pool:
             if run_sql:
-                future_to_key[pool.submit(self._run_sql_query, question)] = "sql"
+                future_to_key[pool.submit(self._run_agent_with_trace, trace, "sql", self._run_sql_query, question)] = "sql"
             if run_rag:
-                future_to_key[pool.submit(self._run_rag_query, question)] = "rag"
+                future_to_key[pool.submit(self._run_agent_with_trace, trace, "rag", self._run_rag_query, question)] = "rag"
             if run_web:
-                future_to_key[pool.submit(self._run_web_query, question)] = "web"
+                future_to_key[pool.submit(self._run_agent_with_trace, trace, "web", self._run_web_query, question)] = "web"
 
             results = {"sql": None, "rag": None, "web": None}
 
@@ -885,12 +930,27 @@ ANSWER:"""
         Main fusion query method. Routes to source(s) and combines results.
         progress_cb(source_name, result_dict) called as each parallel agent finishes.
         """
+        trace = get_tracer().start_trace(
+            question,
+            {
+                "force_source": force_source,
+                "environment": getattr(settings, "environment", "unknown"),
+            },
+        )
 
         # Cache check — skip for forced-source overrides
         if not force_source:
             cached = self._cache_get(question)
             if cached:
-                return cached
+                trace.record_event(
+                    "cache.hit",
+                    {
+                        "source_type": cached.get("source_type"),
+                        "previous_trace_id": cached.get("trace_id"),
+                    },
+                )
+                cached["query_time"] = 0
+                return self._finalize_trace(trace, cached, cached=True)
 
         start_time = datetime.now()
         self._last_routing_model = None
@@ -902,18 +962,27 @@ ANSWER:"""
         logger.info(f"{'='*70}")
 
         # Step 1: Classify query source (forced → LLM → keyword fallback)
-        if force_source:
-            source_type = force_source
-            logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
-        else:
-            source_type = self._classify_query_source_llm(question)
-            if source_type:
-                logger.info(f"📋 Query routing: {source_type.upper()} (LLM)")
+        with trace.span("routing", {"forced": bool(force_source)}) as span:
+            if force_source:
+                source_type = force_source
+                logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
             else:
-                source_type = self._classify_query_source(question)
-                self._last_routing_model = "keyword fallback"
-                self._last_routing_fallback = True
-                logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
+                source_type = self._classify_query_source_llm(question)
+                if source_type:
+                    logger.info(f"📋 Query routing: {source_type.upper()} (LLM)")
+                else:
+                    source_type = self._classify_query_source(question)
+                    self._last_routing_model = "keyword fallback"
+                    self._last_routing_fallback = True
+                    logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
+            span["metadata"].update(
+                {
+                    "source_type": source_type,
+                    "routing_model": self._last_routing_model,
+                    "routing_fallback": self._last_routing_fallback,
+                    "no_data_reason": self._no_data_reason,
+                }
+            )
         
         # Step 2: Execute based on routing
         sql_result = None
@@ -928,7 +997,7 @@ ANSWER:"""
         if source_type == "no_data":
             reason = self._no_data_reason or "No available data source covers this query."
             logger.warning(f"→ No data route: {reason}")
-            return {
+            result = {
                 'answer': f"I don't have data to answer this question.\n\n**Reason:** {reason}\n\nAvailable data covers: SQL transactions (2024 only), internal PDF documents, and live competitor pricing.",
                 'source_type': 'no_data',
                 'sql_result': None,
@@ -939,6 +1008,7 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
+            return self._finalize_trace(trace, result)
 
         # ═══════════════════════════════════════════════════════════
         # SINGLE-SOURCE ROUTES
@@ -946,9 +1016,9 @@ ANSWER:"""
 
         if source_type == "sql_only":
             logger.info("→ Using SQL Agent only")
-            sql_result = self._run_sql_query(question)
+            sql_result = self._run_agent_with_trace(trace, "sql", self._run_sql_query, question)
             
-            return {
+            result = {
                 'answer': sql_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
                 'sql_result': sql_result,
@@ -959,12 +1029,13 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
+            return self._finalize_trace(trace, result)
 
         elif source_type == "rag_only":
             logger.info("→ Using RAG Agent only")
-            rag_result = self._run_rag_query(question)
+            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, question)
 
-            return {
+            result = {
                 'answer': rag_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
                 'sql_result': None,
@@ -976,12 +1047,13 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
+            return self._finalize_trace(trace, result)
 
         elif source_type == "web_only":
             logger.info("→ Using Web Agent only")
-            web_result = self._run_web_query(question)
+            web_result = self._run_agent_with_trace(trace, "web", self._run_web_query, question)
 
-            return {
+            result = {
                 'answer': web_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
                 'sql_result': None,
@@ -992,12 +1064,13 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
+            return self._finalize_trace(trace, result)
 
         elif source_type == "comparison":
             logger.info("→ Using RAG Agentic Comparison")
-            rag_result = self._run_rag_query(question)
+            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, question)
 
-            return {
+            result = {
                 'answer': rag_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
                 'sql_result': None,
@@ -1009,6 +1082,7 @@ ANSWER:"""
                 'routing_fallback': self._last_routing_fallback,
                 'query_time': (datetime.now() - start_time).total_seconds()
             }
+            return self._finalize_trace(trace, result)
         
         # ═══════════════════════════════════════════════════════════
         # MULTI-SOURCE ROUTES (sql_rag, sql_web, rag_web, all)
@@ -1023,11 +1097,17 @@ ANSWER:"""
                 run_rag='rag' in source_type,
                 run_web='web' in source_type,
                 progress_cb=progress_cb,
+                trace=trace,
             )
             
             # Cross-validate if we have SQL + RAG
             if sql_result and rag_result and sql_result.get('success') and rag_result.get('success'):
-                validation = self._cross_validate(sql_result, rag_result)
+                with trace.span("validation.cross_source") as span:
+                    validation = self._cross_validate(sql_result, rag_result)
+                    span["metadata"]["confidence"] = validation.get("confidence")
+                    span["metadata"]["confidence_reason"] = validation.get("confidence_reason")
+                    span["metadata"]["matches"] = len(validation.get("matches", []))
+                    span["metadata"]["discrepancies"] = len(validation.get("discrepancies", []))
 
             # Downgrade source_type label when SQL silently failed
             if sql_result and not sql_result.get('success') and rag_result and rag_result.get('success'):
@@ -1035,13 +1115,15 @@ ANSWER:"""
                 source_type = "rag_only (sql_failed)"
 
             # Generate fused answer
-            answer = self._generate_fused_answer(
-                question,
-                sql_result,
-                rag_result,
-                web_result,  # ✅ Now properly passed
-                validation
-            )
+            with trace.span("fusion.answer_generation") as span:
+                answer = self._generate_fused_answer(
+                    question,
+                    sql_result,
+                    rag_result,
+                    web_result,  # ✅ Now properly passed
+                    validation
+                )
+                span["metadata"]["answer_preview"] = str(answer or "")[:500]
             
             query_time = (datetime.now() - start_time).total_seconds()
 
@@ -1061,7 +1143,7 @@ ANSWER:"""
             }
             if not force_source:
                 self._cache_set(question, result)
-            return result
+            return self._finalize_trace(trace, result)
     
     def close(self):
         """Clean up resources"""

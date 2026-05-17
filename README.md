@@ -238,6 +238,9 @@ python -m evals.golden_eval --answer-only --delay 8 --retries 1
 # Refresh golden expected numbers from configured DATABASE_URL
 python -m evals.refresh_golden_truth --dry-run
 
+# Inspect local AI observability traces
+python -m observability.inspect_traces --latest
+
 # Run all 105 queries
 python run_tests.py
 
@@ -260,7 +263,7 @@ python run_tests.py --dry-run
 
 Reports are saved to `.gstack/test-reports/` as Markdown + JSON.
 
-See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live multi-agent test runs.
+See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live multi-agent test runs. See [docs/observability.md](docs/observability.md) for local trace debugging.
 
 **Current test results across all 5 phases: 23/23 passing.**
 

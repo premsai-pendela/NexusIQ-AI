@@ -223,6 +223,21 @@ DATABASE_URL   = "postgresql://user:password@host:5432/postgres"
 ## Automated Testing
 
 ```bash
+# Fast deterministic validation suite
+python -m unittest discover -s tests -v
+
+# Offline SQL/RAG/Web validation harness (no API calls)
+python -m evals.offline_eval
+
+# Production-style golden evals
+python -m evals.golden_eval --dry-run
+python -m evals.golden_eval --limit 3
+python -m evals.golden_eval --replay latest
+python -m evals.golden_eval --answer-only --delay 8 --retries 1
+
+# Refresh golden expected numbers from configured DATABASE_URL
+python -m evals.refresh_golden_truth --dry-run
+
 # Run all 105 queries
 python run_tests.py
 
@@ -244,6 +259,8 @@ python run_tests.py --dry-run
 ```
 
 Reports are saved to `.gstack/test-reports/` as Markdown + JSON.
+
+See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live multi-agent test runs.
 
 **Current test results across all 5 phases: 23/23 passing.**
 

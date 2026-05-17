@@ -1,0 +1,206 @@
+[
+  {
+    "id": "q4_electronics_revenue",
+    "question": "What was Q4 2024 Electronics revenue?",
+    "expected_route": "sql_rag",
+    "expected_confidence": "HIGH",
+    "expected_numbers": [
+      {
+        "label": "Q4 2024 Electronics revenue",
+        "value": 31710925.89,
+        "tolerance_pct": 2.0
+      }
+    ],
+    "required_terms": [
+      "Electronics",
+      "Q4"
+    ],
+    "required_sources": [
+      "Q4"
+    ],
+    "requires_sql": true,
+    "requires_rag": true,
+    "judge_required": true
+  },
+  {
+    "id": "q4_total_revenue_validation",
+    "question": "Validate Q4 2024 revenue against reports.",
+    "expected_route": "sql_rag",
+    "expected_confidence": "HIGH",
+    "expected_numbers": [
+      {
+        "label": "Q4 2024 revenue",
+        "value": 59335168.24,
+        "tolerance_pct": 2.0
+      }
+    ],
+    "required_terms": [
+      "Q4",
+      "revenue"
+    ],
+    "required_sources": [
+      "Q4"
+    ],
+    "requires_sql": true,
+    "requires_rag": true,
+    "judge_required": true
+  },
+  {
+    "id": "annual_total_revenue",
+    "question": "What was total 2024 revenue?",
+    "expected_route": "sql_rag",
+    "expected_numbers": [
+      {
+        "label": "total 2024 revenue",
+        "value": 175164502.35,
+        "tolerance_pct": 2.0
+      }
+    ],
+    "required_terms": [
+      "2024",
+      "revenue"
+    ],
+    "requires_sql": true,
+    "judge_required": true
+  },
+  {
+    "id": "top_region_by_revenue",
+    "question": "Which region had the highest revenue?",
+    "expected_route": "sql_only",
+    "expected_numbers": [
+      {
+        "label": "West revenue",
+        "value": 38597899.86,
+        "tolerance_pct": 2.0
+      }
+    ],
+    "required_terms": [
+      "West"
+    ],
+    "requires_sql": true,
+    "judge_required": false
+  },
+  {
+    "id": "top_products_by_revenue",
+    "question": "Top 5 products by revenue.",
+    "expected_route": "sql_only",
+    "required_terms": [
+      "Wireless Headphones",
+      "Mechanical Keyboard",
+      "Laptop Pro"
+    ],
+    "requires_sql": true,
+    "judge_required": false
+  },
+  {
+    "id": "refund_policy",
+    "question": "What is the refund policy?",
+    "expected_route": "rag_only",
+    "required_terms": [
+      "return"
+    ],
+    "required_sources": [
+      "Returns",
+      "Refund"
+    ],
+    "requires_rag": true,
+    "judge_required": true
+  },
+  {
+    "id": "q4_strategic_priorities",
+    "question": "What are Q4 2024 strategic priorities?",
+    "expected_route": "rag_only",
+    "required_terms": [
+      "Q4"
+    ],
+    "required_sources": [
+      "Q4"
+    ],
+    "requires_rag": true,
+    "judge_required": true
+  },
+  {
+    "id": "q3_q4_performance_comparison",
+    "question": "Compare Q3 and Q4 2024 performance.",
+    "expected_route": "sql_rag",
+    "expected_numbers": [
+      {
+        "label": "Q3 revenue",
+        "value": 48520675.25,
+        "tolerance_pct": 3.0
+      },
+      {
+        "label": "Q4 revenue",
+        "value": 59335168.24,
+        "tolerance_pct": 3.0
+      }
+    ],
+    "required_terms": [
+      "Q3",
+      "Q4"
+    ],
+    "requires_sql": true,
+    "requires_rag": true,
+    "judge_required": true
+  },
+  {
+    "id": "electronics_competitor_prices",
+    "question": "What are competitor prices for electronics?",
+    "expected_route": "web_only",
+    "required_terms": [
+      "electronics"
+    ],
+    "requires_web": true,
+    "judge_required": true
+  },
+  {
+    "id": "full_q4_business_analysis",
+    "question": "Complete Q4 2024 analysis: validate revenue, compare competitor pricing, assess strategic execution.",
+    "expected_route": "all",
+    "expected_numbers": [
+      {
+        "label": "Q4 2024 revenue",
+        "value": 59335168.24,
+        "tolerance_pct": 3.0
+      }
+    ],
+    "required_terms": [
+      "Q4",
+      "revenue"
+    ],
+    "requires_sql": true,
+    "requires_rag": true,
+    "requires_web": true,
+    "judge_required": true
+  },
+  {
+    "id": "out_of_range_revenue",
+    "question": "What was revenue in 2020?",
+    "expected_route": "no_data",
+    "required_terms": [
+      "2024"
+    ],
+    "forbidden_terms": [
+      "$150.9M",
+      "$45.2M"
+    ],
+    "judge_required": false
+  },
+  {
+    "id": "region_typo_autocorrect",
+    "question": "What was revenue in Wset region?",
+    "expected_route": "sql_only",
+    "expected_numbers": [
+      {
+        "label": "West revenue",
+        "value": 38597899.86,
+        "tolerance_pct": 2.0
+      }
+    ],
+    "required_terms": [
+      "West"
+    ],
+    "requires_sql": true,
+    "judge_required": false
+  }
+]

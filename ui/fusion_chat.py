@@ -47,6 +47,8 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+from observability.inspect_traces import SLOW_SPAN_SECONDS, get_trace_diagnostics
+
 # ═══════════════════════════════════════════════════════
 #  CONFIGURATION
 # ═══════════════════════════════════════════════════════

@@ -72,6 +72,10 @@ class FusionAgent:
         self._cache_ttl = 3600
         self._cache_max = 50
 
+        # Conversation history — last N turns for context engineering
+        self._history: List[Dict[str, str]] = []
+        self._history_max = 5
+
         logger.info("✅ Fusion Agent initialized with SQL + RAG + Web!")
     
     def _classify_query_source(self, question: str) -> str:
@@ -155,6 +159,42 @@ class FusionAgent:
             logger.warning("  → Route: sql_only (no match, trying SQL anyway)")
             return "sql_only"
 
+    def _history_context(self, max_turns: int = 3) -> str:
+        if not self._history:
+            return ""
+        turns = "\n".join(
+            f"Q: {turn['question']}\nA: {turn['answer']}"
+            for turn in self._history[-max_turns:]
+        )
+        return f"\n## Conversation History\n{turns}\n"
+
+    def _resolve_question(self, question: str) -> str:
+        """Expand ambiguous follow-up using conversation history. Returns original if no history or LLM fails."""
+        if not self._history:
+            return question
+
+        history_ctx = self._history_context(max_turns=3)
+        prompt = f"""Given this conversation history and a follow-up question, rewrite the follow-up as a complete standalone question.
+If the follow-up is already self-contained and clear, return it unchanged.
+Output ONLY the rewritten question, no explanation, no quotes.
+
+{history_ctx}
+Follow-up: {question}
+Standalone question:"""
+
+        for client in [self.gemini_flash, self.groq_client]:
+            if client is None:
+                continue
+            try:
+                response = client.invoke(prompt)
+                resolved = response.content.strip().strip("\"'")
+                if resolved:
+                    return resolved
+            except Exception as exc:
+                logger.debug(f"Question resolution failed with client: {exc}")
+
+        return question
+
     def _classify_query_source_llm(self, question: str) -> Optional[str]:
         """
         LLM-based dynamic routing — understands meaning, not just keywords.
@@ -204,7 +244,7 @@ Adding RAG to these queries wastes time and adds no validation value.
 - Strategy/policy only: rag=true, sql=false
 - Competitor pricing only: web=true, sql=false, rag=false
 
-## Question
+{self._history_context()}## Question
 "{question}"
 
 Reply with ONLY this JSON (no extra text):
@@ -716,8 +756,9 @@ CROSS-VALIDATION RESULTS:
 """
         
         # Build fusion prompt
+        history_ctx = self._history_context()
         fusion_prompt = f"""You are a business intelligence analyst. Combine information from MULTIPLE data sources into ONE comprehensive answer.
-
+{history_ctx}
 QUESTION: {question}
 
 {sources_text}
@@ -863,6 +904,15 @@ ANSWER:"""
         result["trace_id"] = trace.trace_id
         if trace_path:
             result["trace_path"] = str(trace_path)
+
+        if not cached:
+            question = trace.data.get("question", "")
+            answer_snippet = (result.get("answer") or "")[:200]
+            if question and answer_snippet:
+                self._history.append({"question": question, "answer": answer_snippet})
+                if len(self._history) > self._history_max:
+                    self._history.pop(0)
+
         return result
 
     def _run_agent_with_trace(
@@ -984,7 +1034,16 @@ ANSWER:"""
                 }
             )
         
-        # Step 2: Execute based on routing
+        # Step 2: Resolve ambiguous follow-up questions using conversation history
+        with trace.span("query.resolution") as span:
+            resolved_question = self._resolve_question(question)
+            span["metadata"]["original"] = question
+            span["metadata"]["resolved"] = resolved_question
+            span["metadata"]["changed"] = resolved_question != question
+            if resolved_question != question:
+                logger.info(f"🔍 Question resolved: '{question}' → '{resolved_question}'")
+
+        # Step 3: Execute based on routing
         sql_result = None
         rag_result = None
         web_result = None
@@ -1016,8 +1075,8 @@ ANSWER:"""
 
         if source_type == "sql_only":
             logger.info("→ Using SQL Agent only")
-            sql_result = self._run_agent_with_trace(trace, "sql", self._run_sql_query, question)
-            
+            sql_result = self._run_agent_with_trace(trace, "sql", self._run_sql_query, resolved_question)
+
             result = {
                 'answer': sql_result.get('answer', 'No answer generated'),
                 'source_type': source_type,
@@ -1033,7 +1092,7 @@ ANSWER:"""
 
         elif source_type == "rag_only":
             logger.info("→ Using RAG Agent only")
-            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, question)
+            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, resolved_question)
 
             result = {
                 'answer': rag_result.get('answer', 'No answer generated'),
@@ -1051,7 +1110,7 @@ ANSWER:"""
 
         elif source_type == "web_only":
             logger.info("→ Using Web Agent only")
-            web_result = self._run_agent_with_trace(trace, "web", self._run_web_query, question)
+            web_result = self._run_agent_with_trace(trace, "web", self._run_web_query, resolved_question)
 
             result = {
                 'answer': web_result.get('answer', 'No answer generated'),
@@ -1068,7 +1127,7 @@ ANSWER:"""
 
         elif source_type == "comparison":
             logger.info("→ Using RAG Agentic Comparison")
-            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, question)
+            rag_result = self._run_agent_with_trace(trace, "rag", self._run_rag_query, resolved_question)
 
             result = {
                 'answer': rag_result.get('answer', 'No answer generated'),
@@ -1092,7 +1151,7 @@ ANSWER:"""
             logger.info(f"→ Using MULTI-SOURCE fusion (parallel): {source_type.upper()}")
 
             sql_result, rag_result, web_result = self._run_agents_parallel(
-                question,
+                resolved_question,
                 run_sql='sql' in source_type,
                 run_rag='rag' in source_type,
                 run_web='web' in source_type,

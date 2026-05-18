@@ -335,6 +335,43 @@ class RAGAgent:
         # Default threshold
         return base_threshold
 
+    def _extract_metadata_filter(self, question: str) -> Optional[dict]:
+        """Extract ChromaDB metadata filter from question keywords (quarter, category)."""
+        q = question.lower()
+        quarter_map = {"q1": "Q1", "q2": "Q2", "q3": "Q3", "q4": "Q4",
+                       "first quarter": "Q1", "second quarter": "Q2",
+                       "third quarter": "Q3", "fourth quarter": "Q4"}
+        for keyword, label in quarter_map.items():
+            if keyword in q:
+                return {"filename": {"$contains": label}}
+        return None
+
+    def _hyde_search(self, question: str, n_results: int) -> List[Dict]:
+        """Generate hypothetical answer then search with it (HyDE)."""
+        clients = []
+        if getattr(self, "groq_client", None):
+            clients.append(self.groq_client)
+        if getattr(self, "gemini_flash", None):
+            clients.append(self.gemini_flash)
+
+        fake_answer = None
+        for client in clients:
+            try:
+                resp = client.invoke(
+                    f"Write one factual paragraph answering this business question. "
+                    f"Use approximate numbers if needed. Be concise.\n\nQuestion: {question}"
+                )
+                fake_answer = resp.content.strip()
+                break
+            except Exception:
+                continue
+
+        if not fake_answer:
+            return []
+
+        logger.info(f"HyDE generated hypothetical answer ({len(fake_answer)} chars), re-searching...")
+        return self.hybrid_search(fake_answer, n_results=n_results)
+
     def _build_context(self, 
         chunks: List[Dict], 
         model_name: str = None,
@@ -1298,9 +1335,19 @@ ANSWER:"""
         complexity = self._classify_query_complexity(question)
         logger.info(f"Query complexity: {complexity}")
         
-        # Search documents
-        chunks = self.search_documents(question, n_results=n_results)
-        
+        # Hybrid BM25+vector search — BM25 naturally prioritizes keyword matches (Q4, Electronics)
+        # which makes metadata pre-filtering redundant; hybrid covers cross-document content too
+        chunks = self.hybrid_search(question, n_results=n_results)
+
+        # Adaptive HyDE: if top score too low, retrieval is struggling → generate hypothetical answer
+        HYDE_THRESHOLD = 0.35
+        if chunks and chunks[0].get("similarity", 1.0) < HYDE_THRESHOLD:
+            logger.info(f"Low confidence ({chunks[0]['similarity']:.3f} < {HYDE_THRESHOLD}) → HyDE triggered")
+            hyde_chunks = self._hyde_search(question, n_results=n_results)
+            if hyde_chunks and hyde_chunks[0].get("similarity", 0) > chunks[0].get("similarity", 0):
+                logger.info("HyDE improved retrieval — using HyDE results")
+                chunks = hyde_chunks
+
         if not chunks:
             return {
                 'answer': "I couldn't find any relevant information in the documents to answer your question.",

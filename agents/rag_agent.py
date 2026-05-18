@@ -147,7 +147,8 @@ class RAGAgent:
         # Initialize LLM clients
         self._init_llm_clients()
         self._init_bm25_index()
-        
+        self._ingestion_version = self._read_ingestion_version()
+
         logger.info("RAG Agent initialized successfully!")
     
     def _init_bm25_index(self):
@@ -171,7 +172,35 @@ class RAGAgent:
         self.bm25_index = BM25Okapi(tokenized_docs)
         
         logger.info(f"✅ BM25 index built with {len(self.bm25_documents)} documents")
-    
+
+    def refresh_bm25(self) -> None:
+        """Reload BM25 index from current ChromaDB state after incremental PDF ingestion."""
+        self._init_bm25_index()
+        self._ingestion_version = self._read_ingestion_version()
+        logger.info("BM25 index refreshed from ChromaDB")
+
+    def _read_ingestion_version(self) -> int:
+        """Read the ingestion version counter written by the ingestion pipeline."""
+        version_file = Path(settings.chroma_persist_directory) / "ingestion_version.json"
+        if not version_file.exists():
+            return 0
+        try:
+            return json.loads(version_file.read_text()).get("version", 0)
+        except Exception:
+            return 0
+
+    def _ensure_bm25_fresh(self) -> None:
+        """Auto-refresh BM25 if ChromaDB doc count or ingestion version has changed."""
+        chroma_count = self.collection.count()
+        current_version = self._read_ingestion_version()
+        if chroma_count != len(self.bm25_documents) or current_version != self._ingestion_version:
+            logger.info(
+                f"BM25 stale (docs: {len(self.bm25_documents)}→{chroma_count}, "
+                f"version: {self._ingestion_version}→{current_version}) — refreshing"
+            )
+            self._init_bm25_index()
+            self._ingestion_version = current_version
+
     def _init_llm_clients(self):
         """Initialize LLM clients for answer generation with feature flags"""
         
@@ -1632,10 +1661,12 @@ ANSWER:"""
         
         logger.info(f"Hybrid search for: '{query}' (BM25={bm25_weight}, Vector={vector_weight})")
         
+        self._ensure_bm25_fresh()
+
         # ═══════════════════════════════════════════════
         # Part A: BM25 Keyword Search
         # ═══════════════════════════════════════════════
-        
+
         tokenized_query = query.lower().split()
         bm25_scores = self.bm25_index.get_scores(tokenized_query)
         

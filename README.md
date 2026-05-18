@@ -184,11 +184,12 @@ GROQ_API_KEY=your_groq_api_key
 DATABASE_URL=postgresql://user:password@host:5432/postgres
 ```
 
-Set up the database:
+Inspect or refresh local data:
 
 ```bash
-python -m database.setup        # create tables
-python -m database.generate_data  # load 100K rows
+python -m database.ingestion_pipeline status
+python -m database.ingestion_pipeline refresh-all --dry-run
+python -m database.ingestion_pipeline refresh-all
 ```
 
 Run the app:
@@ -266,6 +267,43 @@ Reports are saved to `.gstack/test-reports/` as Markdown + JSON.
 See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live multi-agent test runs. See [docs/observability.md](docs/observability.md) for local trace debugging.
 
 **Current test results across all 5 phases: 23/23 passing.**
+
+---
+
+## Ingestion Pipeline
+
+NexusIQ keeps structured sales data, business PDFs, and the ChromaDB vector index in sync through one CLI:
+
+```bash
+# Show SQL row counts, PDF inventory, Chroma document count, and cache files
+python -m database.ingestion_pipeline status
+
+# Preview a full refresh without writing SQL or Chroma files
+python -m database.ingestion_pipeline refresh-all --dry-run
+
+# Rebuild aligned SQL sales data from config/company_data.py
+python -m database.ingestion_pipeline rebuild-sql
+
+# Rebuild the ChromaDB document index from data/pdfs/
+python -m database.ingestion_pipeline rebuild-rag
+
+# Smart-sync only new, changed, or deleted PDFs using the manifest
+python -m database.ingestion_pipeline sync-rag --dry-run
+python -m database.ingestion_pipeline sync-rag
+
+# Incrementally add or replace one PDF without rebuilding every document
+python -m database.ingestion_pipeline add-pdf --path data/pdfs/01_financial/example.pdf --category 01_financial
+
+# Rebuild SQL first, then rebuild RAG
+python -m database.ingestion_pipeline refresh-all
+
+# Remove local runtime caches only
+python -m database.ingestion_pipeline clear-caches
+```
+
+Use `sync-rag` for everyday document folder updates. It hashes PDFs, skips unchanged files, updates new or edited PDFs, removes chunks for deleted PDFs, and bumps the ingestion version only when something changed. Use `rebuild-rag` when you want a clean full reset from all PDFs.
+
+`refresh-all` deliberately rebuilds generated local state. Do not commit runtime/cache outputs from `data/chroma_db/`, including `data/chroma_db/ingestion_version.json` and `data/chroma_db/pdf_manifest.json`, `data/web_cache.json`, `data/quota_tracker.json`, `traces/`, `eval-reports/`, or `.gstack/` unless you intentionally want to update a tracked baseline.
 
 ---
 

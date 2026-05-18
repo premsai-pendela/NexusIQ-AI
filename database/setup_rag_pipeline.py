@@ -27,6 +27,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 # Paths
 PDF_BASE_DIR = Path("./data/pdfs")
 CHROMA_DIR = Path("./data/chroma_db")
+INGESTION_VERSION_FILE = CHROMA_DIR / "ingestion_version.json"
 
 # Categories to process
 CATEGORIES = [
@@ -42,10 +43,22 @@ CATEGORIES = [
 class RAGPipelineSetup:
     """Setup RAG pipeline: Extract -> Chunk -> Embed -> Store"""
     
-    def __init__(self):
+    def __init__(
+        self,
+        pdf_base_dir: Path = PDF_BASE_DIR,
+        chroma_dir: Path = CHROMA_DIR,
+        categories: List[str] = None,
+        collection_name: str = "nexusiq_docs",
+        reset_collection: bool = True,
+    ):
         print("\n" + "="*70)
         print("RAG Pipeline Setup v2 - NexusIQ Document Processing")
         print("="*70 + "\n")
+
+        self.pdf_base_dir = Path(pdf_base_dir)
+        self.chroma_dir = Path(chroma_dir)
+        self.categories = categories or CATEGORIES
+        self.collection_name = collection_name
         
         # Initialize embedding model
         print("Loading embedding model (sentence-transformers)...")
@@ -56,33 +69,33 @@ class RAGPipelineSetup:
         print("✅ Model loaded: all-MiniLM-L6-v2 (384 dimensions)")
         
         # Initialize ChromaDB
-        print(f"\nInitializing ChromaDB at {CHROMA_DIR}...")
-        CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+        print(f"\nInitializing ChromaDB at {self.chroma_dir}...")
+        self.chroma_dir.mkdir(parents=True, exist_ok=True)
         
         self.chroma_client = chromadb.PersistentClient(
-            path=str(CHROMA_DIR),
+            path=str(self.chroma_dir),
             settings=Settings(
                 anonymized_telemetry=False,
                 allow_reset=True
             )
         )
         
-        # Delete existing collection for fresh start
-        try:
-            self.chroma_client.delete_collection("nexusiq_docs")
-            print("🗑️  Deleted existing collection for fresh start")
-        except:
-            pass
+        if reset_collection:
+            try:
+                self.chroma_client.delete_collection(self.collection_name)
+                print("🗑️  Deleted existing collection for fresh start")
+            except Exception:
+                pass
         
         # ✨ FIX: Create collection with COSINE distance metric
-        self.collection = self.chroma_client.create_collection(
-            name="nexusiq_docs",
+        self.collection = self.chroma_client.get_or_create_collection(
+            name=self.collection_name,
             metadata={
                 "description": "NexusIQ business documents",
                 "hnsw:space": "cosine"  # ✨ Use cosine similarity!
-            }
+            },
         )
-        print("✅ Created collection: nexusiq_docs (cosine distance)")
+        print(f"✅ Ready collection: {self.collection_name} (cosine distance)")
         
         self.stats = {
             "pdfs_processed": 0,
@@ -187,7 +200,8 @@ class RAGPipelineSetup:
         chunks = []
         chunk_id = 0
         
-        # Process each page
+        # Process each page independently so trailing table/text content at the
+        # end of a page is not overwritten when the next page starts.
         for page_data in pages_data:
             page_num = page_data["page_num"]
             page_text = page_data["text"]
@@ -241,22 +255,21 @@ class RAGPipelineSetup:
                         current_chunk = sentence
                         current_chunk_start_page = page_num
             
-            # Don't forget remaining content from this page
-            # (It will be carried over or saved in the next iteration)
-        
-        # Save final chunk
-        if current_chunk.strip() and len(current_chunk.strip()) > 50:
-            chunks.append({
-                "text": current_chunk.strip(),
-                "metadata": {
-                    **metadata,
-                    "chunk_id": chunk_id,
-                    "page_start": current_chunk_start_page,
-                    "page_end": pages_data[-1]["page_num"] if pages_data else 1,
-                    "page": current_chunk_start_page,
-                    "char_count": len(current_chunk.strip())
-                }
-            })
+            # Save the remaining content for this page before resetting state
+            # for the next page. Without this, page-ending tables can disappear.
+            if current_chunk.strip() and len(current_chunk.strip()) > 50:
+                chunks.append({
+                    "text": current_chunk.strip(),
+                    "metadata": {
+                        **metadata,
+                        "chunk_id": chunk_id,
+                        "page_start": current_chunk_start_page,
+                        "page_end": page_num,
+                        "page": current_chunk_start_page,
+                        "char_count": len(current_chunk.strip())
+                    }
+                })
+                chunk_id += 1
         
         return chunks
     
@@ -291,8 +304,8 @@ class RAGPipelineSetup:
             for key, value in m.items():
                 m[key] = str(value)
         
-        # Store in ChromaDB
-        self.collection.add(
+        # Store in ChromaDB (upsert handles re-adding edited PDFs without duplicate ID errors)
+        self.collection.upsert(
             ids=ids,
             embeddings=embeddings.tolist(),
             documents=texts,
@@ -305,8 +318,8 @@ class RAGPipelineSetup:
         """Process all PDFs in all categories"""
         total_start = datetime.now()
         
-        for category in CATEGORIES:
-            category_path = PDF_BASE_DIR / category
+        for category in self.categories:
+            category_path = self.pdf_base_dir / category
             
             if not category_path.exists():
                 print(f"⚠️  Category not found: {category}")
@@ -378,10 +391,10 @@ class RAGPipelineSetup:
         print(f"  Name: nexusiq_docs")
         print(f"  Distance Metric: COSINE ✨")  # Highlight the fix
         print(f"  Total Documents: {self.collection.count()}")
-        print(f"  Location: {CHROMA_DIR}")
+        print(f"  Location: {self.chroma_dir}")
         
         # Save stats
-        stats_file = CHROMA_DIR / "processing_stats.json"
+        stats_file = self.chroma_dir / "processing_stats.json"
         with open(stats_file, 'w') as f:
             json.dump(self.stats, f, indent=2)
         print(f"\n📝 Stats saved to: {stats_file}")
@@ -424,6 +437,19 @@ class RAGPipelineSetup:
                 print()
         else:
             print("No results found.")
+
+
+def bump_ingestion_version() -> int:
+    """Increment and persist ingestion version so RAGAgent detects content changes."""
+    current = 0
+    if INGESTION_VERSION_FILE.exists():
+        try:
+            current = json.loads(INGESTION_VERSION_FILE.read_text()).get("version", 0)
+        except Exception:
+            pass
+    new_version = current + 1
+    INGESTION_VERSION_FILE.write_text(json.dumps({"version": new_version}))
+    return new_version
 
 
 def main():

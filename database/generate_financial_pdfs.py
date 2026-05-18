@@ -13,6 +13,7 @@ Re-run whenever DB changes — numbers pull from SQL every time.
 
 import psycopg2
 import os
+from urllib.parse import urlsplit, urlunsplit
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
@@ -21,6 +22,18 @@ from reportlab.lib import colors
 
 DB_URL = os.getenv("NEXUSIQ_FINANCIAL_DB_URL") or os.getenv("DATABASE_URL")
 PDF_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "pdfs", "01_financial")
+
+
+def redact_db_url(db_url: str) -> str:
+    """Hide credentials before logging a database URL."""
+    try:
+        parts = urlsplit(db_url)
+        if "@" not in parts.netloc:
+            return db_url
+        host = parts.netloc.rsplit("@", 1)[1]
+        return urlunsplit((parts.scheme, f"[redacted]@{host}", parts.path, parts.query, parts.fragment))
+    except Exception:
+        return "[redacted database url]"
 
 # ─── Styles ─────────────────────────────────────────────────────────────────
 
@@ -464,11 +477,16 @@ def create_investor_presentation(cur, year: int, out_path: str):
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
+    if not DB_URL:
+        raise RuntimeError(
+            "Set DATABASE_URL or NEXUSIQ_FINANCIAL_DB_URL before generating financial PDFs."
+        )
+
     os.makedirs(PDF_DIR, exist_ok=True)
     conn = psycopg2.connect(DB_URL)
     cur = conn.cursor()
 
-    print("Reading from:", DB_URL)
+    print("Reading from:", redact_db_url(DB_URL))
     print("Writing to: ", PDF_DIR)
     print()
 

@@ -8,6 +8,7 @@ without calling extra LLMs or uploading data to an external service.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import threading
@@ -17,6 +18,32 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def _send_to_cloudwatch(trace_data: Dict[str, Any]) -> None:
+    if os.environ.get("ENVIRONMENT") != "production":
+        return
+    try:
+        import boto3
+        client = boto3.client("logs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        log_group = "/nexusiq/traces"
+        log_stream = datetime.now(UTC).strftime("%Y/%m/%d")
+        try:
+            client.create_log_stream(logGroupName=log_group, logStreamName=log_stream)
+        except client.exceptions.ResourceAlreadyExistsException:
+            pass
+        client.put_log_events(
+            logGroupName=log_group,
+            logStreamName=log_stream,
+            logEvents=[{
+                "timestamp": int(time.time() * 1000),
+                "message": json.dumps(trace_data, default=str),
+            }],
+        )
+    except Exception as e:
+        logger.warning("CloudWatch trace upload failed: %s", e)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -207,6 +234,7 @@ class TraceSession:
         timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
         self.path = trace_dir / f"trace-{timestamp}-{self.trace_id}.json"
         self.path.write_text(json.dumps(self.data, indent=2, default=str))
+        _send_to_cloudwatch(self.data)
         return self.path
 
 

@@ -494,102 +494,81 @@ class WebAgent:
     
     
     # ═══════════════════════════════════════════════════════════
-    #  SELENIUM SCRAPERS (JavaScript Sites)
+    #  IKEA API SCRAPER (cloud-native, no browser required)
     # ═══════════════════════════════════════════════════════════
-    
+
     def _scrape_ikea_selenium(self, category: str = "home") -> Dict:
-        """Scrape IKEA (Selenium) - Home/Furniture"""
+        """Scrape IKEA via internal JSON API — no browser needed, cloud-safe."""
         cache_key = f"ikea_{category}"
-        
+
         if not self._should_scrape(cache_key):
             return self.cache.get(cache_key, {})
-        
-        logger.info("🌐 Scraping IKEA (Selenium/Firefox)...")
-        
+
+        logger.info("🌐 Scraping IKEA (internal API)...")
+
+        search_terms = {
+            'electronics': 'wireless charger',
+            'home': 'bookcase',
+            'clothing': 'curtains',
+            'food': 'kitchen storage',
+            'sports': 'outdoor furniture',
+        }
+        query = search_terms.get(category, 'bookcase')
+
         try:
-            driver = self._get_selenium_driver()
-            
-            search_terms = {
-                'electronics': 'wireless-charging',
-                'home': 'bookcases-shelving-units',
-                'clothing': 'textiles',
-                'food': 'kitchen-dining',
-                'sports': 'outdoor'
+            url = "https://sik.search.blue.cdtapps.com/us/en/search-result-page"
+            params = {"q": query, "size": 10, "c": "listaf", "v": "20"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "application/json",
+                "Referer": "https://www.ikea.com/",
             }
-            
-            term = search_terms.get(category, 'bookcases-shelving-units')
-            url = f"https://www.ikea.com/us/en/cat/{term}-st003/"
-            
-            logger.info(f"  Navigating to: {url}")
-            driver.get(url)
-            
-            # Wait for product grid
-            time.sleep(5)  # Let JavaScript render
-            
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
-            
+
+            resp = httpx.get(url, params=params, headers=headers, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+
+            items = (
+                data.get("searchResultPage", {})
+                    .get("products", {})
+                    .get("main", {})
+                    .get("items", [])
+            )
+
             products = []
-            
-            # Try multiple selectors (IKEA changes frequently)
-            selectors = [
-                '.plp-fragment-wrapper',
-                '.plp-product-list__product',
-                '[class*="product"]'
-            ]
-            
-            items = []
-            for selector in selectors:
-                items = soup.select(selector)[:10]
-                if items:
-                    logger.info(f"  Found {len(items)} items with selector: {selector}")
-                    break
-            
-            for item in items:
-                # Try multiple name selectors
-                name_elem = (
-                    item.select_one('.plp-product__name') or
-                    item.select_one('.pip-header-section__title') or
-                    item.select_one('h3') or
-                    item.select_one('[class*="product-name"]')
-                )
-                
-                # Try multiple price selectors
-                price_elem = (
-                    item.select_one('.pip-price__integer') or
-                    item.select_one('.pip-temp-price__integer') or
-                    item.select_one('[class*="price"]')
-                )
-                
-                if name_elem and price_elem:
+            for item in items[:10]:
+                product = item.get("product", {})
+                name = product.get("name", "") or product.get("typeName", "")
+                price_obj = product.get("salesPrice", {}) or product.get("price", {})
+                price = price_obj.get("numeral", "") or price_obj.get("current", {}).get("numeral", "")
+                if name:
                     products.append({
-                        'name': name_elem.get_text(strip=True),
-                        'price': f"${price_elem.get_text(strip=True)}",
-                        'source': 'IKEA'
+                        "name": name,
+                        "price": f"${price}" if price else "N/A",
+                        "source": "IKEA",
                     })
-            
-            data = {
-                'competitor': 'IKEA',
-                'category': category,
-                'products': products,
-                'timestamp': datetime.now().isoformat(),
-                'url': url,
-                'method': 'Selenium (Firefox)'
+
+            result = {
+                "competitor": "IKEA",
+                "category": category,
+                "products": products,
+                "timestamp": datetime.now().isoformat(),
+                "method": "IKEA Search API",
             }
-            
-            self.cache[cache_key] = data
+
+            self.cache[cache_key] = result
             self._save_cache()
-            
-            logger.info(f"✅ IKEA {category}: {len(products)} products (Selenium)")
-            return data
-            
+            logger.info(f"✅ IKEA {category}: {len(products)} products (API)")
+            return result
+
         except Exception as e:
-            logger.error(f"IKEA scrape failed: {e}")
+            logger.warning(f"IKEA API failed ({e}), returning cached/empty")
             return self.cache.get(cache_key, {
-                'competitor': 'IKEA',
-                'category': category,
-                'products': [],
-                'error': str(e),
-                'method': 'Selenium (failed)'
+                "competitor": "IKEA",
+                "category": category,
+                "products": [],
+                "error": str(e),
+                "method": "IKEA Search API (failed)",
             })
     
     

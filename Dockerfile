@@ -23,8 +23,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD streamlit run main.py \
-    --server.port="${PORT}" \
-    --server.address=0.0.0.0 \
-    --server.headless=true \
-    --browser.gatherUsageStats=false
+CMD ["sh", "-c", "streamlit run main.py --server.port=${PORT} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"]

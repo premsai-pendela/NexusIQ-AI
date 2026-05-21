@@ -752,6 +752,15 @@ Reply with ONLY this JSON (no extra text):
         validation: Optional[Dict] = None
     ) -> str:
         """✅ UPDATED: Generate unified answer combining SQL + RAG + Web sources"""
+
+        validated_answer = self._format_validated_sql_rag_answer(
+            sql_result=sql_result,
+            rag_result=rag_result,
+            validation=validation,
+            web_result=web_result,
+        )
+        if validated_answer:
+            return validated_answer
         
         # Build source summaries
         sources_text = ""
@@ -862,6 +871,90 @@ ANSWER:"""
         # Fallback: Simple combination without LLM
         logger.warning("All LLM models failed, using simple fusion")
         return self._simple_fusion(sql_result, rag_result, web_result, validation)
+
+    def _format_validated_sql_rag_answer(
+        self,
+        sql_result: Optional[Dict],
+        rag_result: Optional[Dict],
+        validation: Optional[Dict],
+        web_result: Optional[Dict] = None,
+    ) -> Optional[str]:
+        """Return a stable public-demo answer for high-confidence SQL/RAG matches."""
+        if not (
+            validation
+            and validation.get("confidence") == "HIGH"
+            and validation.get("validated")
+            and validation.get("matches")
+            and sql_result
+            and sql_result.get("success")
+            and rag_result
+            and rag_result.get("success")
+        ):
+            return None
+
+        # If web data is involved, keep the LLM synthesis path because market context
+        # needs more narrative judgment than a numeric validation answer.
+        if web_result and web_result.get("success"):
+            return None
+
+        match = validation["matches"][0]
+        sql_value = match.get("sql_value")
+        rag_value = match.get("rag_value")
+        pct_difference = match.get("pct_difference", 0)
+        label = self._humanize_fact_label(match.get("label") or match.get("sql_label") or "value")
+        rag_descriptor = (
+            "PDF-derived value"
+            if match.get("rag_label") == "derived_percentage_revenue"
+            else "PDF/document value"
+        )
+        transactions = self._extract_supporting_transaction_count(sql_result)
+        transaction_text = (
+            f" across **{transactions:,} transactions**"
+            if transactions
+            else ""
+        )
+        chunks = rag_result.get("chunks_retrieved", 0)
+
+        return (
+            f"📊 **Answer:** {label} is validated across SQL and PDF sources. "
+            f"The SQL database reports **{self._format_currency(sql_value)}**{transaction_text}, "
+            f"while the {rag_descriptor} is **{self._format_currency(rag_value)}**. "
+            f"The difference is **{pct_difference:.2f}%**, which is within the validation threshold.\n\n"
+            "**Details:**\n"
+            f"- SQL is treated as the source of exact transaction totals: **{self._format_currency(sql_value)}**.\n"
+            f"- Documents provide the comparison point: **{self._format_currency(rag_value)}**.\n"
+            f"- Cross-source validation found **{len(validation.get('matches', []))} matching fact** and "
+            f"**{len(validation.get('discrepancies', []))} discrepancies**.\n\n"
+            "**Sources Used:**\n"
+            f"- 🗄️ SQL Database: {self._describe_sql_source(sql_result)}\n"
+            f"- 📄 Documents: {chunks} document excerpts\n\n"
+            f"**Confidence:** {validation['confidence']} - {validation['confidence_reason']}"
+        )
+
+    def _format_currency(self, value) -> str:
+        try:
+            return f"${float(value):,.2f}"
+        except (TypeError, ValueError):
+            return str(value)
+
+    def _humanize_fact_label(self, label: str) -> str:
+        label = str(label or "value").replace("_", " ").strip()
+        if not label:
+            return "The validated value"
+        return label[:1].upper() + label[1:]
+
+    def _extract_supporting_transaction_count(self, sql_result: Dict) -> Optional[int]:
+        for row in sql_result.get("results") or []:
+            if not isinstance(row, dict):
+                continue
+            for key, value in row.items():
+                key_lower = str(key).lower()
+                if "transaction" in key_lower and any(term in key_lower for term in ["count", "analyzed"]):
+                    try:
+                        return int(value)
+                    except (TypeError, ValueError):
+                        return None
+        return None
 
     def _describe_sql_source(self, sql_result: Optional[Dict]) -> str:
         if not sql_result or not sql_result.get('success'):

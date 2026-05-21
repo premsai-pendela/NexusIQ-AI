@@ -110,6 +110,34 @@ class FusionValidationTests(unittest.TestCase):
         self.assertEqual(validation["confidence"], "HIGH")
         self.assertEqual(validation["matches"][0]["rag_label"], "derived_percentage_revenue")
 
+    def test_high_confidence_fusion_answer_is_stable_for_public_demo(self):
+        sql_result = {
+            "success": True,
+            "answer": "Q4 Electronics revenue was $31,710,925.89 across 5,899 transactions.",
+            "results": [{"q4_electronics_revenue": 31_710_925.89, "transactions_analyzed": 5_899}],
+            "row_count": 1,
+        }
+        rag_result = {
+            "success": True,
+            "answer": "In Q4 2024, total revenue was $59.3M, and Electronics accounted for 53.4% of this revenue.",
+            "chunks_retrieved": 5,
+        }
+        validation = self.agent._cross_validate(sql_result, rag_result)
+
+        answer = self.agent._generate_fused_answer(
+            "Validate Q4 Electronics revenue across SQL and PDF reports.",
+            sql_result=sql_result,
+            rag_result=rag_result,
+            validation=validation,
+        )
+
+        self.assertIn("$31,710,925.89", answer)
+        self.assertIn("$31,666,200.00", answer)
+        self.assertIn("5,899 transactions", answer)
+        self.assertIn("**Confidence:** HIGH", answer)
+        self.assertNotIn("fromtheSQL", answer)
+        self.assertNotIn("*from", answer)
+
 
 class RoutingAndInputTests(unittest.TestCase):
     def test_routing_matcher_accepts_equivalent_fusion_labels(self):

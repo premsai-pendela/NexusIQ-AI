@@ -481,6 +481,8 @@ IMPORTANT RULES:
 3. Always cite your sources using the format: (Source: filename, Page X)
 4. Be concise but thorough
 5. If multiple sources provide relevant info, synthesize them
+6. If the question asks to validate SQL against PDF reports, answer the PDF side only. Do not require SQL reports to exist inside the document excerpts.
+7. If a source gives a category percentage of total revenue, calculate and include the derived category dollar value.
 
 DOCUMENT EXCERPTS:
 {context}

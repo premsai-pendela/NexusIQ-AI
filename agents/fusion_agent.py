@@ -504,6 +504,50 @@ Reply with ONLY this JSON (no extra text):
                 'source': source,
             })
 
+        facts.extend(self._extract_percentage_revenue_facts(text, source=source))
+        return facts
+
+    def _extract_percentage_revenue_facts(self, text: str, source: str) -> List[Dict]:
+        """Derive revenue facts from patterns like "$59.3M total revenue, Electronics 53.4%"."""
+        facts = []
+        if not text:
+            return facts
+
+        money_pattern = re.compile(r'\$([\d,]+(?:\.\d+)?)\s*(M|million|B|billion)?', re.IGNORECASE)
+        pct_pattern = re.compile(r'(\d+(?:\.\d+)?)\s*%', re.IGNORECASE)
+
+        for pct_match in pct_pattern.finditer(text):
+            window = text[max(0, pct_match.start() - 160):pct_match.end() + 160]
+            if not re.search(r'\b(revenue|sales)\b', window, re.IGNORECASE):
+                continue
+
+            money_match = money_pattern.search(window)
+            if not money_match or not pct_match:
+                continue
+
+            raw_money, scale = money_match.groups()
+            try:
+                total = float(raw_money.replace(',', ''))
+                pct = float(pct_match.group(1))
+            except ValueError:
+                continue
+
+            scale_lower = (scale or "").lower()
+            if scale_lower in {"m", "million"}:
+                total *= 1_000_000
+            elif scale_lower in {"b", "billion"}:
+                total *= 1_000_000_000
+
+            if total <= 0 or pct <= 0 or pct > 100:
+                continue
+
+            facts.append({
+                'value': total * (pct / 100),
+                'label': 'derived_percentage_revenue',
+                'context': 'revenue',
+                'source': source,
+            })
+
         return facts
 
     def _extract_numbers(self, text: str) -> List[float]:

@@ -93,6 +93,23 @@ class FusionValidationTests(unittest.TestCase):
         self.assertEqual(validation["confidence"], "LOW")
         self.assertGreaterEqual(len(validation["discrepancies"]), 1)
 
+    def test_q4_electronics_revenue_validates_from_pdf_percentage_of_total(self):
+        sql_result = {
+            "success": True,
+            "answer": "Q4 Electronics revenue was $31,710,925.89 across 5,899 transactions.",
+            "results": [{"q4_electronics_revenue": 31_710_925.89, "transactions_analyzed": 5_899}],
+        }
+        rag_result = {
+            "success": True,
+            "answer": "In Q4 2024, total revenue was $59.3M, and Electronics accounted for 53.4% of this revenue. (Source: 01_Q4_2024_Financial_Report.pdf, Page 1)",
+        }
+
+        validation = self.agent._cross_validate(sql_result, rag_result)
+
+        self.assertTrue(validation["validated"])
+        self.assertEqual(validation["confidence"], "HIGH")
+        self.assertEqual(validation["matches"][0]["rag_label"], "derived_percentage_revenue")
+
 
 class RoutingAndInputTests(unittest.TestCase):
     def test_routing_matcher_accepts_equivalent_fusion_labels(self):

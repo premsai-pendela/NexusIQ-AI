@@ -154,6 +154,12 @@ Current status:
 
 ### ✅ PHASE 5 — EC2 Deploy (COMPLETE 2026-05-20)
 
+Stable Elastic IP:
+
+```text
+52.3.111.212
+```
+
 ```bash
 # Launch EC2 t3.small (2GB RAM, Ubuntu 22.04, 20GB EBS)
 # Open port 8080 in security group
@@ -189,7 +195,7 @@ Note: t3.small = 2GB RAM. No swap needed. No OOM risk.
 - [x] Add CloudWatch log group `/nexusiq/traces`
 - [x] Update `observability/tracer.py` to optionally write to CloudWatch when `ENVIRONMENT=production`
 - [ ] Add simple uptime check on EC2 port 8080
-- [x] Test: `curl -I http://44.204.250.0:8080`
+- [x] Test: `curl -I http://52.3.111.212:8080`
 
 ---
 

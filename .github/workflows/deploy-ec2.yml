@@ -1,0 +1,81 @@
+name: Deploy EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-ec2-main
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: nexusiq-ai
+  IMAGE_TAG: latest
+  EC2_USER: ubuntu
+  EC2_APP_PORT: "8080"
+
+jobs:
+  deploy:
+    name: Build, push, and restart EC2
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        env:
+          IMAGE_URI: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        run: |
+          docker build --platform linux/amd64 -t "$IMAGE_URI" .
+
+      - name: Push Docker image
+        env:
+          IMAGE_URI: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        run: |
+          docker push "$IMAGE_URI"
+
+      - name: Prepare SSH key
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/nexusiq-key.pem
+          chmod 600 ~/.ssh/nexusiq-key.pem
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Copy deploy script to EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          scp -i ~/.ssh/nexusiq-key.pem scripts/deploy_ec2.sh "${EC2_USER}@${EC2_HOST}:/tmp/nexusiq-deploy.sh"
+
+      - name: Deploy on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          IMAGE_URI: ${{ steps.ecr-login.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        run: |
+          ssh -i ~/.ssh/nexusiq-key.pem "${EC2_USER}@${EC2_HOST}" \
+            "chmod +x /tmp/nexusiq-deploy.sh && AWS_REGION='${AWS_REGION}' APP_PORT='${EC2_APP_PORT}' IMAGE_URI='${IMAGE_URI}' /tmp/nexusiq-deploy.sh"
+
+      - name: Public health check
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          curl -fsSI "http://${EC2_HOST}:${EC2_APP_PORT}"

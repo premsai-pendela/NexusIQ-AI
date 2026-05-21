@@ -27,6 +27,7 @@ from evals.refresh_golden_truth import update_cases
 from observability.inspect_traces import format_trace_summary, get_trace_diagnostics
 from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
+from ui.fusion_chat import escape_streamlit_math
 from utils.validators import validate_question
 
 
@@ -140,6 +141,16 @@ class FusionValidationTests(unittest.TestCase):
 
 
 class RoutingAndInputTests(unittest.TestCase):
+    def test_streamlit_markdown_escapes_currency_math(self):
+        text = "**$31,710,925.89** across **5,899 transactions**, while **$31,700,000.00**"
+
+        escaped = escape_streamlit_math(text)
+
+        self.assertEqual(
+            escaped,
+            "**\\$31,710,925.89** across **5,899 transactions**, while **\\$31,700,000.00**",
+        )
+
     def test_routing_matcher_accepts_equivalent_fusion_labels(self):
         self.assertTrue(routing_matches("rag_sql", "sql_rag"))
         self.assertTrue(routing_matches("sql_rag_web", "all"))

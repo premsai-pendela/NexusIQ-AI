@@ -41,6 +41,7 @@ import random
 import sys
 import json
 import io
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -193,6 +194,10 @@ def time_ago(timestamp: datetime) -> str:
 
 def _humanize_column_name(col: str) -> str:
     return str(col).replace("_", " ").strip().title()
+
+def escape_streamlit_math(text: str) -> str:
+    """Keep currency values from being parsed as markdown math."""
+    return re.sub(r"(?<!\\)\$", r"\\$", str(text))
 
 def _format_metric_value(col: str, value) -> str:
     if value is None:
@@ -903,7 +908,7 @@ def render_rag_section(msg_id: str, rag_result: dict):
     with st.expander("📄 Document Search Results", expanded=True):
         # RAG Answer
         st.markdown("**💬 Document-Based Answer:**")
-        st.markdown(rag_result['answer'])
+        st.markdown(escape_streamlit_math(rag_result['answer']))
         
         # Source Citations
         if rag_result.get('sources'):
@@ -990,7 +995,7 @@ def render_web_section(msg_id: str, web_result: dict):
         st.markdown("**🛒 Competitor Analysis:**")
         if web_result.get('llm_error'):
             st.caption(f"⚠️ LLM unavailable — showing raw scraped prices. ({web_result['llm_error'][:80]})")
-        st.markdown(web_result['answer'])
+        st.markdown(escape_streamlit_math(web_result['answer']))
 
         # ── Product Details per Competitor ────────────────────────
         if raw_data.get('competitors'):
@@ -1189,7 +1194,7 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
     # ═══════════════════════════════════════════════════════════
     
     st.markdown("### 💡 Answer")
-    st.markdown(msg.get("answer", "No answer available"))
+    st.markdown(escape_streamlit_math(msg.get("answer", "No answer available")))
     
     # ═══════════════════════════════════════════════════════════
     # 3. CROSS-VALIDATION (if available)

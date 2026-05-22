@@ -1,7 +1,7 @@
 # NexusIQ AWS Migration Plan
-## Status: EC2 deploy live — Phase 4 cleanup mostly complete, RDS pending
+## Status: EC2 deploy live — custom domain + CI/CD complete, RDS pending
 
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
 ---
 
@@ -9,7 +9,8 @@ Last updated: 2026-05-20
 
 ```
 AWS EC2 t3.small (2GB RAM, ~$15/mo covered by $100 AWS credits)
-    │  ← runs Streamlit container
+    │  ← runs Streamlit container on :8080
+    │  ← Caddy terminates HTTPS for nexusiq-ai.com
     ├──→ Supabase PostgreSQL (current DATABASE_URL secret)
     ├──→ AWS S3 (PDF archive uploaded)
     └──→ AWS ECR (Docker image)
@@ -24,6 +25,7 @@ Resume story: "Deployed on AWS — EC2, S3, ECR, Secrets Manager, CloudWatch; RD
 **Azure:** NOT needed. Dropped from plan.
 **Streamlit Cloud:** stays live as backup. AWS = primary.
 **wake_up.yml:** keep as-is (still pings Streamlit Cloud backup).
+**Public URL:** `https://nexusiq-ai.com`
 
 ---
 
@@ -194,12 +196,12 @@ Note: t3.small = 2GB RAM. No swap needed. No OOM risk.
 
 - [x] Add CloudWatch log group `/nexusiq/traces`
 - [x] Update `observability/tracer.py` to optionally write to CloudWatch when `ENVIRONMENT=production`
-- [ ] Add simple uptime check on EC2 port 8080
-- [x] Test: `curl -I http://52.3.111.212:8080`
+- [x] Public health check now targets `https://nexusiq-ai.com`
+- [x] Raw public `:8080` access closed; Streamlit remains reachable internally through Caddy
 
 ---
 
-### ⬜ PHASE 7 — CI/CD (GitHub Actions)
+### ✅ PHASE 7 — CI/CD (GitHub Actions)
 
 ```yaml
 # On push to main:
@@ -208,10 +210,26 @@ Note: t3.small = 2GB RAM. No swap needed. No OOM risk.
 # 3. SSH to EC2, pull new image, restart container
 ```
 
-Note: ChromaDB bundling issue for CI/CD — options:
-- A: Store chroma_db in S3, download during Docker build (cleanest)
-- B: Build image locally only, push pre-built to ECR (simpler for now)
-- Track B (pgvector) eliminates this entirely
+Current status:
+- `.github/workflows/deploy-ec2.yml` builds the Docker image on push to `main`.
+- The workflow pushes `latest` to ECR.
+- The workflow copies `scripts/deploy_ec2.sh` to EC2 over SSH.
+- EC2 pulls the new image, restarts the `nexusiq` container, and runs a public health check.
+
+Note: Track B (pgvector/S3 ingestion) still eliminates the long-term need to bundle ChromaDB in the image.
+
+---
+
+### ✅ PHASE 8 — Custom Domain + HTTPS (COMPLETE 2026-05-22)
+
+- Elastic IP attached: `52.3.111.212`
+- Cloudflare DNS points `nexusiq-ai.com` to the Elastic IP.
+- Caddy is installed on EC2.
+- Caddy provides HTTPS reverse proxy from `https://nexusiq-ai.com` to Streamlit on port `8080`.
+- EC2 security group now exposes only public web ports `80`/`443` plus SSH; raw public `8080` was removed after HTTPS health checks were stable.
+- Public demo formatting was polished after deployment:
+  - `3803d23` — stabilize public validation answer.
+  - `6598a77` — escape currency in Streamlit markdown.
 
 ---
 
@@ -253,13 +271,17 @@ AWS services touched: EC2, S3, ECR, Secrets Manager, CloudWatch
 ## NEXT SESSION CHECKLIST
 
 Start here:
-1. Decide whether to create RDS now or keep Supabase through the demo.
-2. If creating RDS: provision PostgreSQL, migrate data, update `nexusiq/database-url`.
-3. If keeping Supabase: move next to Phase 7 CI/CD.
-4. Later: Track B can move RAG chunks from bundled ChromaDB to pgvector/S3 ingestion.
+1. Update README/resume-facing documentation with the live URL and AWS architecture story.
+2. Add CloudWatch dashboard/alarms for uptime, container errors, and slow traces.
+3. Decide whether to restrict SSH from `0.0.0.0/0` to a trusted IP range.
+4. Decide whether to create RDS now or keep Supabase through the demo.
+5. Later: Track B can move RAG chunks from bundled ChromaDB to pgvector/S3 ingestion.
 
 Questions resolved:
 - ✅ Streamlit Cloud: keep as backup
 - ✅ IKEA scraping: replace Selenium with IKEA JSON API
 - ✅ Compute: AWS EC2 t3.small
 - ✅ Single-cloud direction: AWS primary, Streamlit Cloud backup
+- ✅ Custom domain: Cloudflare + Caddy HTTPS
+- ✅ CI/CD: GitHub Actions to ECR + EC2
+- ✅ Security tightening: raw public `:8080` closed

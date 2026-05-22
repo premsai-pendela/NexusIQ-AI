@@ -49,6 +49,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from observability.inspect_traces import SLOW_SPAN_SECONDS, get_trace_diagnostics
+from utils.query_normalization import canonical_question_key
 
 # ═══════════════════════════════════════════════════════
 #  CONFIGURATION
@@ -191,6 +192,43 @@ def time_ago(timestamp: datetime) -> str:
         return f"{int(seconds // 3600)}h ago"
     else:
         return f"{int(seconds // 86400)}d ago"
+
+def normalize_repeat_question(question: str) -> str:
+    """Normalize a question enough to catch same-session repeats."""
+    return canonical_question_key(question)
+
+def find_previous_answer(query_history: list, question: str, source_filter: str = "Auto") -> dict | None:
+    """Return the newest previous answer for the same question/source filter."""
+    target = normalize_repeat_question(question)
+    for item in query_history:
+        if normalize_repeat_question(item.get("question", "")) != target:
+            continue
+        if item.get("source_filter", "Auto") != source_filter:
+            continue
+        return item
+    return None
+
+def previous_answer_message(previous: dict, msg_id: str) -> dict:
+    """Convert a query-history item into a chat message that reads as previous answer."""
+    return {
+        "role": "assistant",
+        "id": msg_id,
+        "answer": previous.get("answer", ""),
+        "source_type": previous.get("source_type", "unknown"),
+        "sql_result": previous.get("sql_result"),
+        "rag_result": previous.get("rag_result"),
+        "web_result": previous.get("web_result"),
+        "validation": previous.get("validation"),
+        "sources": previous.get("sources", []),
+        "query_time": 0.0,
+        "from_cache": True,
+        "trace_id": previous.get("trace_id"),
+        "trace_path": previous.get("trace_path"),
+        "routing_model": previous.get("routing_model"),
+        "answer_models": previous.get("answer_models"),
+        "routing_fallback": previous.get("routing_fallback"),
+        "cache_label": "previous_answer",
+    }
 
 def _humanize_column_name(col: str) -> str:
     return str(col).replace("_", " ").strip().title()
@@ -1113,6 +1151,7 @@ def render_observability_panel(msg: dict):
     route = final.get("source_type") or msg.get("source_type", "unknown")
     total_duration = trace.get("duration_s") or msg.get("query_time", 0)
     routing_model = final.get("routing_model") or msg.get("routing_model") or "n/a"
+    answer_models = final.get("answer_models") or msg.get("answer_models") or routing_model
     validation = final.get("validation") or msg.get("validation") or {}
     validation_label = validation.get("confidence") or "n/a"
 
@@ -1121,7 +1160,9 @@ def render_observability_panel(msg: dict):
         metric_cols[0].metric("Route", route)
         metric_cols[1].metric("Total Time", _format_span_duration(total_duration))
         metric_cols[2].metric("Validation", validation_label)
-        metric_cols[3].metric("Router", str(routing_model))
+        metric_cols[3].metric("Answer LLM", str(answer_models))
+        if routing_model and routing_model != answer_models:
+            st.caption(f"Router LLM: {routing_model}")
 
         if slowest:
             slow_label = "⚠️ " if (slowest.get("duration_s") or 0) > SLOW_SPAN_SECONDS else ""
@@ -1249,7 +1290,9 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
     total_time = msg.get("query_time", 0)
     from_cache = msg.get("from_cache", False)
 
-    if from_cache:
+    if from_cache and msg.get("cache_label") == "previous_answer":
+        st.caption("Previous answer shown from this session.")
+    elif from_cache:
         st.caption(f"⚡ Returned from cache in {total_time:.2f}s (original query was slower)")
     else:
         st.caption(f"⏱️ Total query time: {format_time(total_time)}")
@@ -1265,7 +1308,7 @@ def get_agent():
 
 
 
-def add_to_history(question, result, execution_time):
+def add_to_history(question, result, execution_time, source_filter: str = "Auto"):
     """Add query to history (now stores full fusion result)"""
     st.session_state.query_history.insert(0, {
         "question": question,
@@ -1279,7 +1322,9 @@ def add_to_history(question, result, execution_time):
         "trace_id": result.get("trace_id"),
         "trace_path": result.get("trace_path"),
         "routing_model": result.get("routing_model"),
+        "answer_models": result.get("answer_models"),
         "routing_fallback": result.get("routing_fallback"),
+        "source_filter": source_filter,
         "time": execution_time,
         "timestamp": datetime.now(),
         "success": True
@@ -1460,6 +1505,10 @@ def run_fusion_chat():
         st.session_state.pending_query_to_process = None
     if "scroll_target" not in st.session_state:
         st.session_state.scroll_target = None
+    if "pending_repeat_decision" not in st.session_state:
+        st.session_state.pending_repeat_decision = None
+    if "bypass_cache_once_question" not in st.session_state:
+        st.session_state.bypass_cache_once_question = None
     
     st.title("🔗 Fusion Agent — Multi-Source Intelligence")
     st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
@@ -1678,6 +1727,36 @@ def run_fusion_chat():
                     st.rerun()
 
     # ═══════════════════════════════════════════════════════
+    #  REPEATED QUESTION DECISION
+    # ═══════════════════════════════════════════════════════
+
+    if st.session_state.pending_repeat_decision:
+        repeat = st.session_state.pending_repeat_decision
+        previous = repeat["previous"]
+        st.markdown('<div id="nexusiq-latest-answer"></div>', unsafe_allow_html=True)
+        _scroll_to_bottom()
+        with st.chat_message("assistant", avatar="🔗"):
+            st.info(
+                "You asked this earlier in this session.\n\n"
+                f"Previous answer is available from **{time_ago(previous['timestamp'])}**."
+            )
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Show previous answer", key="repeat_show_previous", use_container_width=True):
+                    msg_id = str(int(time.time() * 1000))
+                    st.session_state.chat_messages.append(previous_answer_message(previous, msg_id))
+                    st.session_state.pending_repeat_decision = None
+                    st.session_state.scroll_target = "answer"
+                    st.rerun()
+            with col2:
+                if st.button("Check again", key="repeat_check_again", use_container_width=True):
+                    st.session_state.bypass_cache_once_question = repeat["question"]
+                    st.session_state.pending_query_to_process = repeat["question"]
+                    st.session_state.pending_repeat_decision = None
+                    st.session_state.scroll_target = "question"
+                    st.rerun()
+
+    # ═══════════════════════════════════════════════════════
     #  HANDLE INPUT
     # ═══════════════════════════════════════════════════════
 
@@ -1697,6 +1776,8 @@ def run_fusion_chat():
     if question:
         from utils.validators import auto_correct_question
         st.session_state.show_fusion_command_center = False
+        source_filter = st.session_state.get("source_filter", "Auto")
+        bypass_cache = st.session_state.get("bypass_cache_once_question") == question
 
         # Check for spelling corrections BEFORE running the query.
         # Only intercept on fresh user input — not when re-running a corrected query.
@@ -1722,6 +1803,27 @@ def run_fusion_chat():
         # Mark this as a resolved corrected query so we don't re-intercept it
         if is_corrected_rerun:
             st.session_state["_last_corrected_q"] = None
+
+        if not bypass_cache and not st.session_state.get("from_history", False):
+            previous = find_previous_answer(st.session_state.query_history, question, source_filter)
+            if previous:
+                already_visible = (
+                    st.session_state.chat_messages
+                    and st.session_state.chat_messages[-1].get("role") == "user"
+                    and st.session_state.chat_messages[-1].get("content") == question
+                )
+                if not already_visible:
+                    st.session_state.chat_messages.append({
+                        "role": "user",
+                        "content": question
+                    })
+                st.session_state.pending_repeat_decision = {
+                    "question": question,
+                    "source_filter": source_filter,
+                    "previous": previous,
+                }
+                st.session_state.scroll_target = "question"
+                st.rerun()
 
         # Add user message
         already_visible = (
@@ -1749,7 +1851,6 @@ def run_fusion_chat():
             insight_box.info(random.choice(INSIGHTS))
             status.markdown("🔍 Analyzing question and routing to sources...")
 
-            source_filter = st.session_state.get("source_filter", "Auto")
             force_source_map = {
                 "SQL Only": "sql_only",
                 "RAG Only": "rag_only",
@@ -1773,8 +1874,15 @@ def run_fusion_chat():
                     web_progress.markdown(f"{icon} **Web** — {t:.1f}s")
 
             start_time = time.time()
-            result = agent.query(question, force_source=force_source, progress_cb=_progress_cb)
+            result = agent.query(
+                question,
+                force_source=force_source,
+                progress_cb=_progress_cb,
+                bypass_cache=bypass_cache,
+            )
             total_time = time.time() - start_time
+            if bypass_cache:
+                st.session_state.bypass_cache_once_question = None
 
             # If result came from cache, override with actual retrieval time
             if result.get('_from_cache'):
@@ -1805,6 +1913,7 @@ def run_fusion_chat():
                 "trace_id": result.get("trace_id"),
                 "trace_path": result.get("trace_path"),
                 "routing_model": result.get("routing_model"),
+                "answer_models": result.get("answer_models"),
                 "routing_fallback": result.get("routing_fallback")
             }, is_latest=True)
             
@@ -1823,13 +1932,15 @@ def run_fusion_chat():
                 "trace_id": result.get("trace_id"),
                 "trace_path": result.get("trace_path"),
                 "routing_model": result.get("routing_model"),
+                "answer_models": result.get("answer_models"),
                 "routing_fallback": result.get("routing_fallback")
             })
             st.session_state.scroll_target = "answer"
             
             # Save to query history
             if not st.session_state.get("from_history", False):
-                add_to_history(question, result, total_time)
+                add_to_history(question, result, total_time, source_filter=source_filter)
+            st.session_state.from_history = False
         
         st.rerun()
     

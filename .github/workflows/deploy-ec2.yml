@@ -16,6 +16,7 @@ env:
   IMAGE_TAG: latest
   EC2_USER: ubuntu
   EC2_APP_PORT: "8080"
+  PUBLIC_HEALTH_URL: https://nexusiq-ai.com
 
 jobs:
   deploy:
@@ -75,7 +76,5 @@ jobs:
             "chmod +x /tmp/nexusiq-deploy.sh && AWS_REGION='${AWS_REGION}' APP_PORT='${EC2_APP_PORT}' IMAGE_URI='${IMAGE_URI}' /tmp/nexusiq-deploy.sh"
 
       - name: Public health check
-        env:
-          EC2_HOST: ${{ secrets.EC2_HOST }}
         run: |
-          curl -fsSI "http://${EC2_HOST}:${EC2_APP_PORT}"
+          curl -fsSI "${PUBLIC_HEALTH_URL}"

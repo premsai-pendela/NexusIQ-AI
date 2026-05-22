@@ -48,6 +48,7 @@ def _send_to_cloudwatch(trace_data: Dict[str, Any]) -> None:
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_TRACE_DIR = ROOT / "traces"
+DEFAULT_TRACE_INDEX_PATH = ROOT / "data" / "query_traces.jsonl"
 TRACE_SCHEMA_VERSION = "1.0"
 
 
@@ -62,6 +63,10 @@ def _is_enabled() -> bool:
 
 def _trace_dir() -> Path:
     return Path(os.getenv("NEXUSIQ_TRACE_DIR", str(DEFAULT_TRACE_DIR)))
+
+
+def _trace_index_path() -> Path:
+    return Path(os.getenv("NEXUSIQ_TRACE_INDEX_PATH", str(DEFAULT_TRACE_INDEX_PATH)))
 
 
 def _include_previews() -> bool:
@@ -105,6 +110,29 @@ def _prune_old_traces(trace_dir: Path) -> None:
             old_trace.unlink()
         except OSError:
             pass
+
+
+def _append_trace_index(trace_data: Dict[str, Any], trace_path: Path) -> None:
+    index_path = _trace_index_path()
+    final = trace_data.get("final") or {}
+    row = {
+        "started_at": trace_data.get("started_at"),
+        "trace_id": trace_data.get("trace_id"),
+        "trace_path": str(trace_path),
+        "question": trace_data.get("question"),
+        "source_type": final.get("source_type"),
+        "duration_s": trace_data.get("duration_s"),
+        "from_cache": final.get("from_cache"),
+        "routing_model": final.get("routing_model"),
+        "answer_models": final.get("answer_models"),
+        "validation": final.get("validation"),
+    }
+    try:
+        index_path.parent.mkdir(parents=True, exist_ok=True)
+        with index_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row, default=str) + "\n")
+    except OSError as exc:
+        logger.warning("Trace index write failed: %s", exc)
 
 
 def summarize_agent_result(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -234,6 +262,7 @@ class TraceSession:
         timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
         self.path = trace_dir / f"trace-{timestamp}-{self.trace_id}.json"
         self.path.write_text(json.dumps(self.data, indent=2, default=str))
+        _append_trace_index(self.data, self.path)
         _send_to_cloudwatch(self.data)
         return self.path
 

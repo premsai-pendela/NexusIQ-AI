@@ -10,11 +10,10 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import PromptTemplate
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from config.settings import settings
+from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
 from typing import Dict, Any, List
@@ -127,6 +126,7 @@ class SQLAgent:
         
         self.mode = mode
         self.tracker = get_tracker()
+        self.llm_gateway = get_llm_gateway()
         
         # Database connection
         self.engine = create_engine(settings.database_url)
@@ -205,65 +205,29 @@ class SQLAgent:
         return "simple"
     
     
-    def _create_llm(self, model_config: dict):
-        """Create LLM instance based on model config"""
-        
-        model_type = model_config["type"]
-        model_name = model_config["name"]
-        
-        if model_type == "gemini":
-            if not settings.google_api_key:
-                raise Exception("Gemini API key not configured")
-            
-            # ✨ NEW: Apply timeout/retry settings based on model
-            if "pro" in model_name.lower():
-                max_retries = settings.gemini_pro_max_retries
-                timeout = settings.gemini_pro_timeout
-            else:  # Flash
-                max_retries = settings.gemini_flash_max_retries
-                timeout = settings.gemini_flash_timeout
-            
-            return ChatGoogleGenerativeAI(
-                model=model_name,
-                google_api_key=settings.google_api_key,
-                temperature=0.1,
-                max_retries=max_retries,  # ✨ NEW: Controlled retries
-                timeout=timeout  # ✨ NEW: Fast fail
-            )
-        
-        elif model_type == "groq":
-            if not settings.groq_api_key:
-                raise Exception("Groq API key not configured")
-            
-            from langchain_groq import ChatGroq
-            return ChatGroq(
-                model=model_name,
-                groq_api_key=settings.groq_api_key,
-                temperature=0.1
-            )
-        
-        elif model_type == "vertex":
-            from langchain_google_genai import ChatGoogleGenerativeAI
-            import google.auth
-            credentials, _ = google.auth.default()
-            return ChatGoogleGenerativeAI(
-                model=model_name,
-                credentials=credentials,
-                temperature=0.1
-            )
+    def _models_for_complexity(self, complexity: str) -> List[Dict[str, Any]]:
+        """Return ordered model configs for a task, including optional Gemini Pro."""
+        models_to_try = list(self.MODELS.get(complexity, self.MODELS["simple"]))
 
-        elif model_type == "ollama":
-            from langchain_ollama import ChatOllama
-            return ChatOllama(
-                model=model_name,
-                temperature=0.1
-            )
+        if settings.use_gemini_pro and settings.google_api_key:
+            gemini_pro_config = {
+                "name": "gemini-2.5-pro",
+                "type": "gemini",
+                "description": "Gemini 2.5 Pro (Best for complex queries)",
+                "quota": "50/day (free tier)"
+            }
+            models_to_try = [gemini_pro_config] + models_to_try
+            logger.info("🟢 Gemini Pro ENABLED - trying first")
 
-        else:
-            raise Exception(f"Unknown model type: {model_type}")
-    
-    
-    def _invoke_with_fallback(self, prompt: str, complexity: str = "simple") -> Dict[str, Any]:
+        return models_to_try
+
+
+    def _invoke_with_fallback(
+        self,
+        prompt: str,
+        complexity: str = "simple",
+        task: str = "sql_agent",
+    ) -> Dict[str, Any]:
         """
         Invoke LLM with intelligent fallback and quota tracking.
         Skips models known to be unavailable.
@@ -279,105 +243,14 @@ class SQLAgent:
             }
         """
         
-        models_to_try = self.MODELS.get(complexity, self.MODELS["simple"])
-        models_tried = []
-        
-        # ✨ NEW: Conditionally add Gemini Pro as FIRST model if enabled
-        if settings.use_gemini_pro and settings.google_api_key:
-            gemini_pro_config = {
-                "name": "gemini-2.5-pro",
-                "type": "gemini",
-                "description": "Gemini 2.5 Pro (Best for complex queries)",
-                "quota": "50/day (free tier)"
-            }
-            # Insert at position 0 (highest priority)
-            models_to_try = [gemini_pro_config] + list(models_to_try)
-            logger.info("🟢 Gemini Pro ENABLED - trying first")
-
-        for model_config in models_to_try:
-            model_name = model_config["name"]
-            model_start = time.time()
-            
-            # CHECK QUOTA TRACKER FIRST
-            is_available, skip_reason = self.tracker.is_available(model_name)
-            
-            if not is_available:
-                # Skip this model - it's known to be dead
-                models_tried.append({
-                    "model": model_name,
-                    "description": model_config["description"],
-                    "status": "⏭️ SKIPPED",
-                    "error": skip_reason,
-                    "time": 0.0
-                })
-                logger.info(f"⏭️ Skipping {model_name}: {skip_reason}")
-                continue
-            
-            # TRY THE MODEL
-            try:
-                logger.info(f"🔄 Trying {model_config['description']}...")
-                
-                llm = self._create_llm(model_config)
-                response = llm.invoke(prompt)
-                
-                elapsed = time.time() - model_start
-                
-                # SUCCESS - Mark model as working
-                self.tracker.report_success(model_name)
-                
-                models_tried.append({
-                    "model": model_name,
-                    "description": model_config["description"],
-                    "status": "✅ SUCCESS",
-                    "error": None,
-                    "time": round(elapsed, 2)
-                })
-                
-                logger.info(f"✅ Success with {model_name} in {elapsed:.2f}s")
-                
-                return {
-                    "success": True,
-                    "response": response.content.strip(),
-                    "model_used": model_config["description"],
-                    "models_tried": models_tried
-                }
-            
-            except Exception as e:
-                elapsed = time.time() - model_start
-                error_msg = str(e)
-                
-                # FAILURE - Mark model as dead
-                self.tracker.report_failure(model_name, error_msg)
-                
-                # Determine error type for display
-                if "429" in error_msg or "quota" in error_msg.lower():
-                    status = "❌ QUOTA EXCEEDED"
-                elif "404" in error_msg:
-                    status = "❌ MODEL NOT FOUND"
-                elif "connection" in error_msg.lower() or "timeout" in error_msg.lower():
-                    status = "❌ CONNECTION ERROR"
-                else:
-                    status = "❌ FAILED"
-                
-                models_tried.append({
-                    "model": model_name,
-                    "description": model_config["description"],
-                    "status": status,
-                    "error": error_msg[:150],
-                    "time": round(elapsed, 2)
-                })
-                
-                logger.warning(f"{status} {model_name}: {error_msg[:100]}")
-                continue
-        
-        # ALL MODELS FAILED
-        return {
-            "success": False,
-            "response": None,
-            "model_used": None,
-            "models_tried": models_tried,
-            "error": "All LLM models failed"
-        }
+        return self.llm_gateway.invoke_with_fallback(
+            prompt=prompt,
+            models=self._models_for_complexity(complexity),
+            tracker=self.tracker,
+            task=task,
+            temperature=0.1,
+            metadata={"agent": "sql", "complexity": complexity},
+        )
     
     
     def _create_sql_prompt(self, question: str) -> str:
@@ -429,7 +302,7 @@ SQL QUERY:"""
         
         logger.info(f"🤔 Generating SQL for: {question} (Complexity: {complexity})")
         
-        result = self._invoke_with_fallback(prompt, complexity)
+        result = self._invoke_with_fallback(prompt, complexity, task="sql.generate_query")
         
         if not result["success"]:
             return {
@@ -525,7 +398,7 @@ Provide a business-friendly answer with:
 
 ANSWER:"""
 
-        result = self._invoke_with_fallback(formatting_prompt, complexity)
+        result = self._invoke_with_fallback(formatting_prompt, complexity, task="sql.format_answer")
         
         if result["success"]:
             return {
@@ -577,7 +450,7 @@ Only include steps that are actually in the query. Be concise but clear.
 
 EXPLANATION:"""
 
-        result = self._invoke_with_fallback(explanation_prompt, "simple")
+        result = self._invoke_with_fallback(explanation_prompt, "simple", task="sql.explain_query")
         
         if result["success"]:
             return {

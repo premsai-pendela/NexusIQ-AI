@@ -26,6 +26,60 @@ By default, traces avoid storing full prompts. This keeps the trace useful witho
 
 Trace files include a small schema marker (`schema_version`) so future trace readers can evolve without guessing the file shape.
 
+For quick terminal checks, each completed trace also appends a compact JSONL row to:
+
+```text
+data/query_traces.jsonl
+```
+
+That file is only an index. The full trace still lives in `traces/trace-...json`.
+
+## LLM Task Ledger
+
+NexusIQ also has a first version of an LLM gateway in `utils/llm_gateway.py`. SQL Agent model calls now go through this gateway, which writes one lightweight event per model attempt to:
+
+```text
+data/llm_task_ledger.jsonl
+```
+
+The ledger records:
+
+- task name, such as `sql.generate_query` or `sql.format_answer`
+- model and provider type
+- temperature
+- success, skipped, or failed status
+- latency
+- estimated input/output tokens
+- prompt hash
+
+It does not store raw prompts. This gives cost and reliability visibility without turning the ledger into a secret dump.
+
+Disable ledger writes with:
+
+```bash
+NEXUSIQ_LLM_LEDGER_ENABLED=0 python main.py
+```
+
+Or choose a custom ledger path:
+
+```bash
+NEXUSIQ_LLM_LEDGER_PATH=/tmp/nexusiq-llm-ledger.jsonl python main.py
+```
+
+## Cache Trust Controls
+
+NexusIQ treats repeated questions as a product decision, not only a speed optimization.
+
+For exact same-session repeats, the UI asks whether to show the previous answer or check again. Choosing "Check again" bypasses the Fusion cache once.
+
+Fusion final-answer caching is quality gated:
+
+- SQL + RAG answers cache only after high-confidence validation.
+- Degraded answers such as `sql_failed` are not cached.
+- Low-confidence validation, missing answers, and agent errors are rejected from the cache.
+
+Trace events include cache bypass and cache admission decisions so repeated-answer behavior can be debugged alongside LLM and agent spans.
+
 ## Where Traces Are Saved
 
 Traces are written to:
@@ -53,6 +107,12 @@ List recent traces:
 
 ```bash
 python -m observability.inspect_traces --list
+```
+
+Tail the compact trace index:
+
+```bash
+tail -n 30 data/query_traces.jsonl
 ```
 
 Inspect the newest trace:

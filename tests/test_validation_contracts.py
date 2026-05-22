@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from datetime import datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -27,7 +28,13 @@ from evals.refresh_golden_truth import update_cases
 from observability.inspect_traces import format_trace_summary, get_trace_diagnostics
 from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
-from ui.fusion_chat import escape_streamlit_math
+from ui.fusion_chat import (
+    escape_streamlit_math,
+    find_previous_answer,
+    normalize_repeat_question,
+    previous_answer_message,
+)
+from utils.llm_gateway import LLMGateway
 from utils.validators import validate_question
 
 
@@ -139,6 +146,188 @@ class FusionValidationTests(unittest.TestCase):
         self.assertNotIn("fromtheSQL", answer)
         self.assertNotIn("*from", answer)
 
+    def test_high_confidence_sql_rag_result_is_cacheable(self):
+        result = {
+            "answer": "Validated answer",
+            "source_type": "sql_rag",
+            "sql_result": {"success": True},
+            "rag_result": {"success": True},
+            "validation": {
+                "validated": True,
+                "confidence": "HIGH",
+                "matches": [{"sql_label": "revenue"}],
+                "discrepancies": [],
+            },
+        }
+
+        should_cache, reason = self.agent._should_cache_result("sql_rag", result)
+
+        self.assertTrue(should_cache)
+        self.assertEqual(reason, "passed_quality_gate")
+
+    def test_low_confidence_sql_rag_result_is_not_cacheable(self):
+        result = {
+            "answer": "Uncertain answer",
+            "source_type": "sql_rag",
+            "sql_result": {"success": True},
+            "rag_result": {"success": True},
+            "validation": {
+                "validated": False,
+                "confidence": "LOW",
+                "matches": [],
+                "discrepancies": [{"sql": 10, "rag": 20}],
+            },
+        }
+
+        should_cache, reason = self.agent._should_cache_result("sql_rag", result)
+
+        self.assertFalse(should_cache)
+        self.assertEqual(reason, "validation_not_verified")
+
+    def test_degraded_sql_failed_result_is_not_cacheable(self):
+        result = {
+            "answer": "Document-only fallback",
+            "source_type": "rag_only (sql_failed)",
+            "sql_result": {"success": False, "error": "quota"},
+            "rag_result": {"success": True, "chunks_retrieved": 2},
+        }
+
+        should_cache, reason = self.agent._should_cache_result("rag_only (sql_failed)", result)
+
+        self.assertFalse(should_cache)
+        self.assertEqual(reason, "degraded_sql_failed")
+
+    def test_cache_key_matches_reordered_sql_pdf_question(self):
+        self.agent._query_cache = {}
+        self.agent._cache_ttl = 3600
+        self.agent._cache_max = 50
+        result = {"answer": "Validated answer", "source_type": "sql_rag"}
+
+        self.agent._cache_set("Validate Q4 Electronics revenue across SQL and PDF reports.", result)
+        cached = self.agent._cache_get("Validate Q4 Electronics revenue across PDF and sql reports.")
+
+        self.assertIsNotNone(cached)
+        self.assertTrue(cached["_from_cache"])
+
+
+class FakeLLMResponse:
+    def __init__(self, content):
+        self.content = content
+
+
+class FakeTracker:
+    def __init__(self, unavailable=None):
+        self.unavailable = unavailable or {}
+        self.successes = []
+        self.failures = []
+
+    def is_available(self, model_name):
+        if model_name in self.unavailable:
+            return False, self.unavailable[model_name]
+        return True, "available"
+
+    def report_success(self, model_name):
+        self.successes.append(model_name)
+
+    def report_failure(self, model_name, error_message):
+        self.failures.append((model_name, error_message))
+
+
+class LLMGatewayTests(unittest.TestCase):
+    def test_gateway_records_success_without_prompt_text(self):
+        with TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "llm-ledger.jsonl"
+
+            def factory(model_config, temperature):
+                class Client:
+                    def invoke(self, prompt):
+                        return FakeLLMResponse("SELECT COUNT(*) FROM sales_transactions")
+
+                return Client()
+
+            gateway = LLMGateway(ledger_path=ledger_path, client_factory=factory)
+            tracker = FakeTracker()
+            result = gateway.invoke_with_fallback(
+                prompt="secret-ish prompt that should not be stored",
+                models=[{"name": "test-model", "type": "fake", "description": "Test Model"}],
+                tracker=tracker,
+                task="sql.generate_query",
+                temperature=0.1,
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["response"], "SELECT COUNT(*) FROM sales_transactions")
+            self.assertEqual(tracker.successes, ["test-model"])
+
+            events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+            self.assertEqual(events[0]["task"], "sql.generate_query")
+            self.assertEqual(events[0]["model"], "test-model")
+            self.assertEqual(events[0]["status"], "success")
+            self.assertIn("prompt_hash", events[0])
+            self.assertNotIn("secret-ish prompt", ledger_path.read_text())
+
+    def test_gateway_skips_unavailable_model_then_falls_back(self):
+        with TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "llm-ledger.jsonl"
+
+            def factory(model_config, temperature):
+                class Client:
+                    def invoke(self, prompt):
+                        return FakeLLMResponse("fallback answer")
+
+                return Client()
+
+            gateway = LLMGateway(ledger_path=ledger_path, client_factory=factory)
+            tracker = FakeTracker(unavailable={"primary": "RESOURCE_EXHAUSTED: Retry in 20m"})
+            result = gateway.invoke_with_fallback(
+                prompt="Question",
+                models=[
+                    {"name": "primary", "type": "fake", "description": "Primary"},
+                    {"name": "fallback", "type": "fake", "description": "Fallback"},
+                ],
+                tracker=tracker,
+                task="rag.answer",
+                temperature=0.2,
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["model_used"], "Fallback")
+            self.assertEqual(result["models_tried"][0]["status"], "⏭️ SKIPPED")
+            self.assertEqual(tracker.successes, ["fallback"])
+
+            events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+            self.assertEqual([event["status"] for event in events], ["skipped", "success"])
+
+    def test_gateway_reports_failure_before_next_model(self):
+        with TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "llm-ledger.jsonl"
+
+            def factory(model_config, temperature):
+                class Client:
+                    def invoke(self, prompt):
+                        if model_config["name"] == "broken":
+                            raise RuntimeError("429 quota exceeded")
+                        return FakeLLMResponse("ok")
+
+                return Client()
+
+            gateway = LLMGateway(ledger_path=ledger_path, client_factory=factory)
+            tracker = FakeTracker()
+            result = gateway.invoke_with_fallback(
+                prompt="Question",
+                models=[
+                    {"name": "broken", "type": "fake", "description": "Broken"},
+                    {"name": "working", "type": "fake", "description": "Working"},
+                ],
+                tracker=tracker,
+                task="fusion.answer",
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(tracker.failures[0][0], "broken")
+            self.assertEqual(tracker.successes, ["working"])
+            self.assertEqual(result["models_tried"][0]["status"], "❌ QUOTA EXCEEDED")
+
 
 class RoutingAndInputTests(unittest.TestCase):
     def test_streamlit_markdown_escapes_currency_math(self):
@@ -169,6 +358,83 @@ class RoutingAndInputTests(unittest.TestCase):
 
         self.assertTrue(result["valid"])
         self.assertFalse(result["auto_corrected"])
+
+    def test_repeat_lookup_matches_same_question_and_source_filter(self):
+        now = datetime.now()
+        history = [
+            {
+                "question": "What was Q4 revenue?",
+                "answer": "Prior answer",
+                "source_filter": "Auto",
+                "timestamp": now,
+            }
+        ]
+
+        self.assertIsNotNone(find_previous_answer(history, "  what was q4 revenue?  ", "Auto"))
+        self.assertIsNone(find_previous_answer(history, "What was Q4 revenue?", "SQL Only"))
+
+    def test_repeat_lookup_matches_reordered_sql_pdf_question(self):
+        now = datetime.now()
+        history = [
+            {
+                "question": "Validate Q4 Electronics revenue across SQL and PDF reports.",
+                "answer": "Prior answer",
+                "source_filter": "Auto",
+                "timestamp": now,
+            }
+        ]
+
+        self.assertEqual(
+            normalize_repeat_question("Validate Q4 Electronics revenue across SQL and PDF reports."),
+            normalize_repeat_question("Validate Q4 Electronics revenue across PDF and sql reports."),
+        )
+        self.assertIsNotNone(
+            find_previous_answer(
+                history,
+                "Validate Q4 Electronics revenue across PDF and sql reports.",
+                "Auto",
+            )
+        )
+
+    def test_question_resolution_does_not_rewrite_self_contained_policy_question(self):
+        class ExplodingClient:
+            def invoke(self, prompt):
+                raise AssertionError("Self-contained question should not call LLM resolver")
+
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._history = [
+            {
+                "question": "Validate Q4 Electronics revenue across SQL and PDF reports.",
+                "answer": "Q4 Electronics revenue was validated.",
+            }
+        ]
+        agent.gemini_flash = ExplodingClient()
+        agent.groq_client = ExplodingClient()
+
+        question = "What is the return policy?"
+
+        self.assertFalse(agent._needs_history_resolution(question))
+        self.assertEqual(agent._resolve_question(question), question)
+
+    def test_question_resolution_allows_contextual_followup(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        self.assertTrue(agent._needs_history_resolution("What about Q3?"))
+        self.assertTrue(agent._needs_history_resolution("Compare that with Q2"))
+        self.assertFalse(agent._needs_history_resolution("what is policy for returns?"))
+
+    def test_previous_answer_message_marks_answer_as_cache_result(self):
+        previous = {
+            "answer": "Prior answer",
+            "source_type": "sql_rag",
+            "timestamp": datetime.now(),
+        }
+
+        msg = previous_answer_message(previous, "msg-1")
+
+        self.assertEqual(msg["role"], "assistant")
+        self.assertTrue(msg["from_cache"])
+        self.assertEqual(msg["cache_label"], "previous_answer")
+        self.assertEqual(msg["query_time"], 0.0)
 
 
 class OfflineEvalHarnessTests(unittest.TestCase):
@@ -361,27 +627,43 @@ class GoldenEvalTests(unittest.TestCase):
 class ObservabilityTests(unittest.TestCase):
     def test_trace_session_writes_local_json_without_llm_calls(self):
         previous_dir = os.environ.get("NEXUSIQ_TRACE_DIR")
+        previous_index = os.environ.get("NEXUSIQ_TRACE_INDEX_PATH")
         previous_enabled = os.environ.get("NEXUSIQ_TRACE_ENABLED")
         with TemporaryDirectory() as tmp:
             os.environ["NEXUSIQ_TRACE_DIR"] = tmp
+            os.environ["NEXUSIQ_TRACE_INDEX_PATH"] = str(Path(tmp) / "query_traces.jsonl")
             os.environ["NEXUSIQ_TRACE_ENABLED"] = "1"
             trace = get_tracer().start_trace("What was Q4 revenue?", {"force_source": None})
             with trace.span("routing") as span:
                 span["metadata"]["source_type"] = "sql_rag"
-            path = trace.finish({"source_type": "sql_rag", "from_cache": False})
+            path = trace.finish({
+                "source_type": "sql_rag",
+                "from_cache": False,
+                "routing_model": "Gemini Flash",
+                "answer_models": "SQL: Groq Llama 3.3 70B",
+            })
 
             self.assertTrue(path.exists())
             payload = json.loads(path.read_text())
             self.assertEqual(payload["schema_version"], "1.0")
             self.assertEqual(payload["question"], "What was Q4 revenue?")
             self.assertEqual(payload["final"]["source_type"], "sql_rag")
+            self.assertEqual(payload["final"]["answer_models"], "SQL: Groq Llama 3.3 70B")
             self.assertEqual(payload["spans"][0]["name"], "routing")
             self.assertIn("span_id", payload["spans"][0])
+            index_path = Path(os.environ["NEXUSIQ_TRACE_INDEX_PATH"])
+            index_row = json.loads(index_path.read_text().splitlines()[0])
+            self.assertEqual(index_row["trace_id"], payload["trace_id"])
+            self.assertEqual(index_row["answer_models"], "SQL: Groq Llama 3.3 70B")
 
         if previous_dir is None:
             os.environ.pop("NEXUSIQ_TRACE_DIR", None)
         else:
             os.environ["NEXUSIQ_TRACE_DIR"] = previous_dir
+        if previous_index is None:
+            os.environ.pop("NEXUSIQ_TRACE_INDEX_PATH", None)
+        else:
+            os.environ["NEXUSIQ_TRACE_INDEX_PATH"] = previous_index
         if previous_enabled is None:
             os.environ.pop("NEXUSIQ_TRACE_ENABLED", None)
         else:

@@ -209,7 +209,7 @@ class RAGAgent:
             self.gemini_pro = ChatGoogleGenerativeAI(
                 model=settings.gemini_pro_model,
                 google_api_key=settings.google_api_key,
-                temperature=0.3,
+                temperature=0.1,
                 max_retries=settings.gemini_pro_max_retries,
                 timeout=settings.gemini_pro_timeout
             )
@@ -224,7 +224,7 @@ class RAGAgent:
             self.gemini_flash = ChatGoogleGenerativeAI(
                 model=settings.gemini_flash_model,
                 google_api_key=settings.google_api_key,
-                temperature=0.3,
+                temperature=0.1,
                 max_retries=settings.gemini_flash_max_retries,
                 timeout=settings.gemini_flash_timeout
             )
@@ -238,7 +238,7 @@ class RAGAgent:
             self.groq_client = ChatGroq(
                 model=settings.groq_model,
                 groq_api_key=settings.groq_api_key,
-                temperature=0.3
+                temperature=0.1
             )
             logger.info("✅ Groq client initialized")
         else:
@@ -483,6 +483,8 @@ IMPORTANT RULES:
 5. If multiple sources provide relevant info, synthesize them
 6. If the question asks to validate SQL against PDF reports, answer the PDF side only. Do not require SQL reports to exist inside the document excerpts.
 7. If a source gives a category percentage of total revenue, calculate and include the derived category dollar value.
+8. For broad policy questions, summarize the relevant general policy first, then include any category-specific rules found in the sources. Do not require an exact phrase match such as a quarter plus category if the source clearly contains the policy details.
+9. Do not say there is not enough information when the provided excerpts contain direct policy terms, dates, exceptions, or requirements that answer the question.
 
 DOCUMENT EXCERPTS:
 {context}

@@ -31,6 +31,7 @@ from agents.rag_agent import get_rag_agent
 from agents.web_agent import get_web_agent  # ✅ NEW: Import Web Agent
 from config.settings import settings
 from observability.tracer import TraceSession, get_tracer, summarize_agent_result
+from utils.query_normalization import canonical_question_key
 from utils.quota_tracker import get_tracker
 
 logging.basicConfig(level=logging.INFO)
@@ -168,9 +169,56 @@ class FusionAgent:
         )
         return f"\n## Conversation History\n{turns}\n"
 
+    def _needs_history_resolution(self, question: str) -> bool:
+        """Return True only for questions that are likely contextual follow-ups."""
+        q = str(question or "").strip().lower()
+        if not q:
+            return False
+
+        tokens = re.findall(r"[a-z0-9]+", q)
+        if not tokens:
+            return False
+
+        followup_starts = (
+            "what about",
+            "how about",
+            "and ",
+            "also ",
+            "same for",
+            "compare that",
+            "compare it",
+        )
+        if q.startswith(followup_starts):
+            return True
+
+        contextual_terms = {
+            "it",
+            "its",
+            "they",
+            "them",
+            "their",
+            "this",
+            "that",
+            "these",
+            "those",
+            "previous",
+            "above",
+            "same",
+        }
+        if any(token in contextual_terms for token in tokens):
+            return True
+
+        # Very short fragments like "refunds?" may depend on the prior topic.
+        if len(tokens) <= 3 and not any(token in {"policy", "revenue", "sales", "returns", "refund"} for token in tokens):
+            return True
+
+        return False
+
     def _resolve_question(self, question: str) -> str:
         """Expand ambiguous follow-up using conversation history. Returns original if no history or LLM fails."""
         if not self._history:
+            return question
+        if not self._needs_history_resolution(question):
             return question
 
         history_ctx = self._history_context(max_turns=3)
@@ -1004,25 +1052,87 @@ ANSWER:"""
         return "\n\n".join(parts)
     
     def _cache_get(self, question: str) -> Optional[Dict]:
-        key = question.strip().lower()
+        key = canonical_question_key(question)
         entry = self._query_cache.get(key)
         if entry and (time.time() - entry[1]) < self._cache_ttl:
             logger.info("Cache hit for query")
             return dict(entry[0], _from_cache=True)
         return None
 
+    def _should_cache_result(self, source_type: str, result: Dict) -> tuple[bool, str]:
+        """Admit only verified, non-degraded answers into the final-answer cache."""
+        if not result.get("answer"):
+            return False, "empty_answer"
+
+        normalized_source = str(source_type or result.get("source_type") or "").lower()
+        if normalized_source == "no_data":
+            return False, "no_data_can_go_stale"
+        if "sql_failed" in normalized_source:
+            return False, "degraded_sql_failed"
+
+        sql_result = result.get("sql_result")
+        rag_result = result.get("rag_result")
+        web_result = result.get("web_result")
+        validation = result.get("validation") or {}
+
+        if sql_result is not None and not sql_result.get("success"):
+            return False, "sql_error"
+        if rag_result is not None and not rag_result.get("success"):
+            return False, "rag_error"
+        if web_result is not None and not web_result.get("success"):
+            return False, "web_error"
+
+        if "sql" in normalized_source and "rag" in normalized_source:
+            if not validation.get("validated"):
+                return False, "validation_not_verified"
+            if validation.get("confidence") != "HIGH":
+                return False, "validation_not_high_confidence"
+            if validation.get("discrepancies"):
+                return False, "validation_has_discrepancies"
+
+        if normalized_source == "sql_only":
+            if not sql_result or not sql_result.get("success"):
+                return False, "sql_not_successful"
+            return True, "sql_success"
+
+        if normalized_source in {"rag_only", "comparison"}:
+            if not rag_result or not rag_result.get("success"):
+                return False, "rag_not_successful"
+            if rag_result.get("chunks_retrieved", 0) <= 0 and not rag_result.get("sources"):
+                return False, "rag_has_no_evidence"
+            return True, "rag_has_evidence"
+
+        if normalized_source == "web_only":
+            if not web_result or not web_result.get("success"):
+                return False, "web_not_successful"
+            return True, "web_success"
+
+        return True, "passed_quality_gate"
+
     def _cache_set(self, question: str, result: Dict) -> None:
-        key = question.strip().lower()
+        key = canonical_question_key(question)
         if len(self._query_cache) >= self._cache_max:
             oldest = min(self._query_cache, key=lambda k: self._query_cache[k][1])
             del self._query_cache[oldest]
         self._query_cache[key] = (result, time.time())
 
+    def _collect_answer_models(self, result: Dict) -> str:
+        """Return the model(s) that actually generated answer content."""
+        models = []
+        for label, key in (("SQL", "sql_result"), ("RAG", "rag_result"), ("Web", "web_result")):
+            agent_result = result.get(key) or {}
+            model = agent_result.get("model_used")
+            if model and model != "none":
+                models.append(f"{label}: {model}")
+        return "; ".join(models) or result.get("routing_model") or "n/a"
+
     def _finalize_trace(self, trace: TraceSession, result: Dict, cached: bool = False) -> Dict:
         """Attach trace metadata to the response after writing the trace file."""
+        result["answer_models"] = result.get("answer_models") or self._collect_answer_models(result)
         final_summary = {
             "source_type": result.get("source_type"),
             "routing_model": result.get("routing_model"),
+            "answer_models": result.get("answer_models"),
             "routing_fallback": result.get("routing_fallback"),
             "query_time_s": round(float(result.get("query_time", 0) or 0), 3),
             "from_cache": cached or bool(result.get("_from_cache")),
@@ -1112,7 +1222,13 @@ ANSWER:"""
 
         return results["sql"], results["rag"], results["web"]
 
-    def query(self, question: str, force_source: Optional[str] = None, progress_cb: Optional[Callable[[str, Dict], None]] = None) -> Dict:
+    def query(
+        self,
+        question: str,
+        force_source: Optional[str] = None,
+        progress_cb: Optional[Callable[[str, Dict], None]] = None,
+        bypass_cache: bool = False,
+    ) -> Dict:
         """
         Main fusion query method. Routes to source(s) and combines results.
         progress_cb(source_name, result_dict) called as each parallel agent finishes.
@@ -1121,12 +1237,15 @@ ANSWER:"""
             question,
             {
                 "force_source": force_source,
+                "bypass_cache": bypass_cache,
                 "environment": getattr(settings, "environment", "unknown"),
             },
         )
 
         # Cache check — skip for forced-source overrides
-        if not force_source:
+        if bypass_cache:
+            trace.record_event("cache.bypass", {"reason": "user_requested_fresh_answer"})
+        if not force_source and not bypass_cache:
             cached = self._cache_get(question)
             if cached:
                 trace.record_event(
@@ -1338,7 +1457,17 @@ ANSWER:"""
                 'query_time': query_time
             }
             if not force_source:
-                self._cache_set(question, result)
+                should_cache, cache_reason = self._should_cache_result(source_type, result)
+                trace.record_event(
+                    "cache.admission",
+                    {
+                        "accepted": should_cache,
+                        "reason": cache_reason,
+                        "source_type": source_type,
+                    },
+                )
+                if should_cache:
+                    self._cache_set(question, result)
             return self._finalize_trace(trace, result)
     
     def close(self):

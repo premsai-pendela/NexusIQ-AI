@@ -49,6 +49,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from langchain_groq import ChatGroq
 from config.settings import settings
+from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 
 logging.basicConfig(level=logging.INFO)
@@ -101,6 +102,7 @@ class WebAgent:
         else:
             self.groq_client = None
             logger.warning("⚠️  No Groq API key - Web Agent will return raw data only")
+        self.llm_gateway = get_llm_gateway()
         
         # Selenium driver (lazy initialization)
         self._driver = None
@@ -893,9 +895,22 @@ Format as bullet points with competitor names."""
 
             try:
                 if self.groq_client:
-                    response = self.groq_client.invoke(prompt)
-                    quota_tracker.report_success("llama-3.3-70b-versatile")
-                    answer = response.content
+                    result = self.llm_gateway.invoke_with_fallback(
+                        prompt=prompt,
+                        models=[{
+                            "name": settings.groq_model,
+                            "type": "groq",
+                            "description": "Groq Llama 3.3 70B",
+                        }],
+                        tracker=quota_tracker,
+                        task="web.answer",
+                        temperature=0.1,
+                        metadata={"agent": "web", "category": category},
+                        response_validator=lambda content: bool(content.strip()),
+                    )
+                    if not result.get("success"):
+                        raise RuntimeError(result.get("error", "Web answer LLM failed"))
+                    answer = result["response"]
                 else:
                     answer = "Groq unavailable. Raw data:\n" + json.dumps(pricing_data, indent=2)
                     

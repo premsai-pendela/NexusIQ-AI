@@ -31,6 +31,7 @@ from agents.rag_agent import get_rag_agent
 from agents.web_agent import get_web_agent  # ✅ NEW: Import Web Agent
 from config.settings import settings
 from observability.tracer import TraceSession, get_tracer, summarize_agent_result
+from utils.llm_gateway import get_llm_gateway
 from utils.query_normalization import canonical_question_key
 from utils.quota_tracker import get_tracker
 
@@ -56,6 +57,7 @@ class FusionAgent:
         # LLM clients (reuse from RAG agent)
         self.gemini_flash = self.rag_agent.gemini_flash
         self.groq_client = self.rag_agent.groq_client
+        self.llm_gateway = get_llm_gateway()
         
         # Routing metadata (set per-query by _classify_query_source_llm)
         self._last_routing_model = None
@@ -169,6 +171,35 @@ class FusionAgent:
         )
         return f"\n## Conversation History\n{turns}\n"
 
+    def _gateway_models(self) -> List[Dict]:
+        """Return configured Fusion models in existing preference order."""
+        models = []
+        if getattr(self, "gemini_flash", None) is not None:
+            models.append({
+                "name": settings.gemini_flash_model,
+                "type": "gemini",
+                "description": "Gemini Flash",
+            })
+        if getattr(self, "groq_client", None) is not None:
+            models.append({
+                "name": settings.groq_model,
+                "type": "groq",
+                "description": "Groq",
+            })
+        return models
+
+    @staticmethod
+    def _valid_routing_response(content: str) -> bool:
+        """Require router output to contain a usable source-selection object."""
+        match = re.search(r"\{.*\}", content, re.DOTALL)
+        if not match:
+            return False
+        try:
+            routing = json.loads(match.group())
+        except json.JSONDecodeError:
+            return False
+        return all(key in routing for key in ("sql", "rag", "web"))
+
     def _needs_history_resolution(self, question: str) -> bool:
         """Return True only for questions that are likely contextual follow-ups."""
         q = str(question or "").strip().lower()
@@ -230,16 +261,19 @@ Output ONLY the rewritten question, no explanation, no quotes.
 Follow-up: {question}
 Standalone question:"""
 
-        for client in [self.gemini_flash, self.groq_client]:
-            if client is None:
-                continue
-            try:
-                response = client.invoke(prompt)
-                resolved = response.content.strip().strip("\"'")
-                if resolved:
-                    return resolved
-            except Exception as exc:
-                logger.debug(f"Question resolution failed with client: {exc}")
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=prompt,
+            models=self._gateway_models(),
+            tracker=quota_tracker,
+            task="fusion.resolve_question",
+            temperature=0.1,
+            metadata={"agent": "fusion"},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        if result.get("success"):
+            resolved = str(result.get("response") or "").strip().strip("\"'")
+            if resolved:
+                return resolved
 
         return question
 
@@ -316,80 +350,67 @@ Reply with ONLY this JSON (no extra text):
                 time.sleep(wait_s)
             self._gemini_routing_calls = [t for t in self._gemini_routing_calls if time.time() - t < 60]
 
-        # Try available LLM clients in order: Gemini Flash → Groq
-        clients = []
-        if self.gemini_flash:
-            clients.append(("Gemini Flash", self.gemini_flash))
-        if self.groq_client:
-            clients.append(("Groq", self.groq_client))
+        models = self._gateway_models()
+        primary_client_name = models[0]["description"] if models else None
+        if models and models[0]["description"] == "Gemini Flash":
+            self._gemini_routing_calls.append(time.time())
 
-        primary_client_name = clients[0][0] if clients else None
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=prompt,
+            models=models,
+            tracker=quota_tracker,
+            task="fusion.route",
+            temperature=0.1,
+            metadata={"agent": "fusion"},
+            response_validator=self._valid_routing_response,
+        )
+        if result.get("success"):
+            client_name = result.get("model_used")
+            content = str(result.get("response") or "")
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
+            routing = json.loads(json_match.group())
+            is_fallback = client_name != primary_client_name
+            routing["_routing_model"] = client_name
+            routing["_routing_fallback"] = is_fallback
+            if is_fallback:
+                logger.warning(f"  ⚠️  Routing fallback: primary LLM unavailable, using {client_name}")
+            logger.info(f"  LLM routing ({client_name}) → {routing}")
 
-        for client_name, client in clients:
-            try:
-                # Track Gemini calls for rate limiting
-                if client_name == "Gemini Flash":
-                    self._gemini_routing_calls.append(time.time())
+            sources = []
+            if routing.get("sql"):
+                sources.append("sql")
+            if routing.get("rag"):
+                sources.append("rag")
+            if routing.get("web"):
+                sources.append("web")
 
-                response = client.invoke(prompt)
-                content = response.content.strip()
-
-                json_match = re.search(r'\{.*\}', content, re.DOTALL)
-                if not json_match:
-                    continue
-
-                routing = json.loads(json_match.group())
-                is_fallback = client_name != primary_client_name
-                routing["_routing_model"] = client_name
-                routing["_routing_fallback"] = is_fallback
-                if is_fallback:
-                    logger.warning(f"  ⚠️  Routing fallback: primary LLM unavailable, using {client_name}")
-                logger.info(f"  LLM routing ({client_name}) → {routing}")
-
-                sources = []
-                if routing.get("sql"):
-                    sources.append("sql")
-                if routing.get("rag"):
-                    sources.append("rag")
-                if routing.get("web"):
-                    sources.append("web")
-
-                if not sources:
-                    # LLM explicitly says no source can answer — store reasoning and signal caller
-                    self._last_routing_model = client_name
-                    self._last_routing_fallback = routing.get("_routing_fallback", False)
-                    self._no_data_reason = routing.get("reasoning", "No available source covers this query.")
-                    logger.warning(f"  LLM says no source applies: {self._no_data_reason}")
-                    return "no_data"
-
-                if len(sources) == 1:
-                    route = f"{sources[0]}_only"
-                else:
-                    if routing.get("cross_validate") and "sql" in sources and "rag" in sources:
-                        route = "sql_rag" if len(sources) == 2 else "all"
-                    elif len(sources) == 2:
-                        # Normalize order: always sql before rag/web
-                        ordered = sorted(sources, key=lambda s: ["sql","rag","web"].index(s))
-                        route = "_".join(ordered)
-                    else:
-                        route = "all"
-
-                # Safety net: questions asking for quarterly breakdowns need SQL
-                # even if LLM said rag_only (SQL has full Q1-Q4 2024 data)
-                quarter_terms = ["quarter", "quarterly", "q1","q2","q3","q4"]
-                if route == "rag_only" and any(t in question.lower() for t in quarter_terms):
-                    logger.info("  Safety net: quarterly question upgraded rag_only → sql_rag")
-                    route = "sql_rag"
-
-                # Attach routing metadata for callers
-                self._last_routing_model = routing.get("_routing_model", client_name)
+            if not sources:
+                self._last_routing_model = client_name
                 self._last_routing_fallback = routing.get("_routing_fallback", False)
+                self._no_data_reason = routing.get("reasoning", "No available source covers this query.")
+                logger.warning(f"  LLM says no source applies: {self._no_data_reason}")
+                return "no_data"
 
-                return route
+            if len(sources) == 1:
+                route = f"{sources[0]}_only"
+            else:
+                if routing.get("cross_validate") and "sql" in sources and "rag" in sources:
+                    route = "sql_rag" if len(sources) == 2 else "all"
+                elif len(sources) == 2:
+                    ordered = sorted(sources, key=lambda s: ["sql", "rag", "web"].index(s))
+                    route = "_".join(ordered)
+                else:
+                    route = "all"
 
-            except Exception as e:
-                logger.warning(f"LLM routing failed ({client_name}): {e}")
-                continue
+            quarter_terms = ["quarter", "quarterly", "q1", "q2", "q3", "q4"]
+            if route == "rag_only" and any(t in question.lower() for t in quarter_terms):
+                logger.info("  Safety net: quarterly question upgraded rag_only → sql_rag")
+                route = "sql_rag"
+
+            self._last_routing_model = routing.get("_routing_model", client_name)
+            self._last_routing_fallback = routing.get("_routing_fallback", False)
+
+            return route
 
         return None
 
@@ -891,30 +912,18 @@ FORMAT:
 
 ANSWER:"""
 
-        # Use fallback chain for synthesis
-        models_to_try = [
-            ("gemini-2.5-flash", self.gemini_flash),
-            ("llama-3.3-70b-versatile", self.groq_client),
-        ]
-        
-        for model_name, client in models_to_try:
-            if client is None:
-                continue
-            
-            available, reason = quota_tracker.is_available(model_name)
-            if not available:
-                logger.debug(f"Skipping {model_name}: {reason}")
-                continue
-            
-            try:
-                response = client.invoke(fusion_prompt)
-                quota_tracker.report_success(model_name)
-                logger.info(f"✅ Fused answer generated with {model_name}")
-                return response.content
-            except Exception as e:
-                quota_tracker.report_failure(model_name, str(e))
-                logger.warning(f"Fusion failed with {model_name}: {str(e)[:100]}")
-                continue
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=fusion_prompt,
+            models=self._gateway_models(),
+            tracker=quota_tracker,
+            task="fusion.answer",
+            temperature=0.1,
+            metadata={"agent": "fusion"},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        if result.get("success"):
+            logger.info("✅ Fused answer generated with %s", result.get("model_used"))
+            return result["response"]
         
         # Fallback: Simple combination without LLM
         logger.warning("All LLM models failed, using simple fusion")

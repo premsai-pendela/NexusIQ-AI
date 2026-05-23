@@ -38,6 +38,7 @@ except ImportError:
     OLLAMA_AVAILABLE = False
 
 from config.settings import settings
+from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 
 # Configure logging
@@ -146,10 +147,49 @@ class RAGAgent:
         
         # Initialize LLM clients
         self._init_llm_clients()
+        self.llm_gateway = get_llm_gateway()
         self._init_bm25_index()
         self._ingestion_version = self._read_ingestion_version()
 
         logger.info("RAG Agent initialized successfully!")
+
+    def _models_for_complexity(self, complexity: str) -> List[Dict]:
+        """Return RAG model configs in the existing preference order."""
+        models_to_try = list(self.MODELS.get(complexity, self.MODELS["complex"]))
+        if settings.use_gemini_pro and self.gemini_pro is not None:
+            models_to_try.insert(0, {
+                "name": "gemini-2.5-pro",
+                "type": "gemini",
+                "description": "Gemini 2.5 Pro (Best for complex analysis)",
+                "quota": "50/day (free tier)",
+                "priority_reason": "Highest intelligence",
+            })
+        return models_to_try
+
+    def _reasoning_models(self) -> List[Dict]:
+        """Return document reasoning models with Gemini-first ordering."""
+        models = []
+        if self.gemini_flash is not None:
+            models.append({
+                "name": "gemini-2.5-flash",
+                "type": "gemini",
+                "description": "Gemini 2.5 Flash",
+            })
+        if self.groq_client is not None:
+            models.append({
+                "name": "llama-3.3-70b-versatile",
+                "type": "groq",
+                "description": "Groq Llama 3.3 70B",
+            })
+        return models
+
+    @staticmethod
+    def _valid_json_response(content: str) -> bool:
+        try:
+            json.loads(re.sub(r"```json\s*|\s*```", "", content).strip())
+            return True
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return False
     
     def _init_bm25_index(self):
         """Initialize BM25 keyword index from ChromaDB documents"""
@@ -377,23 +417,33 @@ class RAGAgent:
 
     def _hyde_search(self, question: str, n_results: int) -> List[Dict]:
         """Generate hypothetical answer then search with it (HyDE)."""
-        clients = []
-        if getattr(self, "groq_client", None):
-            clients.append(self.groq_client)
-        if getattr(self, "gemini_flash", None):
-            clients.append(self.gemini_flash)
+        models = []
+        if getattr(self, "groq_client", None) is not None:
+            models.append({
+                "name": "llama-3.3-70b-versatile",
+                "type": "groq",
+                "description": "Groq Llama 3.3 70B",
+            })
+        if getattr(self, "gemini_flash", None) is not None:
+            models.append({
+                "name": "gemini-2.5-flash",
+                "type": "gemini",
+                "description": "Gemini 2.5 Flash",
+            })
 
-        fake_answer = None
-        for client in clients:
-            try:
-                resp = client.invoke(
-                    f"Write one factual paragraph answering this business question. "
-                    f"Use approximate numbers if needed. Be concise.\n\nQuestion: {question}"
-                )
-                fake_answer = resp.content.strip()
-                break
-            except Exception:
-                continue
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=(
+                "Write one factual paragraph answering this business question. "
+                f"Use approximate numbers if needed. Be concise.\n\nQuestion: {question}"
+            ),
+            models=models,
+            tracker=quota_tracker,
+            task="rag.hyde",
+            temperature=0.1,
+            metadata={"agent": "rag"},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        fake_answer = result.get("response") if result.get("success") else None
 
         if not fake_answer:
             return []
@@ -495,56 +545,6 @@ ANSWER (include source citations):"""
         
         return prompt
     
-    def _invoke_model(self, model_config: Dict, prompt: str) -> Optional[str]:
-        """
-        Invoke a specific model based on config
-        
-        Args:
-            model_config: Model configuration dict
-            prompt: The prompt to send
-        
-        Returns:
-            Response text or None if failed
-        """
-        model_type = model_config["type"]
-        model_name = model_config["name"]
-        
-        try:
-            if model_type == "gemini":
-                if "pro" in model_name.lower():
-                    if self.gemini_pro is None:
-                        return None
-                    response = self.gemini_pro.invoke(prompt)
-                else:  # flash
-                    if self.gemini_flash is None:
-                        return None
-                    response = self.gemini_flash.invoke(prompt)
-                return response.content
-            
-            elif model_type == "groq":
-                if self.groq_client is None:
-                    return None
-                response = self.groq_client.invoke(prompt)
-                return response.content
-            
-            elif model_type == "ollama":
-                if not OLLAMA_AVAILABLE:
-                    logger.warning("Ollama not available, skipping")
-                    return None
-                response = ollama.chat(
-                    model=settings.ollama_model,
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                return response['message']['content']
-            
-            else:
-                logger.error(f"Unknown model type: {model_type}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"{model_name} failed: {e}")
-            raise  # Re-raise to be caught by fallback handler
-    
     def _generate_answer_with_fallback(
         self, 
         prompt: str, 
@@ -561,95 +561,19 @@ ANSWER (include source citations):"""
             (answer, model_used, models_tried)
         """
         
-        import time
-        
-        # Get model list based on complexity
-        models_to_try = list(self.MODELS.get(query_complexity, self.MODELS["complex"]))
-        models_tried = []
-        
-        # ✨ Conditionally add Gemini Pro as FIRST model if enabled
-        if settings.use_gemini_pro and self.gemini_pro is not None:
-            gemini_pro_config = {
-                "name": "gemini-2.5-pro",
-                "type": "gemini",
-                "description": "Gemini 2.5 Pro (Best for complex analysis)",
-                "quota": "50/day (free tier)",
-                "priority_reason": "Highest intelligence"
-            }
-            models_to_try = [gemini_pro_config] + models_to_try
-            logger.info("🟢 Gemini Pro ENABLED - trying first")
-        
-        for model_config in models_to_try:
-            model_name = model_config["name"]
-            model_start = time.time()
-            
-            # Check circuit breaker
-            available, reason = quota_tracker.is_available(model_name)
-            if not available:
-                models_tried.append({
-                    "model": model_name,
-                    "description": model_config["description"],
-                    "status": "⏭️ SKIPPED",
-                    "error": reason,
-                    "time": 0.0
-                })
-                logger.info(f"⏭️ Skipping {model_name}: {reason}")
-                continue
-            
-            logger.info(f"🔄 Trying {model_config['description']}...")
-            
-            try:
-                answer = self._invoke_model(model_config, prompt)
-                elapsed = time.time() - model_start
-                
-                if answer:
-                    quota_tracker.report_success(model_name)
-                    models_tried.append({
-                        "model": model_name,
-                        "description": model_config["description"],
-                        "status": "✅ SUCCESS",
-                        "error": None,
-                        "time": round(elapsed, 2)
-                    })
-                    logger.info(f"✅ Success with {model_name} in {elapsed:.2f}s")
-                    return answer, model_config["description"], models_tried
-                else:
-                    quota_tracker.report_failure(model_name, "Empty response")
-                    models_tried.append({
-                        "model": model_name,
-                        "description": model_config["description"],
-                        "status": "❌ EMPTY RESPONSE",
-                        "error": "Model returned empty response",
-                        "time": round(elapsed, 2)
-                    })
-            
-            except Exception as e:
-                elapsed = time.time() - model_start
-                error_msg = str(e)
-                quota_tracker.report_failure(model_name, error_msg)
-                
-                # Determine error type for display
-                if "429" in error_msg or "quota" in error_msg.lower():
-                    status = "❌ QUOTA EXCEEDED"
-                elif "404" in error_msg:
-                    status = "❌ MODEL NOT FOUND"
-                elif "timeout" in error_msg.lower():
-                    status = "❌ TIMEOUT"
-                else:
-                    status = "❌ FAILED"
-                
-                models_tried.append({
-                    "model": model_name,
-                    "description": model_config["description"],
-                    "status": status,
-                    "error": error_msg[:150],
-                    "time": round(elapsed, 2)
-                })
-                logger.warning(f"{status} {model_name}: {error_msg[:100]}")
-                continue
-        
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=prompt,
+            models=self._models_for_complexity(query_complexity),
+            tracker=quota_tracker,
+            task="rag.answer",
+            temperature=0.1,
+            metadata={"agent": "rag", "complexity": query_complexity},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        if result.get("success"):
+            return result["response"], result["model_used"], result["models_tried"]
         logger.error("All models failed!")
-        return None, "none", models_tried
+        return None, "none", result.get("models_tried", [])
     
     def _classify_query_complexity(self, query: str) -> str:
         """
@@ -805,53 +729,26 @@ OUTPUT FORMAT:
 
 JSON OUTPUT:"""
 
-        # Use the best available model for decomposition
-        models_to_try = [
-            ("gemini-2.5-flash", self.gemini_flash),
-            ("llama-3.3-70b-versatile", self.groq_client),
-        ]
-        
-        for model_name, client in models_to_try:
-            if client is None:
-                continue
-            
-            # ✅ FIXED: Check circuit breaker BEFORE trying
-            available, reason = quota_tracker.is_available(model_name)
-            if not available:
-                logger.debug(f"Skipping {model_name}: {reason}")
-                continue
-            
-            try:
-                logger.info(f"Decomposing query with {model_name}...")
-                response = client.invoke(decomposition_prompt)
-                
-                # Parse JSON response
-                import re
-                
-                content = response.content.strip()
-                # Remove markdown code blocks if present
-                content = re.sub(r'```json\s*|\s*```', '', content)
-                
-                decomposition = json.loads(content)
-                
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=decomposition_prompt,
+            models=self._reasoning_models(),
+            tracker=quota_tracker,
+            task="rag.decompose",
+            temperature=0.1,
+            metadata={"agent": "rag", "query_type": "comparison"},
+            response_validator=self._valid_json_response,
+        )
+        if result.get("success"):
+            content = re.sub(r"```json\s*|\s*```", "", result["response"]).strip()
+            decomposition = json.loads(content)
+            if decomposition.get("sub_queries"):
                 logger.info(f"✅ Decomposed into {len(decomposition['sub_queries'])} sub-queries")
-                
-                # ✅ Report success
-                quota_tracker.report_success(model_name)
-                
                 return {
                     "original": query,
                     "sub_queries": decomposition["sub_queries"],
                     "entities": decomposition.get("entities_to_compare", []),
                     "metrics": decomposition.get("metrics_needed", [])
                 }
-                
-            except Exception as e:
-                error_msg = str(e)
-                # ✅ Report failure
-                quota_tracker.report_failure(model_name, error_msg)
-                logger.warning(f"Decomposition failed with {model_name}: {error_msg[:100]}")
-                continue
         
         # Fallback: Simple split if LLM fails
         logger.warning("LLM decomposition failed, using fallback")
@@ -941,42 +838,20 @@ EXAMPLE OUTPUT:
 
 JSON OUTPUT:"""
 
-        # ✨ FIXED: Try multiple models with delay
-        import time
-        
-        models_to_try = [
-            ("gemini-2.5-flash", self.gemini_flash),
-            ("llama-3.3-70b-versatile", self.groq_client),  # ✅ Added Groq fallback
-        ]
-        
-        for model_name, client in models_to_try:
-            if client is None:
-                continue
-            
-            # ✅ Check quota before trying
-            available, _ = quota_tracker.is_available(model_name)
-            if not available:
-                logger.debug(f"Skipping {model_name} (quota exhausted)")
-                continue
-            
-            try:
-                # ✅ Add delay to avoid quota burst
-                time.sleep(0.5)  # 500ms between calls
-                
-                logger.debug(f"Extracting metrics with {model_name}...")
-                response = client.invoke(extraction_prompt)
-                
-                import re
-                content = response.content.strip()
-                content = re.sub(r'```json\s*|\s*```', '', content)
-                
-                metrics = json.loads(content)
-                logger.debug(f"✅ Extracted {len(metrics)} metrics with {model_name}")
-                return metrics
-                
-            except Exception as e:
-                logger.warning(f"Metric extraction failed with {model_name}: {str(e)[:100]}")
-                continue
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=extraction_prompt,
+            models=self._reasoning_models(),
+            tracker=quota_tracker,
+            task="rag.extract_metrics",
+            temperature=0.1,
+            metadata={"agent": "rag"},
+            response_validator=self._valid_json_response,
+        )
+        if result.get("success"):
+            content = re.sub(r"```json\s*|\s*```", "", result["response"]).strip()
+            metrics = json.loads(content)
+            logger.debug(f"✅ Extracted {len(metrics)} metrics with {result.get('model_used')}")
+            return metrics
         
         # ✅ Fallback: Improved regex extraction
         logger.warning("All LLM extractions failed, using improved regex fallback")
@@ -1258,33 +1133,17 @@ RULES:
 
 ANSWER:"""
 
-        # Use best model for synthesis
-        models_to_try = [
-            ("gemini-2.5-flash", self.gemini_flash),
-            ("llama-3.3-70b-versatile", self.groq_client),
-        ]
-        
-        for model_name, client in models_to_try:
-            if client is None:
-                continue
-            
-            # ✅ FIXED: Check circuit breaker
-            available, reason = quota_tracker.is_available(model_name)
-            if not available:
-                logger.debug(f"Skipping {model_name}: {reason}")
-                continue
-            
-            try:
-                response = client.invoke(synthesis_prompt)
-                # ✅ Report success
-                quota_tracker.report_success(model_name)
-                return response.content
-            except Exception as e:
-                error_msg = str(e)
-                # ✅ Report failure
-                quota_tracker.report_failure(model_name, error_msg)
-                logger.warning(f"Synthesis failed with {model_name}: {error_msg[:100]}")
-                continue
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=synthesis_prompt,
+            models=self._reasoning_models(),
+            tracker=quota_tracker,
+            task="rag.synthesize_comparison",
+            temperature=0.1,
+            metadata={"agent": "rag", "query_type": "comparison"},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        if result.get("success"):
+            return result["response"]
         
         # Fallback: Simple template
         return self._fallback_synthesis(comparison_data)
@@ -1530,68 +1389,18 @@ Start with a one-line summary, then bullet points with specific numbers.
 
 ANSWER:"""
 
-        # Use fallback chain for synthesis
-        models_tried = []
-        answer = None
-        model_used = "none"
-        
-        models_to_try = [
-            ("gemini-2.5-flash", self.gemini_flash),
-            ("llama-3.3-70b-versatile", self.groq_client),
-        ]
-        
-        for model_name, client in models_to_try:
-            if client is None:
-                continue
-            
-            available, reason = quota_tracker.is_available(model_name)
-            if not available:
-                models_tried.append({
-                    "model": model_name,
-                    "status": "⏭️ SKIPPED",
-                    "error": reason,
-                    "time": 0.0
-                })
-                logger.info(f"⏭️ Skipping {model_name}: {reason}")
-                continue
-            
-            try:
-                model_start = time.time()
-                logger.info(f"🔄 Trying {model_name}...")
-                
-                response = client.invoke(comparison_prompt)
-                elapsed = time.time() - model_start
-                
-                if response and response.content:
-                    answer = response.content
-                    model_used = model_name
-                    quota_tracker.report_success(model_name)
-                    
-                    models_tried.append({
-                        "model": model_name,
-                        "status": "✅ SUCCESS",
-                        "error": None,
-                        "time": round(elapsed, 2)
-                    })
-                    logger.info(f"✅ Success with {model_name} in {elapsed:.2f}s")
-                    break
-                    
-            except Exception as e:
-                elapsed = time.time() - model_start
-                error_msg = str(e)
-                quota_tracker.report_failure(model_name, error_msg)
-                
-                models_tried.append({
-                    "model": model_name,
-                    "status": "❌ FAILED",
-                    "error": error_msg[:100],
-                    "time": round(elapsed, 2)
-                })
-                logger.warning(f"❌ {model_name} failed: {error_msg[:100]}")
-                continue
-        
-        if not answer:
-            answer = "Unable to generate comparison. All models failed."
+        result = self.llm_gateway.invoke_with_fallback(
+            prompt=comparison_prompt,
+            models=self._reasoning_models(),
+            tracker=quota_tracker,
+            task="rag.compare_answer",
+            temperature=0.1,
+            metadata={"agent": "rag", "query_type": "comparison"},
+            response_validator=lambda content: bool(content.strip()),
+        )
+        answer = result.get("response") if result.get("success") else "Unable to generate comparison. All models failed."
+        model_used = result.get("model_used") or "none"
+        models_tried = result.get("models_tried", [])
         
         # Extract sources
         sources = self._extract_sources(answer, all_chunks) if return_sources else []

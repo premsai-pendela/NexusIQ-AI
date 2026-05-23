@@ -36,7 +36,7 @@ That file is only an index. The full trace still lives in `traces/trace-...json`
 
 ## LLM Task Ledger
 
-NexusIQ also has a first version of an LLM gateway in `utils/llm_gateway.py`. SQL Agent model calls now go through this gateway, which writes one lightweight event per model attempt to:
+NexusIQ uses an LLM gateway in `utils/llm_gateway.py`. SQL, RAG, Fusion, and Web Agent model calls now go through this gateway, which writes one lightweight event per model attempt to:
 
 ```text
 data/llm_task_ledger.jsonl
@@ -44,7 +44,7 @@ data/llm_task_ledger.jsonl
 
 The ledger records:
 
-- task name, such as `sql.generate_query` or `sql.format_answer`
+- task name, such as `sql.generate_query`, `rag.answer`, or `fusion.route`
 - model and provider type
 - temperature
 - success, skipped, or failed status
@@ -53,6 +53,17 @@ The ledger records:
 - prompt hash
 
 It does not store raw prompts. This gives cost and reliability visibility without turning the ledger into a secret dump.
+
+Current task coverage:
+
+| Agent area | Ledger tasks |
+|---|---|
+| SQL | `sql.generate_query`, `sql.format_answer`, `sql.explain_query` |
+| RAG | `rag.answer`, `rag.hyde`, `rag.decompose`, `rag.extract_metrics`, `rag.synthesize_comparison`, `rag.compare_answer` |
+| Fusion orchestration | `fusion.route`, `fusion.resolve_question`, `fusion.answer` |
+| Web | `web.answer` |
+
+JSON-producing tasks validate their response before accepting it. If a router or RAG decomposition model returns malformed JSON, the gateway records an invalid-response attempt and tries its fallback model without treating the provider as quota-down.
 
 Disable ledger writes with:
 

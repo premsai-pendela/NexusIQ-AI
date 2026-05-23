@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 DEFAULT_LEDGER_PATH = Path("data/llm_task_ledger.jsonl")
 
 
+class LLMResponseValidationError(ValueError):
+    """The provider responded, but the content is unusable for this task."""
+
+
 def _estimate_tokens(text: Any) -> int:
     """Cheap provider-agnostic token estimate for cost/usage monitoring."""
     if text is None:
@@ -126,9 +130,18 @@ class LLMGateway:
             )
 
         if model_type == "ollama":
-            from langchain_ollama import ChatOllama
+            import ollama
 
-            return ChatOllama(model=model_name, temperature=temperature)
+            class OllamaClient:
+                def invoke(self, prompt: str) -> str:
+                    response = ollama.chat(
+                        model=model_name,
+                        messages=[{"role": "user", "content": prompt}],
+                        options={"temperature": temperature},
+                    )
+                    return response["message"]["content"]
+
+            return OllamaClient()
 
         raise RuntimeError(f"Unknown model type: {model_type}")
 
@@ -141,6 +154,7 @@ class LLMGateway:
         task: str,
         temperature: float = 0.1,
         metadata: Optional[Dict[str, Any]] = None,
+        response_validator: Optional[Callable[[str], bool]] = None,
     ) -> Dict[str, Any]:
         """
         Invoke the first available model that succeeds.
@@ -191,6 +205,8 @@ class LLMGateway:
                 client = self.client_factory(model_config, temperature)
                 response = client.invoke(prompt)
                 content = _response_text(response)
+                if response_validator is not None and not response_validator(content):
+                    raise LLMResponseValidationError("LLM response did not pass task validation")
                 elapsed = time.time() - model_start
 
                 tracker.report_success(model_name)
@@ -232,8 +248,11 @@ class LLMGateway:
             except Exception as exc:
                 elapsed = time.time() - model_start
                 error_msg = str(exc)
-                tracker.report_failure(model_name, error_msg)
-                status = _error_status(error_msg)
+                if isinstance(exc, LLMResponseValidationError):
+                    status = "❌ INVALID RESPONSE"
+                else:
+                    tracker.report_failure(model_name, error_msg)
+                    status = _error_status(error_msg)
 
                 attempt = {
                     "model": model_name,

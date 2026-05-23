@@ -6,6 +6,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from agents.fusion_agent import FusionAgent
+from agents.rag_agent import RAGAgent
+from agents.web_agent import WebAgent
 from evals.offline_eval import (
     OFFLINE_EVAL_CASES,
     OfflineEvaluationHarness,
@@ -233,6 +235,22 @@ class FakeTracker:
         self.failures.append((model_name, error_message))
 
 
+class RecordingGateway:
+    def __init__(self, response="answer", model_used="Recorded Model"):
+        self.response = response
+        self.model_used = model_used
+        self.calls = []
+
+    def invoke_with_fallback(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "success": True,
+            "response": self.response,
+            "model_used": self.model_used,
+            "models_tried": [],
+        }
+
+
 class LLMGatewayTests(unittest.TestCase):
     def test_gateway_records_success_without_prompt_text(self):
         with TemporaryDirectory() as tmp:
@@ -328,6 +346,40 @@ class LLMGatewayTests(unittest.TestCase):
             self.assertEqual(tracker.successes, ["working"])
             self.assertEqual(result["models_tried"][0]["status"], "❌ QUOTA EXCEEDED")
 
+    def test_gateway_falls_back_when_task_response_fails_validation(self):
+        with TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "llm-ledger.jsonl"
+
+            def factory(model_config, temperature):
+                class Client:
+                    def invoke(self, prompt):
+                        if model_config["name"] == "malformed":
+                            return FakeLLMResponse("not json")
+                        return FakeLLMResponse('{"sql": false, "rag": true, "web": false}')
+
+                return Client()
+
+            gateway = LLMGateway(ledger_path=ledger_path, client_factory=factory)
+            tracker = FakeTracker()
+            result = gateway.invoke_with_fallback(
+                prompt="route this",
+                models=[
+                    {"name": "malformed", "type": "fake"},
+                    {"name": "valid", "type": "fake"},
+                ],
+                tracker=tracker,
+                task="fusion.route",
+                response_validator=lambda content: content.startswith("{"),
+            )
+
+            self.assertTrue(result["success"])
+            self.assertEqual(result["model_used"], "valid")
+            self.assertEqual(tracker.failures, [])
+            self.assertEqual(result["models_tried"][0]["status"], "❌ INVALID RESPONSE")
+            events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+            self.assertEqual([event["status"] for event in events], ["failed", "success"])
+            self.assertIn("task validation", events[0]["error"])
+
 
 class RoutingAndInputTests(unittest.TestCase):
     def test_streamlit_markdown_escapes_currency_math(self):
@@ -421,6 +473,59 @@ class RoutingAndInputTests(unittest.TestCase):
         self.assertTrue(agent._needs_history_resolution("What about Q3?"))
         self.assertTrue(agent._needs_history_resolution("Compare that with Q2"))
         self.assertFalse(agent._needs_history_resolution("what is policy for returns?"))
+
+    def test_contextual_resolution_runs_through_gateway_task(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._history = [{"question": "Q4 Electronics revenue?", "answer": "$31.7M"}]
+        agent.gemini_flash = object()
+        agent.groq_client = None
+        agent.llm_gateway = RecordingGateway("What was Q3 Electronics revenue?")
+
+        resolved = agent._resolve_question("What about Q3?")
+
+        self.assertEqual(resolved, "What was Q3 Electronics revenue?")
+        self.assertEqual(agent.llm_gateway.calls[0]["task"], "fusion.resolve_question")
+
+    def test_routing_runs_through_gateway_task(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._history = []
+        agent.gemini_flash = object()
+        agent.groq_client = None
+        agent._gemini_routing_calls = []
+        agent._gemini_rpm_limit = 4
+        agent.llm_gateway = RecordingGateway(
+            '{"sql": false, "rag": true, "web": false, "cross_validate": false, "reasoning": "policy"}',
+            "Gemini Flash",
+        )
+
+        route = agent._classify_query_source_llm("What is the return policy?")
+
+        self.assertEqual(route, "rag_only")
+        self.assertEqual(agent.llm_gateway.calls[0]["task"], "fusion.route")
+
+    def test_rag_answer_generation_runs_through_gateway_task(self):
+        agent = RAGAgent.__new__(RAGAgent)
+        agent.gemini_pro = None
+        agent.gemini_flash = None
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Return policy answer", "Groq Llama")
+
+        answer, model, _ = agent._generate_answer_with_fallback("prompt", "simple")
+
+        self.assertEqual(answer, "Return policy answer")
+        self.assertEqual(model, "Groq Llama")
+        self.assertEqual(agent.llm_gateway.calls[0]["task"], "rag.answer")
+
+    def test_web_answer_generation_runs_through_gateway_task(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Competitor summary", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category: {"competitors": [], "category": category}
+
+        result = agent.query("Compare electronics prices", category="Electronics")
+
+        self.assertEqual(result["answer"], "Competitor summary")
+        self.assertEqual(agent.llm_gateway.calls[0]["task"], "web.answer")
 
     def test_previous_answer_message_marks_answer_as_cache_result(self):
         previous = {

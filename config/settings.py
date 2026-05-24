@@ -67,7 +67,8 @@ class Settings(BaseSettings):
     # App
     environment: str = "development"
     log_level: str = "INFO"
-    
+    web_allow_sample_fallback: bool = False
+
     class Config:
         env_file = ".env"
         case_sensitive = False

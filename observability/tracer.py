@@ -158,6 +158,8 @@ def summarize_agent_result(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         summary["chunks_retrieved"] = result.get("chunks_retrieved")
     if result.get("category"):
         summary["category"] = result.get("category")
+    if result.get("answer_mode"):
+        summary["answer_mode"] = result.get("answer_mode")
 
     sources = result.get("sources") or []
     if sources:
@@ -174,6 +176,16 @@ def summarize_agent_result(result: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     competitors = raw_data.get("competitors") or []
     if competitors:
         summary["competitor_count"] = len(competitors)
+        summary["web_data_statuses"] = sorted({
+            competitor.get("data_status", "unknown")
+            for competitor in competitors
+            if isinstance(competitor, dict)
+        })
+        summary["sample_data"] = any(
+            competitor.get("is_mock") or competitor.get("data_status") == "sample"
+            for competitor in competitors
+            if isinstance(competitor, dict)
+        )
 
     answer = result.get("answer")
     if answer:

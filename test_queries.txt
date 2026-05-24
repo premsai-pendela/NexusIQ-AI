@@ -233,11 +233,11 @@ Test all routing combinations across 3 difficulty levels:
 
 ### **Category-Specific Web Tests**
 ```
-101. Electronics pricing (should use Newegg)
-102. Home goods pricing (should use IKEA + Selenium)
+101. Electronics pricing (should use Newegg + Goal Zero live sources)
+102. Home goods pricing (should use IKEA JSON API)
 103. Sports equipment pricing (should use Campmor + Shopify)
-104. Food/supplements pricing (should use Swanson + Shopify)
-105. Clothing pricing (should use mock data)
+104. Food/supplements pricing (should use Swanson + NativePath Shopify sources)
+105. Clothing pricing (should use Taylor Stitch + Chubbies + Finisterre live sources)
 ```
 
 ---
@@ -301,9 +301,9 @@ For each query, verify:
 
 ## **🐛 KNOWN ISSUES TO WATCH FOR**
 
-1. **Web Scraping Timeouts**: IKEA Selenium might take 10-15 seconds
+1. **Web Freshness**: A failed live refresh may show clearly labeled stale cache for up to 7 days; verify its capture time is visible
 2. **Quota Exhaustion**: If Gemini Flash fails, should fallback to Groq
-3. **Empty Results**: Some web categories use mock data (clothing)
+3. **Empty Results**: Sample Web data is disabled by default and must never appear as successful live evidence
 4. **Date Parsing**: Comparison queries need careful date extraction
 5. **Large Tables**: SQL results >100 rows might slow UI
 
@@ -331,9 +331,8 @@ For each query, verify:
 ### **Query #31: "What are competitor prices for electronics?"**
 **Expected:**
 - Routing: 🌐 Web Scraping
-- Sources: Newegg (BeautifulSoup) + Mock data
+- Sources: live retailer evidence, or clearly labeled cached evidence when refresh fails
 - Products: 10+ laptops, headphones, TVs with prices
 - Export: JSON download available
-
 
 

@@ -43,7 +43,7 @@ The harness uses fixed result fixtures and checks these contracts:
 |------|----------|
 | SQL | Successful SQL answers include non-empty answer text and coherent row evidence. |
 | RAG | Successful document answers include retrieved chunks and source citations. |
-| Web | Successful web answers include a recognized category and competitor product prices. |
+| Web | Successful web answers include recognized-category product prices, reject sample data as live evidence, and disclose stale cached prices after refresh failure. |
 | SQL + RAG | Matching revenue facts produce high confidence validation. |
 | SQL + RAG | Material revenue mismatches produce low confidence with discrepancies. |
 | SQL + RAG | Helper metadata such as `transactions_analyzed` does not validate or contradict PDF revenue. |
@@ -141,6 +141,7 @@ Prefer offline evals for:
 - Result-shape contracts.
 - Regression coverage for known false positives.
 - Web result evidence checks.
+- Web freshness and sample-data trust checks.
 
 Prefer `run_tests.py` for:
 

@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -175,6 +177,26 @@ OFFLINE_EVAL_CASES: List[OfflineEvalCase] = [
         notes="Web answers require a recognized category and product price evidence.",
         tags=["web", "contract"],
     ),
+    OfflineEvalCase(
+        name="web_stale_cache_disclosure_contract",
+        question="What is the price range for Goal Zero products?",
+        source_type="web_only",
+        web_result={
+            "success": True,
+            "answer": "Goal Zero: $262.89 - $599.95. Prices are cached; live refresh failed.",
+            "category": "electronics",
+            "raw_data": {
+                "competitors": [{
+                    "competitor": "Goal Zero",
+                    "data_status": "cached_stale",
+                    "captured_at": "2026-05-23T15:28:58",
+                    "products": [{"name": "Yeti 300", "price": "$262.89"}],
+                }]
+            },
+        },
+        notes="Stale cached Web evidence remains usable only with clear disclosure.",
+        tags=["web", "cache", "trust"],
+    ),
 ]
 
 
@@ -234,9 +256,25 @@ def validate_web_result(result: Optional[Dict[str, Any]]) -> List[str]:
         issues.append("Web result is missing competitor product evidence")
     for product in products:
         price = product.get("price")
-        if not isinstance(price, (int, float)) or price <= 0:
+        if isinstance(price, str):
+            match = re.search(r"\d[\d,]*(?:\.\d+)?", price)
+            try:
+                price = Decimal(match.group(0).replace(",", "")) if match else None
+            except InvalidOperation:
+                price = None
+        if not isinstance(price, (int, float, Decimal)) or price <= 0:
             issues.append(f"Invalid web product price: {product!r}")
             break
+    competitors = (result.get("raw_data") or {}).get("competitors", [])
+    if any(
+        competitor.get("is_mock") or competitor.get("data_status") == "sample"
+        for competitor in competitors
+    ):
+        issues.append("Web result uses sample data as live evidence")
+    if any(competitor.get("data_status") == "cached_stale" for competitor in competitors):
+        answer = str(result.get("answer", "")).lower()
+        if "cached" not in answer or "refresh failed" not in answer:
+            issues.append("Stale Web result must disclose cached data and refresh failure")
     return issues
 
 

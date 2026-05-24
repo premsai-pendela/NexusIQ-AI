@@ -163,28 +163,29 @@ RAG_INVENTORY = {
 WEB_INVENTORY = {
     "categories": {
         "electronics": {
-            "sources": ["Newegg (BeautifulSoup)", "Mock Data"],
-            "can_answer": ["laptop prices", "headphone prices", "TV prices", "gaming gear"]
+            "sources": ["Newegg (BeautifulSoup)", "Goal Zero (Shopify API)"],
+            "can_answer": ["electronics prices", "portable power stations", "gaming gear"]
         },
         "home": {
-            "sources": ["IKEA (Selenium)", "Mock Data"],
+            "sources": ["IKEA (JSON API)"],
             "can_answer": ["furniture prices", "home goods", "decor"]
         },
         "sports": {
-            "sources": ["Campmor (Shopify API)", "Mock Data"],
+            "sources": ["Campmor (Shopify API)"],
             "can_answer": ["camping gear", "outdoor equipment", "sports gear"]
         },
         "food": {
-            "sources": ["Swanson Vitamins (Shopify API)", "Mock Data"],
+            "sources": ["Swanson Vitamins (Shopify API)", "NativePath (Shopify API)"],
             "can_answer": ["supplements", "vitamins", "health products"]
         },
         "clothing": {
-            "sources": ["Mock Data Only"],
-            "can_answer": ["clothing prices (limited to mock data)"]
+            "sources": ["Taylor Stitch (Shopify API)", "Chubbies (Shopify API)", "Finisterre (Shopify API)"],
+            "can_answer": ["clothing prices", "discounted apparel", "outdoor clothing"]
         }
     },
     
-    "cache_ttl": "24 hours",
+    "cache_ttl": "24 hours fresh; cached data may be disclosed for up to 7 days if live refresh fails",
+    "sample_fallback": "Disabled by default; opt in with WEB_ALLOW_SAMPLE_FALLBACK=true",
     
     "cannot_answer": [
         "Historical competitor pricing",
@@ -353,8 +354,27 @@ def can_web_answer(question: str) -> dict:
     
     has_competitor = any(kw in question_lower for kw in competitor_keywords)
     has_category = any(cat in question_lower for cat in category_keywords)
+    has_product_pricing_intent = any(
+        term in question_lower
+        for term in (
+            "price",
+            "pricing",
+            "discount",
+            "original price",
+            "cheapest",
+            "most expensive",
+            "lowest-priced",
+            "highest-priced",
+        )
+    ) or (
+        "product" in question_lower
+        and any(
+            term in question_lower
+            for term in ("available", "show", "list", "how many", "number of", "count")
+        )
+    )
     
-    if has_competitor or (has_category and "price" in question_lower):
+    if has_competitor or (has_category and has_product_pricing_intent):
         suggested_category = next((cat for cat in category_keywords if cat in question_lower), None)
         if suggested_category is None:
             suggested_category = next(

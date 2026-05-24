@@ -1,14 +1,16 @@
 import json
 import os
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from agents.fusion_agent import FusionAgent
 from agents.rag_agent import RAGAgent
 from agents.web_agent import WebAgent
 from config.data_inventory import can_web_answer
+from config.settings import settings
 from evals.offline_eval import (
     OFFLINE_EVAL_CASES,
     OfflineEvaluationHarness,
@@ -33,6 +35,8 @@ from observability.inspect_llm_usage import format_usage_report, summarize_usage
 from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
 from ui.fusion_chat import (
+    _format_answer_method,
+    _routing_status_text,
     escape_streamlit_math,
     find_previous_answer,
     normalize_repeat_question,
@@ -508,6 +512,26 @@ class RoutingAndInputTests(unittest.TestCase):
         self.assertEqual(route, "rag_only")
         self.assertEqual(agent.llm_gateway.calls[0]["task"], "fusion.route")
 
+    def test_explicit_web_pricing_questions_are_rule_routed_to_web(self):
+        cases = (
+            "Show discounted clothing products and their original prices.",
+            "What does Goal Zero pricing suggest about market positioning?",
+            "Which electronics competitor has the cheapest product?",
+            "Which clothing product is cheapest?",
+            "How many clothing products are available?",
+        )
+        for question in cases:
+            with self.subTest(question=question):
+                self.assertEqual(FusionAgent._rule_based_web_route(question), "web_only")
+
+    def test_rules_based_web_route_does_not_override_our_transaction_questions(self):
+        self.assertIsNone(
+            FusionAgent._rule_based_web_route(
+                "Show our clothing sales transactions with the lowest product price."
+            )
+        )
+        self.assertIsNone(FusionAgent._rule_based_web_route("What is the clothing product return policy?"))
+
     def test_rag_answer_generation_runs_through_gateway_task(self):
         agent = RAGAgent.__new__(RAGAgent)
         agent.gemini_pro = None
@@ -525,12 +549,501 @@ class RoutingAndInputTests(unittest.TestCase):
         agent = WebAgent.__new__(WebAgent)
         agent.groq_client = object()
         agent.llm_gateway = RecordingGateway("Competitor summary", "Groq Llama")
-        agent.scrape_competitor_pricing = lambda category, competitor=None: {"competitors": [], "category": category}
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }],
+            "category": category,
+        }
 
-        result = agent.query("Compare electronics prices", category="Electronics")
+        result = agent.query("What does electronics pricing suggest about market positioning?", category="electronics")
 
         self.assertEqual(result["answer"], "Competitor summary")
+        self.assertEqual(result["answer_mode"], "llm")
+        self.assertEqual(result["model_used"], "Groq Llama")
         self.assertEqual(agent.llm_gateway.calls[0]["task"], "web.answer")
+
+    def test_interpretive_price_or_discount_questions_still_use_llm(self):
+        pricing_data = {
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [
+                    {"name": "Yeti 300", "price": "$262.89", "compare_at_price": "$299.99"},
+                ],
+            }],
+            "category": "electronics",
+        }
+        for question in (
+            "What does the Goal Zero price range suggest about market positioning?",
+            "What does Goal Zero's discounting strategy suggest for our pricing?",
+        ):
+            with self.subTest(question=question):
+                agent = WebAgent.__new__(WebAgent)
+                agent.groq_client = object()
+                agent.llm_gateway = RecordingGateway("Interpreted answer", "Groq Llama")
+                agent.scrape_competitor_pricing = lambda category, competitor=None: pricing_data
+
+                result = agent.query(question, category="electronics", competitor="Goal Zero")
+
+                self.assertEqual(result["answer_mode"], "llm")
+                self.assertEqual(len(agent.llm_gateway.calls), 1)
+
+    def test_interpretive_stale_web_answer_always_discloses_failed_refresh(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Goal Zero appears positioned as a premium brand.", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "data_status": "cached_stale",
+                "captured_at": "2026-05-23T15:28:58",
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }],
+        }
+
+        result = agent.query(
+            "What does Goal Zero pricing suggest about market positioning?",
+            category="electronics",
+            competitor="Goal Zero",
+        )
+
+        self.assertEqual(result["answer_mode"], "llm")
+        self.assertIn("prices are cached from 2026-05-23T15:28:58", result["answer"])
+        self.assertIn("live refresh failed", result["answer"])
+
+    def test_web_question_without_product_evidence_does_not_call_llm(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {"competitors": [], "category": category}
+
+        result = agent.query("What does electronics pricing suggest?", category="electronics")
+
+        self.assertEqual(agent.llm_gateway.calls, [])
+        self.assertIn("No competitor pricing data", result["answer"])
+        self.assertEqual(result["answer_mode"], "deterministic")
+
+    def test_narrative_web_question_without_llm_client_is_labeled_raw_data(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = None
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }],
+        }
+
+        result = agent.query(
+            "What does Goal Zero pricing suggest about market positioning?",
+            category="electronics",
+        )
+
+        self.assertEqual(result["answer_mode"], "raw_data")
+        self.assertEqual(result["model_used"], "Raw scraped data")
+        self.assertEqual(agent.llm_gateway.calls, [])
+
+    def test_raw_data_web_answer_discloses_stale_cache_without_llm_client(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = None
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "data_status": "cached_stale",
+                "captured_at": "2026-05-23T15:28:58",
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }],
+        }
+
+        result = agent.query(
+            "What does Goal Zero pricing suggest about market positioning?",
+            category="electronics",
+            competitor="Goal Zero",
+        )
+
+        self.assertEqual(result["answer_mode"], "raw_data")
+        self.assertIn("live refresh failed", result["answer"])
+
+    def test_web_price_range_is_deterministic_without_llm_call(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [
+                    {"name": "Flip 24", "price": "$21.89", "source": "Goal Zero"},
+                    {"name": "Yeti 300", "price": "$262.89", "source": "Goal Zero"},
+                ],
+            }],
+        }
+
+        result = agent.query(
+            "What is the price range for Goal Zero products?",
+            category="electronics",
+            competitor="Goal Zero",
+        )
+
+        self.assertEqual(agent.llm_gateway.calls, [])
+        self.assertEqual(result["answer_mode"], "deterministic")
+        self.assertEqual(result["model_used"], "Deterministic calculation")
+        self.assertIn("$21.89 - $262.89", result["answer"])
+        self.assertIn("Goal Zero", result["answer"])
+
+    def test_web_named_product_prices_are_deterministic_without_llm_call(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [
+                    {"name": "Flip 24", "price": "$21.89", "source": "Goal Zero"},
+                    {"name": "Yeti 300", "price": "$262.89", "source": "Goal Zero"},
+                ],
+            }],
+        }
+
+        result = agent.query(
+            "What Goal Zero products and prices are available?",
+            category="electronics",
+            competitor="Goal Zero",
+        )
+
+        self.assertEqual(agent.llm_gateway.calls, [])
+        self.assertIn("Flip 24: $21.89", result["answer"])
+        self.assertIn("Yeti 300: $262.89", result["answer"])
+
+    def test_web_discount_list_is_deterministic_without_llm_call(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.groq_client = object()
+        agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {
+            "category": category,
+            "competitors": [{
+                "competitor": "Taylor Stitch",
+                "products": [
+                    {"name": "Jacket", "price": "$80.00", "compare_at_price": "$100.00"},
+                    {"name": "Shirt", "price": "$50.00"},
+                ],
+            }],
+        }
+
+        result = agent.query("Show discounted clothing products and original prices.", category="clothing")
+
+        self.assertEqual(agent.llm_gateway.calls, [])
+        self.assertIn("Jacket: $80.00 (originally $100.00", result["answer"])
+        self.assertNotIn("Shirt", result["answer"])
+
+    def test_shopify_discount_uses_comparison_price_from_same_variant(self):
+        class Response:
+            status_code = 200
+            text = ""
+            content = b""
+
+            def json(self):
+                return {
+                    "products": [{
+                        "title": "Shirt",
+                        "handle": "shirt",
+                        "variants": [
+                            {"price": "25.00", "compare_at_price": "30.00", "sku": "small"},
+                            {"price": "50.00", "compare_at_price": "500.00", "sku": "large"},
+                        ],
+                        "images": [],
+                    }]
+                }
+
+        agent = WebAgent.__new__(WebAgent)
+        agent.cache = {}
+        agent._save_cache = lambda: None
+        agent.client = type("Client", (), {"get": lambda self, *args, **kwargs: Response()})()
+
+        with patch("agents.web_agent.time.sleep"):
+            result = agent._scrape_shopify_collection(
+                "example.com", "shirts", "Example", "clothing", max_pages=1
+            )
+
+        self.assertEqual(result["products"][0]["price"], "$25.00")
+        self.assertEqual(result["products"][0]["compare_at_price"], "$30.00")
+        self.assertEqual(result["products"][0]["sku"], "small")
+
+    def test_clothing_shopify_filters_catalog_spillover_and_duplicates(self):
+        class Response:
+            status_code = 200
+            text = ""
+            content = b""
+
+            def json(self):
+                return {
+                    "products": [
+                        {
+                            "title": "Linen Shirt",
+                            "product_type": "Shirt",
+                            "variants": [{"price": "40.00", "compare_at_price": "60.00"}],
+                        },
+                        {
+                            "title": "Linen Shirt",
+                            "product_type": "Shirt",
+                            "variants": [{"price": "45.00", "compare_at_price": "60.00"}],
+                        },
+                        {
+                            "title": "Food Flask",
+                            "product_type": "Accessories",
+                            "variants": [{"price": "35.00"}],
+                        },
+                        {
+                            "title": "Digital Gift Card",
+                            "product_type": "Gift Card",
+                            "variants": [{"price": "25.00"}],
+                        },
+                        {
+                            "title": "Stainless Steel Lunch Box",
+                            "product_type": "Accessories",
+                            "variants": [{"price": "35.00"}],
+                        },
+                        {
+                            "title": "Beach Towel",
+                            "product_type": "Accessories",
+                            "variants": [{"price": "20.00"}],
+                        },
+                    ]
+                }
+
+        agent = WebAgent.__new__(WebAgent)
+        agent.cache = {}
+        agent._save_cache = lambda: None
+        agent.client = type("Client", (), {"get": lambda self, *args, **kwargs: Response()})()
+
+        with patch("agents.web_agent.time.sleep"):
+            result = agent._scrape_shopify_collection(
+                "example.com", "mens-clothing", "Example", "clothing", max_pages=1
+            )
+
+        self.assertEqual([item["name"] for item in result["products"]], ["Linen Shirt"])
+        self.assertEqual(result["products"][0]["price"], "$40.00")
+        self.assertEqual(result["total_found"], 1)
+
+    def test_clothing_scrapers_use_apparel_collections(self):
+        agent = WebAgent.__new__(WebAgent)
+        handles = []
+        agent._scrape_shopify_collection = lambda domain, collection_handle, site_name, category: (
+            handles.append((site_name, collection_handle)) or {}
+        )
+
+        agent._scrape_taylorstitch()
+        agent._scrape_chubbies()
+        agent._scrape_finisterre()
+
+        self.assertEqual(handles, [
+            ("Taylor Stitch", "mens-shirts-sweaters"),
+            ("Chubbies", "all-tops"),
+            ("Finisterre", "mens-clothing"),
+        ])
+
+    def test_web_exact_filters_extremes_and_counts_are_deterministic(self):
+        pricing_data = {
+            "category": "electronics",
+            "competitors": [
+                {
+                    "competitor": "Goal Zero",
+                    "products": [
+                        {"name": "Flip 24", "price": "$21.89"},
+                        {"name": "Yeti 300", "price": "$262.89"},
+                    ],
+                },
+                {
+                    "competitor": "Newegg",
+                    "products": [{"name": "Laptop", "price": "$1,200.00"}],
+                },
+            ],
+        }
+        cases = {
+            "Which electronics competitor has the cheapest product?": "Flip 24: $21.89",
+            "What is the most expensive electronics product?": "Laptop: $1,200.00",
+            "Show electronics products under $300.": "Yeti 300: $262.89",
+            "How many electronics products are available?": "3 total",
+        }
+        for question, expected in cases.items():
+            with self.subTest(question=question):
+                agent = WebAgent.__new__(WebAgent)
+                agent.groq_client = object()
+                agent.llm_gateway = RecordingGateway("Should not run", "Groq Llama")
+                agent.scrape_competitor_pricing = lambda category, competitor=None: pricing_data
+
+                result = agent.query(question, category="electronics")
+
+                self.assertEqual(agent.llm_gateway.calls, [])
+                self.assertEqual(result["answer_mode"], "deterministic")
+                self.assertIn(expected, result["answer"])
+
+    def test_named_competitor_failure_does_not_substitute_generic_mock_data(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent._scrape_goalzero = lambda category: None
+        agent._scrape_newegg = lambda category: {
+            "competitor": "Newegg", "products": [{"name": "Laptop", "price": "$809"}]
+        }
+        agent._get_mock_data = lambda category: {
+            "competitor": "Mock Electronics Retailer",
+            "products": [{"name": "Mock Laptop", "price": "$999"}],
+        }
+
+        import asyncio
+        with patch("agents.web_agent.time.sleep"):
+            results, statuses = asyncio.run(
+                agent.scrape_competitor_pricing_async("electronics", competitor="Goal Zero")
+            )
+
+        self.assertEqual(results, [])
+        self.assertEqual(len(statuses), 1)
+        self.assertNotIn("Mock Data Fallback", [status["name"] for status in statuses])
+
+    def test_ikea_json_scraper_has_no_retired_browser_delay(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent._scrape_ikea_api = lambda category: {
+            "competitor": "IKEA",
+            "products": [{"name": "Bookcase", "price": "$89.99"}],
+            "data_status": "live",
+        }
+
+        import asyncio
+        with patch("agents.web_agent.time.sleep") as sleep:
+            results, statuses = asyncio.run(agent.scrape_competitor_pricing_async("home"))
+
+        self.assertEqual(results[0]["competitor"], "IKEA")
+        self.assertEqual(statuses[0]["status"], "live")
+        sleep.assert_not_called()
+
+    def test_independent_web_sources_run_concurrently(self):
+        import threading
+
+        gate = threading.Barrier(2)
+        agent = WebAgent.__new__(WebAgent)
+        def scrape(name):
+            def run(category):
+                gate.wait(timeout=1)
+                return {"competitor": name, "products": [{"price": "$100"}]}
+            return run
+        agent._scrape_newegg = scrape("Newegg")
+        agent._scrape_goalzero = scrape("Goal Zero")
+
+        import asyncio
+        results, _ = asyncio.run(agent.scrape_competitor_pricing_async("electronics"))
+
+        self.assertEqual([item["competitor"] for item in results], ["Newegg", "Goal Zero"])
+
+    def test_fresh_web_cache_is_labeled_cached_fresh(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.cache = {
+            "goal zero_electronics_portable-power": {
+                "competitor": "Goal Zero",
+                "timestamp": datetime.now().isoformat(),
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }
+        }
+
+        result = agent._fresh_cached_result("goal zero_electronics_portable-power")
+
+        self.assertEqual(result["data_status"], "cached_fresh")
+        self.assertEqual(result["captured_at"], agent.cache["goal zero_electronics_portable-power"]["timestamp"])
+
+    def test_failed_refresh_returns_disclosed_stale_cache(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent.cache = {
+            "goal zero_electronics_portable-power": {
+                "competitor": "Goal Zero",
+                "timestamp": (datetime.now() - timedelta(days=2)).isoformat(),
+                "products": [{"name": "Yeti 300", "price": "$262.89"}],
+            }
+        }
+        agent._save_cache = lambda: None
+        agent.client = type("FailingClient", (), {
+            "get": lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("network down"))
+        })()
+
+        result = agent._scrape_goalzero("electronics")
+        answer = agent._deterministic_answer(
+            "What is the price range for Goal Zero products?",
+            {"competitors": [result]},
+            competitor="Goal Zero",
+        )
+
+        self.assertEqual(result["data_status"], "cached_stale")
+        self.assertIn("network down", result["refresh_error"])
+        self.assertIn("live refresh failed", answer)
+
+    def test_ancient_or_invalid_cache_is_not_served_after_refresh_failure(self):
+        for timestamp in ((datetime.now() - timedelta(days=8)).isoformat(), "not-a-timestamp"):
+            with self.subTest(timestamp=timestamp):
+                agent = WebAgent.__new__(WebAgent)
+                agent.cache = {
+                    "goal zero_electronics_portable-power": {
+                        "competitor": "Goal Zero",
+                        "timestamp": timestamp,
+                        "products": [{"name": "Yeti 300", "price": "$262.89"}],
+                    }
+                }
+                agent._save_cache = lambda: None
+                agent.client = type("FailingClient", (), {
+                    "get": lambda self, *args, **kwargs: (_ for _ in ()).throw(RuntimeError("network down"))
+                })()
+
+                result = agent._scrape_goalzero("electronics")
+
+                self.assertEqual(result["data_status"], "unavailable")
+                self.assertEqual(result["products"], [])
+
+    def test_sample_fallback_is_disabled_by_default_and_explicit_when_enabled(self):
+        agent = WebAgent.__new__(WebAgent)
+        agent._scrape_newegg = lambda category: {"competitor": "Newegg", "products": []}
+        agent._scrape_goalzero = lambda category: {"competitor": "Goal Zero", "products": []}
+        agent._get_mock_data = lambda category: {
+            "competitor": "Mock Electronics Retailer",
+            "timestamp": datetime.now().isoformat(),
+            "products": [{"name": "Sample", "price": "$99"}],
+        }
+
+        import asyncio
+        with patch.object(settings, "web_allow_sample_fallback", False), patch("agents.web_agent.time.sleep"):
+            results, _ = asyncio.run(agent.scrape_competitor_pricing_async("electronics"))
+        self.assertEqual(results, [])
+
+        with patch.object(settings, "web_allow_sample_fallback", True), patch("agents.web_agent.time.sleep"):
+            results, statuses = asyncio.run(agent.scrape_competitor_pricing_async("electronics"))
+        self.assertEqual(results[0]["data_status"], "sample")
+        self.assertTrue(results[0]["is_mock"])
+        self.assertEqual(statuses[-1]["status"], "sample")
+
+    def test_fusion_does_not_mark_sample_only_web_evidence_successful(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent.web_agent = type("SampleWeb", (), {
+            "query": lambda self, question, category=None, competitor=None: {
+                "answer": "Sample fallback data shown.",
+                "answer_mode": "deterministic",
+                "model_used": "Deterministic calculation",
+                "category": category,
+                "raw_data": {
+                    "competitors": [{
+                        "competitor": "Mock Clothing Retailer",
+                        "products": [{"name": "Sample", "price": "$99"}],
+                        "is_mock": True,
+                        "data_status": "sample",
+                    }]
+                },
+            }
+        })()
+
+        result = agent._run_web_query("Show clothing prices.", selected_category="clothing")
+
+        self.assertFalse(result["success"])
+        self.assertTrue(result["sample_only"])
 
     def test_known_web_competitor_infers_supported_category(self):
         agent = FusionAgent.__new__(FusionAgent)
@@ -540,6 +1053,8 @@ class RoutingAndInputTests(unittest.TestCase):
                 (category, competitor)
             ) or {
                 "answer": "Goal Zero products available.",
+                "answer_mode": "deterministic",
+                "model_used": "Deterministic calculation",
                 "raw_data": {"competitors": [{"competitor": "Goal Zero", "products": [{"price": "$1"}]}]},
                 "category": category,
             }
@@ -549,7 +1064,43 @@ class RoutingAndInputTests(unittest.TestCase):
 
         self.assertEqual(result["category"], "electronics")
         self.assertEqual(result["answer"], "Goal Zero products available.")
+        self.assertEqual(result["answer_mode"], "deterministic")
+        self.assertEqual(result["model_used"], "Deterministic calculation")
         self.assertEqual(calls, [("electronics", "Goal Zero")])
+
+    def test_selected_category_controls_forced_web_query_when_prompt_has_no_category(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        calls = []
+        agent.web_agent = type("WebRecorder", (), {
+            "query": lambda self, question, category=None, competitor=None: calls.append(
+                (category, competitor)
+            ) or {
+                "answer": "Filtered products.",
+                "answer_mode": "deterministic",
+                "model_used": "Deterministic calculation",
+                "raw_data": {"competitors": [{"competitor": "Taylor Stitch", "products": [{"price": "$80"}]}]},
+                "category": category,
+            }
+        })()
+
+        result = agent._run_web_query("Show products under $100.", selected_category="clothing")
+
+        self.assertEqual(result["category"], "clothing")
+        self.assertEqual(calls, [("clothing", None)])
+
+    def test_prompt_category_or_named_brand_takes_priority_over_selected_category(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        calls = []
+        agent.web_agent = type("WebRecorder", (), {
+            "query": lambda self, question, category=None, competitor=None: calls.append(
+                (category, competitor)
+            ) or {"answer": "Answer", "raw_data": {"competitors": []}, "category": category}
+        })()
+
+        agent._run_web_query("Show Goal Zero products and prices.", selected_category="clothing")
+        agent._run_web_query("Show electronics products under $300.", selected_category="clothing")
+
+        self.assertEqual(calls, [("electronics", "Goal Zero"), ("electronics", None)])
 
     def test_known_web_competitor_is_supported_by_fallback_routing(self):
         result = can_web_answer("What Goal Zero products and prices are available?")
@@ -644,6 +1195,37 @@ class OfflineEvalHarnessTests(unittest.TestCase):
             }
         )
         self.assertIn("Web result is missing competitor product evidence", web_issues)
+
+        sample_issues = validate_web_result(
+            {
+                "success": True,
+                "answer": "Sample products.",
+                "category": "clothing",
+                "raw_data": {
+                    "competitors": [{
+                        "products": [{"name": "Sample", "price": "$99.00"}],
+                        "data_status": "sample",
+                        "is_mock": True,
+                    }]
+                },
+            }
+        )
+        self.assertIn("Web result uses sample data as live evidence", sample_issues)
+
+        stale_issues = validate_web_result(
+            {
+                "success": True,
+                "answer": "Goal Zero prices are available.",
+                "category": "electronics",
+                "raw_data": {
+                    "competitors": [{
+                        "products": [{"name": "Yeti 300", "price": "$262.89"}],
+                        "data_status": "cached_stale",
+                    }]
+                },
+            }
+        )
+        self.assertIn("Stale Web result must disclose cached data and refresh failure", stale_issues)
 
 
 class GoldenEvalTests(unittest.TestCase):
@@ -813,6 +1395,27 @@ class GoldenEvalTests(unittest.TestCase):
 
 
 class ObservabilityTests(unittest.TestCase):
+    def test_answer_method_display_is_short_and_explains_provenance(self):
+        method, detail = _format_answer_method("Web: Deterministic calculation")
+        self.assertEqual(method, "Calculated")
+        self.assertIn("no answer LLM used", detail)
+
+        method, detail = _format_answer_method("Web: Groq Llama 3.3 70B")
+        self.assertEqual(method, "LLM")
+        self.assertIn("Groq Llama 3.3 70B", detail)
+
+    def test_router_status_distinguishes_manual_rule_and_llm_routing(self):
+        self.assertIn("Manual source selection", _routing_status_text("n/a"))
+        self.assertIn("Router LLM not needed", _routing_status_text("Rules-based Web routing"))
+        self.assertEqual(_routing_status_text("Gemini Flash"), "Router LLM: Gemini Flash")
+
+    def test_no_data_does_not_treat_router_as_answer_model(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        self.assertEqual(
+            agent._collect_answer_models({"source_type": "no_data", "routing_model": "Gemini Flash"}),
+            "System response",
+        )
+
     def test_llm_usage_report_groups_fallbacks_cost_and_cache_hits(self):
         events = [
             {
@@ -910,6 +1513,7 @@ class ObservabilityTests(unittest.TestCase):
                 "query": "SELECT SUM(total_amount) FROM sales_transactions",
                 "row_count": 1,
                 "model_used": "gemini-2.5-flash",
+                "answer_mode": "deterministic",
                 "source": "SQL Database",
                 "time": 1.2,
             }
@@ -917,7 +1521,26 @@ class ObservabilityTests(unittest.TestCase):
 
         self.assertEqual(summary["row_count"], 1)
         self.assertEqual(summary["model_used"], "gemini-2.5-flash")
+        self.assertEqual(summary["answer_mode"], "deterministic")
         self.assertLessEqual(len(summary["answer_preview"]), 500)
+
+    def test_web_trace_summary_preserves_freshness_and_sample_flags(self):
+        summary = summarize_agent_result(
+            {
+                "success": False,
+                "answer": "Sample fallback data shown.",
+                "source": "Web Scraping",
+                "raw_data": {
+                    "competitors": [
+                        {"data_status": "cached_stale", "products": [{"price": "$262.89"}]},
+                        {"data_status": "sample", "is_mock": True, "products": [{"price": "$99.00"}]},
+                    ]
+                },
+            }
+        )
+
+        self.assertEqual(summary["web_data_statuses"], ["cached_stale", "sample"])
+        self.assertTrue(summary["sample_data"])
 
     def test_trace_summary_formats_key_spans(self):
         trace = {

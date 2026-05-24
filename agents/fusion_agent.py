@@ -175,6 +175,32 @@ class FusionAgent:
             logger.warning("  → Route: sql_only (no match, trying SQL anyway)")
             return "sql_only"
 
+    @staticmethod
+    def _rule_based_web_route(question: str) -> Optional[str]:
+        """Route clear live-pricing requests to Web without an LLM routing call."""
+        from config.data_inventory import can_web_answer
+
+        q = str(question or "").lower()
+        if not can_web_answer(question).get("can_answer"):
+            return None
+
+        own_data_terms = ("our ", "our own", "sales", "revenue", "transaction", "database")
+        if any(term in q for term in own_data_terms):
+            return None
+
+        pricing_terms = (
+            "price",
+            "pricing",
+            "discount",
+            "original price",
+            "cheapest",
+            "most expensive",
+            "lowest price",
+            "highest price",
+            "product",
+        )
+        return "web_only" if any(term in q for term in pricing_terms) else None
+
     def _history_context(self, max_turns: int = 3) -> str:
         if not self._history:
             return ""
@@ -509,7 +535,7 @@ Reply with ONLY this JSON (no extra text):
                 return competitor.title()
         return None
 
-    def _run_web_query(self, question: str) -> Dict:
+    def _run_web_query(self, question: str, selected_category: Optional[str] = None) -> Dict:
         """✅ NEW: Run Web Agent and capture results"""
         
         logger.info("🌐 Running Web Agent...")
@@ -517,20 +543,31 @@ Reply with ONLY this JSON (no extra text):
         
         try:
             category = self._infer_web_category(question)
+            if category is None and selected_category in self.WEB_CATEGORIES:
+                category = selected_category
             competitor = self._infer_web_competitor(question)
             result = self.web_agent.query(question, category=category, competitor=competitor)
             elapsed = time.time() - start
             
             has_answer = bool(result.get('answer'))
-            has_data   = bool(result.get('raw_data', {}).get('competitors'))
+            competitors = result.get('raw_data', {}).get('competitors', [])
+            has_data = bool(competitors)
+            sample_only = has_data and all(
+                competitor_data.get('is_mock')
+                or competitor_data.get('data_status') == 'sample'
+                for competitor_data in competitors
+            )
             hard_error = bool(result.get('error'))   # only set on total failure
             return {
-                'success': (has_answer or has_data) and not hard_error,
+                'success': has_answer and has_data and not sample_only and not hard_error,
                 'answer': result.get('answer', 'No web data available'),
                 'raw_data': result.get('raw_data', {}),
                 'category': result.get('category'),
                 'time': round(elapsed, 2),
                 'source': 'Web Scraping',
+                'answer_mode': result.get('answer_mode'),
+                'model_used': result.get('model_used', ''),
+                'sample_only': sample_only,
                 'llm_error': result.get('llm_error')
             }
             
@@ -1162,7 +1199,11 @@ ANSWER:"""
             model = agent_result.get("model_used")
             if model and model != "none":
                 models.append(f"{label}: {model}")
-        return "; ".join(models) or result.get("routing_model") or "n/a"
+        if models:
+            return "; ".join(models)
+        if result.get("source_type") == "no_data":
+            return "System response"
+        return "n/a"
 
     def _finalize_trace(self, trace: TraceSession, result: Dict, cached: bool = False) -> Dict:
         """Attach trace metadata to the response after writing the trace file."""
@@ -1266,6 +1307,7 @@ ANSWER:"""
         force_source: Optional[str] = None,
         progress_cb: Optional[Callable[[str, Dict], None]] = None,
         bypass_cache: bool = False,
+        web_category: Optional[str] = None,
     ) -> Dict:
         """
         Main fusion query method. Routes to source(s) and combines results.
@@ -1311,14 +1353,19 @@ ANSWER:"""
                 source_type = force_source
                 logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
             else:
-                source_type = self._classify_query_source_llm(question)
+                source_type = self._rule_based_web_route(question)
                 if source_type:
-                    logger.info(f"📋 Query routing: {source_type.upper()} (LLM)")
+                    self._last_routing_model = "Rules-based Web routing"
+                    logger.info(f"📋 Query routing: {source_type.upper()} (explicit web pricing rule)")
                 else:
-                    source_type = self._classify_query_source(question)
-                    self._last_routing_model = "keyword fallback"
-                    self._last_routing_fallback = True
-                    logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
+                    source_type = self._classify_query_source_llm(question)
+                    if source_type:
+                        logger.info(f"📋 Query routing: {source_type.upper()} (LLM)")
+                    else:
+                        source_type = self._classify_query_source(question)
+                        self._last_routing_model = "keyword fallback"
+                        self._last_routing_fallback = True
+                        logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
             span["metadata"].update(
                 {
                     "source_type": source_type,
@@ -1404,7 +1451,8 @@ ANSWER:"""
 
         elif source_type == "web_only":
             logger.info("→ Using Web Agent only")
-            web_result = self._run_agent_with_trace(trace, "web", self._run_web_query, resolved_question)
+            web_runner = lambda query: self._run_web_query(query, selected_category=web_category)
+            web_result = self._run_agent_with_trace(trace, "web", web_runner, resolved_question)
 
             result = {
                 'answer': web_result.get('answer', 'No answer generated'),

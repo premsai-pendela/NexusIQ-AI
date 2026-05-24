@@ -969,16 +969,26 @@ def render_web_section(msg_id: str, web_result: dict):
     Render Web scraping results section with scraper status dashboard.
     """
 
-    if not web_result or not web_result.get('success'):
+    raw_data = (web_result or {}).get('raw_data', {})
+    has_sample_evidence = any(
+        source.get('is_mock') or source.get('data_status') == 'sample'
+        for source in raw_data.get('competitors', [])
+    )
+    if not web_result:
         st.warning("❌ Web scraping failed or returned no data")
-        if web_result and web_result.get('error'):
-            st.error(f"Error: {web_result['error']}")
         return
+    if not web_result.get('success') and not has_sample_evidence:
+        st.warning("❌ Web scraping failed or returned no live data")
+        if web_result.get('error'):
+            st.error(f"Error: {web_result['error']}")
+        if not raw_data.get('scraper_statuses'):
+            return
+    if has_sample_evidence and not web_result.get('success'):
+        st.warning("No live Web evidence is available. Optional sample data is displayed separately.")
 
     with st.expander("🌐 Competitor Intelligence", expanded=True):
 
         # ── Scraper Status Dashboard ──────────────────────────────
-        raw_data = web_result.get('raw_data', {})
         statuses = raw_data.get('scraper_statuses', [])
 
         if statuses:
@@ -991,12 +1001,18 @@ def render_web_section(msg_id: str, web_result: dict):
                 elapsed  = s.get('time', 0)
                 error    = s.get('error')
 
-                if status == 'success':
+                if status in {'success', 'live'}:
                     icon = '🟢'
-                    label = f"{products} products"
-                elif status == 'fallback':
+                    label = f"Live · {products} products"
+                elif status == 'cached_fresh':
+                    icon = '🔵'
+                    label = f"Cached · {products} products"
+                elif status == 'cached_stale':
+                    icon = '🟠'
+                    label = f"Stale · {products} products"
+                elif status in {'fallback', 'sample'}:
                     icon = '🟡'
-                    label = f"Mock ({products} items)"
+                    label = f"Sample · {products} items"
                 elif status == 'empty':
                     icon = '🟠'
                     label = 'No products'
@@ -1011,13 +1027,18 @@ def render_web_section(msg_id: str, web_result: dict):
                         delta=f"{elapsed}s" if elapsed else None,
                         delta_color="off"
                     )
-                    if error and status != 'success':
+                    if s.get('captured_at') and status in {'cached_fresh', 'cached_stale'}:
+                        st.caption(f"_Captured: {s['captured_at'][:19]}_")
+                    if error and status not in {'success', 'live'}:
                         st.caption(f"_{error[:60]}_")
 
             # Show fallback warning if any mock data was used
-            fallbacks = [s for s in statuses if s.get('status') == 'fallback']
+            fallbacks = [s for s in statuses if s.get('status') in {'fallback', 'sample'}]
             if fallbacks:
-                st.warning("⚠️ All live scrapers failed — answer is based on sample data, not real prices.")
+                st.warning("⚠️ Sample data is shown for demonstration only; it is not live pricing.")
+            stale_sources = [s for s in statuses if s.get('status') == 'cached_stale']
+            if stale_sources:
+                st.warning("⚠️ Live refresh failed for at least one source; cached prices are shown with capture time.")
 
             st.markdown("---")
 
@@ -1037,10 +1058,14 @@ def render_web_section(msg_id: str, web_result: dict):
                 total      = comp_data.get('total_found', len(comp_data.get('products', [])))
                 products   = comp_data.get('products', [])
                 is_mock    = comp_data.get('is_mock', False)
+                data_status = comp_data.get('data_status')
 
                 badge = " *(sample data)*" if is_mock else ""
                 st.markdown(f"**{competitor}**{badge} — {method}")
-                st.caption(f"Found: {total} | Showing: {len(products)}")
+                source_note = f" | Status: {data_status.replace('_', ' ')}" if data_status else ""
+                captured_at = comp_data.get('captured_at') or comp_data.get('timestamp')
+                capture_note = f" | Captured: {captured_at[:19]}" if captured_at else ""
+                st.caption(f"Found: {total} | Showing: {len(products)}{source_note}{capture_note}")
 
                 for i, product in enumerate(products[:5], 1):
                     st.markdown(f"{i}. **{product.get('name', 'Unknown')}** — {product.get('price', 'N/A')}")
@@ -1125,6 +1150,35 @@ def _format_span_duration(seconds) -> str:
         value = 0
     return f"{value:.2f}s"
 
+def _format_answer_method(answer_models: str) -> tuple[str, str]:
+    """Return a short metric label and full explanation of answer provenance."""
+    raw = str(answer_models or "n/a")
+    lowered = raw.lower()
+    if "deterministic calculation" in lowered:
+        return "Calculated", "Answer built directly from scraped prices; no answer LLM used."
+    if "raw scraped data" in lowered:
+        return "Source", "Collected source data shown without model synthesis."
+    if raw == "System response":
+        return "System", "No source answer was generated."
+    if ";" in raw:
+        return "Combined", raw
+    if ":" in raw:
+        agent_name, model = (part.strip() for part in raw.split(":", 1))
+        return "LLM", f"{agent_name} Agent model: {model}"
+    if lowered == "n/a":
+        return "N/A", "No answer model recorded."
+    return "LLM", f"Answer model: {raw}"
+
+def _routing_status_text(routing_model: str) -> str:
+    """Explain how the route was selected without implying an LLM always ran."""
+    if not routing_model or routing_model == "n/a":
+        return "Routing: Manual source selection (Router LLM not used)"
+    if routing_model == "Rules-based Web routing":
+        return "Routing: Clear web-pricing request detected (Router LLM not needed)"
+    if routing_model == "keyword fallback":
+        return "Routing: Keyword fallback used after Router LLM was unavailable"
+    return f"Router LLM: {routing_model}"
+
 def render_observability_panel(msg: dict):
     """Render local trace metadata for a Fusion response."""
     trace_id = msg.get("trace_id")
@@ -1144,6 +1198,9 @@ def render_observability_panel(msg: dict):
     total_duration = trace.get("duration_s") or msg.get("query_time", 0)
     routing_model = final.get("routing_model") or msg.get("routing_model") or "n/a"
     answer_models = final.get("answer_models") or msg.get("answer_models") or routing_model
+    if route == "no_data" and answer_models == routing_model:
+        answer_models = "System response"
+    answer_method, answer_method_detail = _format_answer_method(answer_models)
     validation = final.get("validation") or msg.get("validation") or {}
     validation_label = validation.get("confidence") or "n/a"
 
@@ -1152,9 +1209,9 @@ def render_observability_panel(msg: dict):
         metric_cols[0].metric("Route", route)
         metric_cols[1].metric("Total Time", _format_span_duration(total_duration))
         metric_cols[2].metric("Validation", validation_label)
-        metric_cols[3].metric("Answer LLM", str(answer_models))
-        if routing_model and routing_model != answer_models:
-            st.caption(f"Router LLM: {routing_model}")
+        metric_cols[3].metric("Answer Method", answer_method)
+        st.caption(answer_method_detail)
+        st.caption(_routing_status_text(routing_model))
 
         if slowest:
             slow_label = "⚠️ " if (slowest.get("duration_s") or 0) > SLOW_SPAN_SECONDS else ""
@@ -1513,8 +1570,12 @@ def run_fusion_chat():
         unsafe_allow_html=True,
     )
     st.caption(
-        f"Routing: {st.session_state.source_filter} · "
-        f"Web category: {st.session_state.web_category}"
+        f"Routing: {st.session_state.source_filter}"
+        + (
+            f" · Web category: {st.session_state.web_category}"
+            if st.session_state.source_filter == "Web Only"
+            else ""
+        )
     )
     
     # ═══════════════════════════════════════════════════════
@@ -1542,8 +1603,8 @@ def run_fusion_chat():
         )
         st.session_state.source_filter = source_filter
         
-        # ✨ NEW: Web Category Selector (only show if Web is involved)
-        if source_filter in ["Auto", "Web Only"]:
+        # Web Only is explicitly scoped by this selector. Auto derives scope from the prompt.
+        if source_filter == "Web Only":
             st.markdown("---")
             st.subheader("🛒 Web Scraping Category")
             web_category = st.selectbox(
@@ -1872,6 +1933,7 @@ def run_fusion_chat():
                 force_source=force_source,
                 progress_cb=_progress_cb,
                 bypass_cache=bypass_cache,
+                web_category=st.session_state.web_category if source_filter == "Web Only" else None,
             )
             total_time = time.time() - start_time
             if bypass_cache:

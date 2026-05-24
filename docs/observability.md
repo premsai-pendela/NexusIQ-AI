@@ -95,8 +95,16 @@ not link to the original ledger invocation needed for a defensible estimate.
 
 Web pricing answer generation passes only answer-relevant evidence to the LLM:
 competitor names and each product's name, current price, comparison price, and
-source. Scraper timestamps, status diagnostics, SKUs, image URLs, and product
-URLs remain available in raw result data but are omitted from model context.
+source, plus freshness status when disclosure is required. Scraper diagnostics,
+SKUs, image URLs, and product URLs remain available in raw result data but are
+omitted from model context.
+
+Exact Web price lists, ranges, extremes, counts, and discount calculations do
+not call `web.answer`; they are calculated from product evidence. When a live
+refresh fails, cached Web evidence is labeled `cached_stale`, carries its
+capture time in traces, and must be disclosed in the answer. Optional sample
+fallback is disabled by default and never counts as successful live evidence;
+enable it only for a deliberate demo with `WEB_ALLOW_SAMPLE_FALLBACK=true`.
 
 ## Cache Trust Controls
 

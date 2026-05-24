@@ -27,7 +27,7 @@ NexusIQ AI is a **multi-agent business intelligence system** that answers comple
 |--------|--------------|
 | 🗄️ **SQL Database** | 100,000 Supabase sales transactions across 2024 — revenue, products, regions, payment methods |
 | 📄 **PDF Documents** | 25 internal documents — quarterly reports, strategic plans, compliance policies |
-| 🌐 **Live Web** | Real-time competitor pricing scraped from Newegg, IKEA, Campmor, Swanson |
+| 🌐 **Live Web** | Competitor pricing from live retail sources with explicit cache freshness labels |
 
 The system routes each question to the right source(s), runs the agents in parallel, cross-validates numeric facts, and returns a single fused answer — with confidence badges showing how well the sources agree.
 
@@ -40,8 +40,8 @@ User Question (plain English)
          │
          ▼
 ┌─────────────────────┐
-│    FUSION AGENT     │  ← LLM-based dynamic routing
-│                     │    Gemini 2.5 Flash → Groq fallback
+│    FUSION AGENT     │  ← Deterministic Web routes + LLM routing
+│                     │    Gemini 2.5 Flash → Groq fallback otherwise
 │  Classifies intent  │    Rate-limited to prevent quota exhaustion
 │  Routes to sources  │
 └──────┬──────┬───────┘
@@ -74,10 +74,11 @@ Agent   Agent   Agent
 
 ### Routing Logic
 
-The Fusion Agent uses a two-tier LLM cascade to route every query:
+The Fusion Agent routes clear competitor-pricing questions deterministically to the Web Agent. Ambiguous or multi-source questions use a two-tier LLM cascade:
 
 ```
-Query → Gemini 2.5 Flash (primary, rate-limited)
+Clear competitor-pricing query → Web Agent directly
+Other query → Gemini 2.5 Flash (primary, rate-limited)
               │ quota exhausted?
               ▼
          Groq Llama 3.3 70B (fallback)
@@ -101,23 +102,23 @@ Six route types:
 
 ## Key Features
 
-**LLM-based query routing** — Gemini 2.5 Flash classifies intent and picks the right combination of agents. Falls back to Groq seamlessly when quota is hit. Shows a warning banner when fallback routing is used.
+**Evidence-aware query routing** — Clear live-pricing requests route deterministically to the Web Agent. Gemini 2.5 Flash classifies ambiguous or multi-source questions, with Groq fallback when needed.
 
 **SQL Agent with auto-correction** — Converts plain English to SQL via multi-model cascade (Gemini → Groq). Auto-corrects typos ("Wset" → "West", "Electrnics" → "Electronics"). Resolves ambiguity ("best product" → "best product by revenue").
 
 **RAG Agent with hybrid search** — Combines BM25 keyword search + vector embeddings for retrieval. Enters agentic comparison mode for "Compare X vs Y" queries — decomposes into sub-queries, retrieves independently, synthesizes.
 
-**Web Agent with live scraping** — Five competitor scrapers across five product categories:
+**Web Agent with controlled LLM usage** — Exact product prices, ranges, extremes, counts, and discount calculations are built directly from product evidence. Interpretive questions such as market positioning still use the LLM. Nine live sources cover five product categories:
 
 | Category | Scrapers |
 |----------|---------|
-| Electronics | Newegg (BeautifulSoup) |
+| Electronics | Newegg (BeautifulSoup), Goal Zero (Shopify API) |
 | Home Goods | IKEA (JSON API) |
 | Sports | Campmor (Shopify API) |
 | Food/Supplements | Swanson, NativePath (Shopify API) |
-| Clothing | Taylor Stitch, Chubbies (Shopify API) |
+| Clothing | Taylor Stitch, Chubbies, Finisterre (Shopify API) |
 
-Includes per-scraper status dashboard and cache invalidation for empty results. The IKEA scraper was moved from browser automation to a direct JSON API path so the deployed container can run without Selenium.
+The dashboard distinguishes live results, fresh cache, and stale cache. If a live refresh fails, cached pricing is used for at most seven days and the answer discloses its capture time and failed refresh. Sample fallback data is disabled by default and can be enabled only for an explicit demo with `WEB_ALLOW_SAMPLE_FALLBACK=true`. The IKEA scraper uses a direct JSON API path so the deployed container can run without Selenium.
 
 **Cross-validation engine** — Extracts dollar amounts from both SQL answer text and PDF content, normalizes formats ($45.2M vs $45,200,000), and computes match confidence within 10% tolerance.
 
@@ -154,8 +155,8 @@ The public demo is deployed on AWS EC2 behind Caddy HTTPS at `nexusiq-ai.com`. G
 "Compare Q3 and Q4 2024 performance across all metrics"
 → sql_rag | Agentic decomposition into 3 sub-queries | MEDIUM confidence
 
-"What are competitor prices for electronics?"
-→ web_only | Newegg live data | 10 products scraped
+"What Goal Zero products and prices are available?"
+→ web_only | deterministic calculation from Goal Zero evidence | no answer LLM required
 
 "What was revenue in 2020?"
 → no_data | "Data only covers 2024. SQL and RAG cannot answer this."

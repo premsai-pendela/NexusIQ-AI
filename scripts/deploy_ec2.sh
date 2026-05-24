@@ -16,6 +16,12 @@ echo "Logging in to ECR registry: ${REGISTRY}"
 aws ecr get-login-password --region "${AWS_REGION}" \
   | docker login --username AWS --password-stdin "${REGISTRY}" >/dev/null
 
+echo "Reclaiming unused Docker storage before image pull"
+docker system df || true
+# This preserves images referenced by the currently running application container.
+docker system prune --all --force || true
+docker system df || true
+
 echo "Pulling image: ${IMAGE_URI}"
 docker pull "${IMAGE_URI}"
 
@@ -40,6 +46,9 @@ docker run -d \
   -e GROQ_API_KEY="${GROQ_API_KEY}" \
   -e DATABASE_URL="${DATABASE_URL}" \
   "${IMAGE_URI}"
+
+echo "Pruning previous unused image layers after replacement"
+docker image prune --all --force || true
 
 echo "Waiting for app to become reachable on localhost:${APP_PORT}"
 for attempt in {1..30}; do

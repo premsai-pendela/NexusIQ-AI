@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
@@ -163,6 +164,7 @@ class LLMGateway:
         no-prompt usage ledger for monitoring.
         """
         models_tried = []
+        invocation_id = uuid.uuid4().hex[:16]
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
         prompt_tokens = _estimate_tokens(prompt)
 
@@ -184,11 +186,13 @@ class LLMGateway:
                 models_tried.append(attempt)
                 self._record_attempt({
                     "started_at": started_at,
+                    "invocation_id": invocation_id,
                     "task": task,
                     "model": model_name,
                     "model_type": model_config.get("type"),
                     "temperature": temperature,
                     "status": "skipped",
+                    "failure_kind": None,
                     "error": skip_reason,
                     "latency_s": 0.0,
                     "prompt_hash": prompt_hash,
@@ -223,11 +227,13 @@ class LLMGateway:
                 output_tokens = _estimate_tokens(content)
                 self._record_attempt({
                     "started_at": started_at,
+                    "invocation_id": invocation_id,
                     "task": task,
                     "model": model_name,
                     "model_type": model_config.get("type"),
                     "temperature": temperature,
                     "status": "success",
+                    "failure_kind": None,
                     "error": None,
                     "latency_s": round(elapsed, 3),
                     "prompt_hash": prompt_hash,
@@ -250,9 +256,11 @@ class LLMGateway:
                 error_msg = str(exc)
                 if isinstance(exc, LLMResponseValidationError):
                     status = "❌ INVALID RESPONSE"
+                    failure_kind = "invalid_response"
                 else:
                     tracker.report_failure(model_name, error_msg)
                     status = _error_status(error_msg)
+                    failure_kind = "provider_failure"
 
                 attempt = {
                     "model": model_name,
@@ -265,11 +273,13 @@ class LLMGateway:
                 models_tried.append(attempt)
                 self._record_attempt({
                     "started_at": started_at,
+                    "invocation_id": invocation_id,
                     "task": task,
                     "model": model_name,
                     "model_type": model_config.get("type"),
                     "temperature": temperature,
                     "status": "failed",
+                    "failure_kind": failure_kind,
                     "error": error_msg[:300],
                     "latency_s": round(elapsed, 3),
                     "prompt_hash": prompt_hash,

@@ -110,8 +110,8 @@ OFFLINE_EVAL_CASES: List[OfflineEvalCase] = [
         source_type="sql_rag",
         sql_result={
             "success": True,
-            "answer": "The query analyzed 90,500 transactions.",
-            "results": [{"transactions_analyzed": 90_500}],
+            "answer": "The query analyzed 100,000 transactions.",
+            "results": [{"transactions_analyzed": 100_000}],
             "row_count": 1,
         },
         rag_result={

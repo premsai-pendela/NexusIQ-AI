@@ -54,6 +54,10 @@ The ledger records:
 
 It does not store raw prompts. This gives cost and reliability visibility without turning the ledger into a secret dump.
 
+New ledger attempts also include an `invocation_id` for grouping fallback attempts
+and a `failure_kind` that distinguishes invalid structured output from provider
+failure. Historical rows without these fields remain valid input for reports.
+
 Current task coverage:
 
 | Agent area | Ledger tasks |
@@ -76,6 +80,23 @@ Or choose a custom ledger path:
 ```bash
 NEXUSIQ_LLM_LEDGER_PATH=/tmp/nexusiq-llm-ledger.jsonl python main.py
 ```
+
+Summarize task/model token totals, average and p95 latency, invalid responses,
+grouped fallbacks, and the highest-cost attempts:
+
+```bash
+python -m observability.inspect_llm_usage
+python -m observability.inspect_llm_usage --json
+```
+
+The usage report counts cache hits recorded in `data/query_traces.jsonl`.
+It deliberately does not claim token savings yet: cached traces currently do
+not link to the original ledger invocation needed for a defensible estimate.
+
+Web pricing answer generation passes only answer-relevant evidence to the LLM:
+competitor names and each product's name, current price, comparison price, and
+source. Scraper timestamps, status diagnostics, SKUs, image URLs, and product
+URLs remain available in raw result data but are omitted from model context.
 
 ## Cache Trust Controls
 

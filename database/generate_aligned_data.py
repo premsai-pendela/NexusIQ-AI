@@ -1,6 +1,8 @@
 """
-Generate SQL data that EXACTLY matches PDF report numbers
-Uses config/company_data.py as single source of truth
+Legacy synthetic rebuild utility for explicitly authorized development resets.
+
+The application normally reads existing Supabase facts and must not replace
+them from this fixture generator.
 """
 
 import random
@@ -14,6 +16,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from sqlalchemy import create_engine, text
 from config.settings import settings
 from config.company_data import NEXUSIQ_METRICS
+from database.setup import require_destructive_sql_rebuild_authorization
 import numpy as np
 
 
@@ -178,6 +181,7 @@ class AlignedDataGenerator:
     
     def clear_existing_data(self):
         """Delete all existing transactions"""
+        require_destructive_sql_rebuild_authorization()
         print("\n🗑️  Clearing existing data...")
         with self.engine.connect() as conn:
             conn.execute(text("DELETE FROM sales_transactions"))

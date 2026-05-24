@@ -546,6 +546,7 @@ def run_sql_chat():
                 "• customer_id\n• name, email, region\n"
                 "• signup_date\n• total_purchases"
             )
+            st.caption("Defined in Supabase; customer dimension records are not populated yet.")
 
         st.markdown("---")
         st.subheader("💡 Example Questions")

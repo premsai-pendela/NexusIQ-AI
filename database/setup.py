@@ -1,6 +1,8 @@
 """
 NexusIQ AI — Database Schema Setup
 """
+import os
+
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +10,17 @@ from datetime import datetime
 from config.settings import settings
 
 Base = declarative_base()
+
+
+def require_destructive_sql_rebuild_authorization() -> None:
+    """Require an explicit operator opt-in before deleting relational facts."""
+    enabled = os.getenv("NEXUSIQ_ALLOW_SQL_REBUILD", "").strip().lower()
+    if enabled not in {"1", "true", "yes"}:
+        raise RuntimeError(
+            "Refusing to delete or repopulate the configured PostgreSQL database. "
+            "NexusIQ uses Supabase as its relational source. Set "
+            "NEXUSIQ_ALLOW_SQL_REBUILD=true only for an intentional, reviewed rebuild."
+        )
 
 # ═══════════════════════════════════════════════
 #  SCHEMA DESIGN

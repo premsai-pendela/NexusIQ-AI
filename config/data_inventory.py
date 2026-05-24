@@ -29,7 +29,7 @@ SQL_INVENTORY = {
                 "product_category", "product_name", "quantity",
                 "unit_price", "total_amount", "customer_id", "payment_method"
             ],
-            "row_count": 90500,
+            "row_count": 100000,
             "can_answer": [
                 "revenue", "sales", "transactions", "quantity",
                 "products", "regions", "stores", "payment methods",
@@ -38,8 +38,15 @@ SQL_INVENTORY = {
         },
         "customers": {
             "columns": ["customer_id", "name", "email", "region", "signup_date", "total_purchases"],
-            "row_count": 15000,
-            "can_answer": ["customer info", "signup trends", "purchase history"]
+            "row_count": 0,
+            "can_answer": [],
+            "note": "Schema exists in Supabase, but no dimension records are currently populated."
+        },
+        "inventory": {
+            "columns": ["store_id", "product_name", "stock_level", "reorder_point", "last_restocked"],
+            "row_count": 0,
+            "can_answer": [],
+            "note": "Schema exists in Supabase, but no inventory records are currently populated."
         }
     },
     
@@ -61,15 +68,18 @@ SQL_INVENTORY = {
 # ═══════════════════════════════════════════════════════
 
 RAG_INVENTORY = {
-    "total_documents": 23,
+    "total_documents": 25,
     "categories": {
-        "quarterly_reports": {
-            "count": 4,
+        "financial": {
+            "count": 7,
             "files": [
-                "Q1_2024_Performance_Report.pdf",
-                "Q2_2024_Performance_Report.pdf",
-                "Q3_2024_Performance_Report.pdf",
-                "Q4_2024_Performance_Report.pdf"
+                "01_Q4_2024_Financial_Report.pdf",
+                "02_Q3_2024_Financial_Report.pdf",
+                "03_Annual_Report_2023.pdf",
+                "04_Budget_Forecast_2025.pdf",
+                "05_Investor_Presentation_Dec2024.pdf",
+                "06_Q1_2024_Financial_Report.pdf",
+                "07_Q2_2024_Financial_Report.pdf"
             ],
             "can_answer": [
                 "quarterly revenue (reported numbers)",
@@ -80,30 +90,41 @@ RAG_INVENTORY = {
             "date_coverage": "Q1-Q4 2024"
         },
         
-        "policies": {
-            "count": 5,
+        "products_operations": {
+            "count": 4,
             "files": [
-                "Return_Policy_Electronics.pdf",
-                "Customer_Service_Standards.pdf",
-                "Data_Privacy_Policy.pdf",
-                "Employee_Handbook.pdf",
-                "Compliance_Guidelines.pdf"
+                "Inventory_Management_Policy.pdf",
+                "Product_Catalog_Electronics_2024.pdf",
+                "Returns_Refunds_Policy.pdf",
+                "Store_Operations_Manual.pdf"
             ],
             "can_answer": [
-                "return policies", "customer service rules",
-                "privacy policies", "employee guidelines",
-                "compliance requirements"
+                "return policies", "inventory policy", "product catalog",
+                "store operations"
+            ]
+        },
+
+        "market_intelligence": {
+            "count": 5,
+            "files": [
+                "Brand_Perception_Study.pdf",
+                "Competitor_Pricing_Strategy.pdf",
+                "Customer_Satisfaction_Survey_2024.pdf",
+                "Industry_Trends_Retail_2024.pdf",
+                "Market_Analysis_Electronics_2024.pdf"
+            ],
+            "can_answer": [
+                "market studies", "competitor pricing strategy",
+                "customer satisfaction", "industry trends"
             ]
         },
         
         "strategic_plans": {
-            "count": 8,
+            "count": 3,
             "files": [
-                "West_Region_Expansion_Plan.pdf",
-                "2024_Budget_Allocation.pdf",
-                "Digital_Wallet_Initiative.pdf",
-                "Competitor_Pricing_Strategy.pdf",
-                # ... more files
+                "Digital_Transformation_Roadmap.pdf",
+                "Expansion_Feasibility_Study.pdf",
+                "Strategic_Plan_2025.pdf"
             ],
             "can_answer": [
                 "expansion plans", "budget allocations",
@@ -113,8 +134,17 @@ RAG_INVENTORY = {
         },
         
         "contracts": {
-            "count": 6,
+            "count": 4,
             "can_answer": ["vendor agreements", "partnerships", "contracts"]
+        },
+
+        "hr_compliance": {
+            "count": 2,
+            "files": [
+                "Compliance_Training_Materials.pdf",
+                "Employee_Handbook_2024.pdf"
+            ],
+            "can_answer": ["employee guidelines", "compliance requirements"]
         }
     },
     
@@ -122,7 +152,7 @@ RAG_INVENTORY = {
         "Real-time transaction data",
         "Granular daily/store-level data",
         "Current competitor pricing (uses web scraping)",
-        "Data not in the 23 PDFs"
+        "Data not in the 25 PDFs"
     ]
 }
 
@@ -172,19 +202,19 @@ CROSS_VALIDATION_MAP = {
     "validatable": {
         "Q1_2024_revenue": {
             "sql": "SUM(total_amount) WHERE transaction_date Q1 2024",
-            "rag": "Q1_2024_Performance_Report.pdf"
+            "rag": "06_Q1_2024_Financial_Report.pdf"
         },
         "Q2_2024_revenue": {
             "sql": "SUM(total_amount) WHERE transaction_date Q2 2024",
-            "rag": "Q2_2024_Performance_Report.pdf"
+            "rag": "07_Q2_2024_Financial_Report.pdf"
         },
         "Q3_2024_revenue": {
             "sql": "SUM(total_amount) WHERE transaction_date Q3 2024",
-            "rag": "Q3_2024_Performance_Report.pdf"
+            "rag": "02_Q3_2024_Financial_Report.pdf"
         },
         "Q4_2024_revenue": {
             "sql": "SUM(total_amount) WHERE transaction_date Q4 2024",
-            "rag": "Q4_2024_Performance_Report.pdf"
+            "rag": "01_Q4_2024_Financial_Report.pdf"
         },
         "electronics_revenue": {
             "sql": "SUM(total_amount) WHERE product_category = 'Electronics'",
@@ -281,10 +311,10 @@ def can_rag_answer(question: str) -> dict:
     
     # Check for RAG-answerable patterns
     rag_patterns = {
-        "policy": ["policy", "return", "refund", "terms", "conditions"],
-        "strategy": ["plan", "strategy", "initiative", "roadmap", "expansion"],
-        "reports": ["q1", "q2", "q3", "q4", "quarter", "performance", "report"],
-        "compliance": ["compliance", "regulation", "guideline", "legal"]
+        "products_operations": ["policy", "return", "refund", "conditions"],
+        "strategic_plans": ["plan", "strategy", "initiative", "roadmap", "expansion"],
+        "financial": ["q1", "q2", "q3", "q4", "quarter", "performance", "report"],
+        "hr_compliance": ["compliance", "regulation", "guideline", "legal"]
     }
     
     for category, keywords in rag_patterns.items():
@@ -293,7 +323,7 @@ def can_rag_answer(question: str) -> dict:
                 "can_answer": True,
                 "confidence": "high",
                 "reason": f"Question asks about {category} information in documents",
-                "likely_documents": RAG_INVENTORY["categories"].get(f"{category}s" if category != "reports" else "quarterly_reports", {}).get("files", [])
+                "likely_documents": RAG_INVENTORY["categories"].get(category, {}).get("files", [])
             }
     
     return {
@@ -307,18 +337,35 @@ def can_web_answer(question: str) -> dict:
     """Check if web scraping can answer this question"""
     question_lower = question.lower()
     
-    competitor_keywords = ["competitor", "market", "pricing", "newegg", "ikea", "walmart"]
+    competitor_categories = {
+        "newegg": "electronics",
+        "goal zero": "electronics",
+        "ikea": "home",
+        "taylor stitch": "clothing",
+        "chubbies": "clothing",
+        "finisterre": "clothing",
+        "swanson": "food",
+        "nativepath": "food",
+        "campmor": "sports",
+    }
+    competitor_keywords = ["competitor", "market", "pricing", "walmart", *competitor_categories]
     category_keywords = list(WEB_INVENTORY["categories"].keys())
     
     has_competitor = any(kw in question_lower for kw in competitor_keywords)
     has_category = any(cat in question_lower for cat in category_keywords)
     
     if has_competitor or (has_category and "price" in question_lower):
+        suggested_category = next((cat for cat in category_keywords if cat in question_lower), None)
+        if suggested_category is None:
+            suggested_category = next(
+                (category for competitor, category in competitor_categories.items() if competitor in question_lower),
+                "electronics",
+            )
         return {
             "can_answer": True,
             "confidence": "high",
             "reason": "Question asks for competitor/market pricing data",
-            "suggested_category": next((cat for cat in category_keywords if cat in question_lower), "electronics")
+            "suggested_category": suggested_category,
         }
     
     return {

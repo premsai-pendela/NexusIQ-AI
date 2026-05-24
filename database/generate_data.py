@@ -1,5 +1,9 @@
 """
-NexusIQ AI — Synthetic Data Generator (Seasonal Edition)
+NexusIQ AI — Legacy Synthetic Data Generator (Seasonal Edition)
+
+This utility is not an application data source. It can write to the configured
+PostgreSQL database only after explicit destructive-rebuild authorization.
+
 Realistic retail seasonality:
   Q1: ~$28M (post-holiday dip)
   Q2: ~$32M (spring pickup)
@@ -11,7 +15,13 @@ import random
 import numpy as np
 from datetime import datetime, timedelta
 from sqlalchemy.orm import sessionmaker
-from database.setup import init_database, SalesTransaction, Inventory, Customer
+from database.setup import (
+    init_database,
+    require_destructive_sql_rebuild_authorization,
+    SalesTransaction,
+    Inventory,
+    Customer,
+)
 
 # ═══════════════════════════════════════════════
 #  MASTER DATA
@@ -249,6 +259,7 @@ def generate_sales_data(num_records: int = 100000) -> list:
 def load_to_database(transactions: list):
     """Load transactions into database — clears existing data first"""
 
+    require_destructive_sql_rebuild_authorization()
     engine = init_database()
     Session = sessionmaker(bind=engine)
     session = Session()

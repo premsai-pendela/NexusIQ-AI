@@ -77,6 +77,17 @@ class WebAgent:
         "Accept-Language": "en-US,en;q=0.9",
         "Connection": "keep-alive",
     }
+    COMPETITOR_SCRAPER_METHODS = {
+        "newegg": "_scrape_newegg",
+        "goal zero": "_scrape_goalzero",
+        "ikea": "_scrape_ikea_selenium",
+        "taylor stitch": "_scrape_taylorstitch",
+        "chubbies": "_scrape_chubbies",
+        "finisterre": "_scrape_finisterre",
+        "swanson": "_scrape_swanson",
+        "nativepath": "_scrape_nativepath",
+        "campmor": "_scrape_campmor",
+    }
     
     def __init__(self):
         # HTTP client for BeautifulSoup scrapers
@@ -702,14 +713,17 @@ class WebAgent:
     #  ASYNC PARALLEL SCRAPING
     # ═══════════════════════════════════════════════════════════
     
-    async def scrape_competitor_pricing_async(self, category: str) -> List[Dict]:
+    async def scrape_competitor_pricing_async(
+        self, category: str, competitor: Optional[str] = None
+    ) -> List[Dict]:
         """
         Scrape multiple competitors for a category
         API/BeautifulSoup scrapers run sequentially with error handling
         Selenium scrapers run sequentially with driver cleanup
         """
         
-        logger.info(f"🚀 Scraping competitors for category: {category}")
+        scope = f" for {competitor}" if competitor else ""
+        logger.info(f"🚀 Scraping competitors for category: {category}{scope}")
         start = time.time()
         
         results = []
@@ -725,6 +739,10 @@ class WebAgent:
         }
         
         methods = scraper_methods.get(category, [])
+        if competitor:
+            target_method = self.COMPETITOR_SCRAPER_METHODS.get(competitor.lower())
+            if target_method:
+                methods = [getattr(self, target_method)]
         
         # Separate by scraping method
         selenium_methods = [m for m in methods if 'selenium' in m.__name__]
@@ -843,7 +861,9 @@ class WebAgent:
         return results, scraper_statuses
 
     
-    def scrape_competitor_pricing(self, category: str) -> Dict:
+    def scrape_competitor_pricing(
+        self, category: str, competitor: Optional[str] = None
+    ) -> Dict:
         """
         Synchronous wrapper for async scraping
         """
@@ -853,7 +873,9 @@ class WebAgent:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        results, scraper_statuses = loop.run_until_complete(self.scrape_competitor_pricing_async(category))
+        results, scraper_statuses = loop.run_until_complete(
+            self.scrape_competitor_pricing_async(category, competitor=competitor)
+        )
         
         return {
             'category': category,
@@ -866,8 +888,48 @@ class WebAgent:
     # ═══════════════════════════════════════════════════════════
     #  MAIN QUERY METHOD
     # ═══════════════════════════════════════════════════════════
+
+    @staticmethod
+    def _compact_pricing_context(pricing_data: Dict) -> Dict:
+        """Keep pricing evidence in model context without scraper-only fields."""
+        competitors = []
+        for competitor in pricing_data.get("competitors", []):
+            products = []
+            for product in competitor.get("products", []):
+                compact_product = {
+                    key: product[key]
+                    for key in ("name", "price", "compare_at_price", "source")
+                    if product.get(key) not in (None, "")
+                }
+                if compact_product:
+                    products.append(compact_product)
+            competitors.append({
+                "competitor": competitor.get("competitor", "Unknown"),
+                "products": products,
+                "is_mock": bool(competitor.get("is_mock")),
+            })
+        return {
+            "category": pricing_data.get("category"),
+            "competitors": competitors,
+        }
+
+    def _build_answer_prompt(self, question: str, pricing_data: Dict) -> str:
+        """Build the model prompt from evidence needed for price comparisons."""
+        compact_context = self._compact_pricing_context(pricing_data)
+        return f"""Based on competitor pricing data, answer this question:
+
+QUESTION: {question}
+
+COMPETITOR DATA:
+{json.dumps(compact_context, indent=2)}
+
+Answer concisely using only the supplied competitor data. Include price ranges and sources.
+If the question names one competitor, do not mention competitors not present in the data.
+Format as bullet points with competitor names."""
     
-    def query(self, question: str, category: str = None) -> Dict:
+    def query(
+        self, question: str, category: str = None, competitor: Optional[str] = None
+    ) -> Dict:
         """
         Main Web Agent query method
         """
@@ -880,18 +942,10 @@ class WebAgent:
         
         if category:
             # Category-specific pricing
-            pricing_data = self.scrape_competitor_pricing(category)
+            pricing_data = self.scrape_competitor_pricing(category, competitor=competitor)
             
             # Use LLM to answer based on scraped data
-            prompt = f"""Based on competitor pricing data, answer this question:
-
-QUESTION: {question}
-
-COMPETITOR DATA:
-{json.dumps(pricing_data, indent=2)}
-
-Answer concisely, compare prices across competitors, include price ranges and sources.
-Format as bullet points with competitor names."""
+            prompt = self._build_answer_prompt(question, pricing_data)
 
             try:
                 if self.groq_client:
@@ -905,7 +959,7 @@ Format as bullet points with competitor names."""
                         tracker=quota_tracker,
                         task="web.answer",
                         temperature=0.1,
-                        metadata={"agent": "web", "category": category},
+                        metadata={"agent": "web", "category": category, "competitor": competitor},
                         response_validator=lambda content: bool(content.strip()),
                     )
                     if not result.get("success"):

@@ -18,9 +18,7 @@ from typing import Dict, Iterable, List, Optional
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
-from config.company_data import NEXUSIQ_METRICS
 from config.settings import settings
-from database.setup import init_database
 from database.setup_rag_pipeline import CATEGORIES, CHROMA_DIR, PDF_BASE_DIR, RAGPipelineSetup, bump_ingestion_version
 
 
@@ -170,10 +168,10 @@ def print_json(payload) -> None:
     print(json.dumps(asdict(payload) if hasattr(payload, "__dataclass_fields__") else payload, indent=2))
 
 
-def expected_sql_targets() -> Dict[str, float]:
+def expected_sql_targets() -> Dict[str, object]:
     return {
-        "expected_rows": NEXUSIQ_METRICS["ANNUAL_2024"]["total_transactions"],
-        "expected_revenue": NEXUSIQ_METRICS["ANNUAL_2024"]["total_revenue"],
+        "relational_source": "configured Supabase PostgreSQL DATABASE_URL",
+        "write_policy": "preserve_existing_remote_data",
     }
 
 
@@ -290,33 +288,18 @@ def _index_pdf_with_pipeline(pipeline: RAGPipelineSetup, pdf_path: Path, categor
 
 
 def rebuild_sql(dry_run: bool = False) -> Dict[str, object]:
-    """Rebuild the SQL tables from the company-data source of truth."""
-    if dry_run:
-        return {
-            "dry_run": True,
-            "action": "rebuild_sql",
-            **expected_sql_targets(),
-            "database_url": redact_database_url(settings.database_url),
-        }
-
-    init_database()
-    from database.generate_aligned_data import AlignedDataGenerator
-
-    generator = AlignedDataGenerator()
-    generator.clear_existing_data()
-
-    all_transactions = []
-    for quarter in ["Q1_2024", "Q2_2024", "Q3_2024", "Q4_2024"]:
-        all_transactions.extend(generator.generate_quarter_transactions(quarter))
-
-    generator.insert_transactions(all_transactions)
-    generator.verify_alignment()
-
+    """Retain the compatibility command while refusing remote SQL replacement."""
     return {
-        "dry_run": False,
+        "dry_run": dry_run,
         "action": "rebuild_sql",
-        "rows_inserted": len(all_transactions),
-        "revenue_inserted": round(sum(t["total_amount"] for t in all_transactions), 2),
+        "blocked": True,
+        **expected_sql_targets(),
+        "database_url": redact_database_url(settings.database_url),
+        "message": (
+            "SQL rebuild is disabled in the ingestion pipeline. "
+            "Supabase is the relational source of truth and is preserved; "
+            "use RAG sync/rebuild commands for document ingestion."
+        ),
     }
 
 
@@ -520,10 +503,14 @@ def clear_runtime_caches(dry_run: bool = False) -> Dict[str, object]:
 
 
 def refresh_all(dry_run: bool = False) -> Dict[str, object]:
-    """Refresh SQL data and the RAG index in dependency order."""
+    """Preserve configured SQL facts and refresh the local RAG index."""
     return {
         "dry_run": dry_run,
-        "sql": rebuild_sql(dry_run=dry_run),
+        "sql": {
+            "action": "preserve_configured_sql",
+            **expected_sql_targets(),
+            "database_url": redact_database_url(settings.database_url),
+        },
         "rag": rebuild_rag(dry_run=dry_run),
     }
 

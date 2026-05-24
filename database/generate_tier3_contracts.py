@@ -746,7 +746,7 @@ def main():
     print("├── ⏳ Products & Operations (0/4)")
     print("├── ⏳ Strategic Planning (0/3)")
     print("└── ⏳ HR & Compliance (0/2)")
-    print("\n📈 Total Progress: 14/23 PDFs (60.9%)")
+    print("\n📈 Total Progress: 16/25 PDFs (64.0%)")
     print("\n💡 Next: Run database/generate_tier4_products_ops.py\n")
 
 

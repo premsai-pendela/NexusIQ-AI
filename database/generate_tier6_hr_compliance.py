@@ -700,7 +700,7 @@ def main():
     print("├── ✅ Products & Operations (4/4)")
     print("├── ✅ Strategic Planning (3/3)")
     print("└── ✅ HR & Compliance (2/2)")
-    print("\n📈 Total Progress: 23/23 PDFs (100%)")
+    print("\n📈 Total Progress: 25/25 PDFs (100%)")
 
 
 if __name__ == "__main__":

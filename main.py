@@ -131,7 +131,7 @@ def render_command_center_styles():
             }
             .nexusiq-flow {
                 display: grid;
-                grid-template-columns: repeat(5, minmax(120px, 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
                 gap: 10px;
                 align-items: stretch;
                 margin-top: 12px;
@@ -159,6 +159,7 @@ def render_command_center_styles():
                 padding: 18px 20px;
                 background: #f8fafc;
                 color: #0f172a;
+                margin-top: 14px;
             }
             .nexusiq-answer h4 {
                 margin: 0 0 10px;
@@ -174,7 +175,7 @@ def render_command_center_styles():
                     padding: 22px;
                 }
                 .nexusiq-flow {
-                    grid-template-columns: 1fr;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
                 }
             }
         </style>
@@ -216,7 +217,7 @@ if page == "🏠 Home":
         """
         <div class="nexusiq-shell">
             <div class="nexusiq-hero">
-                <div class="nexusiq-eyebrow">Guided Intelligence Command Center</div>
+                <div class="nexusiq-eyebrow">Intelligence Command Center</div>
                 <h1>NexusIQ AI</h1>
                 <p>
                     A production-minded AI intelligence system that routes business questions across
@@ -224,8 +225,8 @@ if page == "🏠 Home":
                     the answer before showing confidence and citations.
                 </p>
                 <div style="margin-top:16px;">
-                    <div class="nexusiq-chip"><span></span>90,500 transactions indexed</div>
-                    <div class="nexusiq-chip"><span></span>23 business documents indexed</div>
+                    <div class="nexusiq-chip"><span></span>100,000 Supabase transactions</div>
+                    <div class="nexusiq-chip"><span></span>25 business documents indexed</div>
                     <div class="nexusiq-chip"><span></span>SQL + RAG validation</div>
                     <div class="nexusiq-chip"><span></span>Live web intelligence</div>
                 </div>
@@ -237,22 +238,19 @@ if page == "🏠 Home":
 
     # ── CTA button ───────────────────────────────────────────────────────────
     st.markdown("")
-    cta_left, cta_right = st.columns([1, 1])
-    with cta_left:
-        if st.button("Launch Guided Fusion Demo", type="primary", use_container_width=True):
-            launch_fusion("Validate Q4 Electronics revenue across SQL and PDF reports.")
-    with cta_right:
-        if st.button("Open Command Center", use_container_width=True):
-            launch_fusion(show_command_center=True)
+    cta_left, cta_center, cta_right = st.columns([1, 2, 1])
+    with cta_center:
+        if st.button("Ask NexusIQ", type="primary", use_container_width=True):
+            launch_fusion()
 
     st.divider()
 
     # ── Metrics strip ────────────────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
     with m1:
-        st.metric("Transactions Indexed", "90,500", "SQL source")
+        st.metric("Transactions Indexed", "100,000", "Supabase SQL")
     with m2:
-        st.metric("Business Docs", "23", "BM25 + vector RAG")
+        st.metric("Business Docs", "25", "BM25 + vector RAG")
     with m3:
         st.metric("Agents Active", "4", "SQL, RAG, Web, Fusion")
     with m4:
@@ -260,38 +258,30 @@ if page == "🏠 Home":
 
     st.divider()
 
-    st.markdown("### Guided Demo Path")
-    demo_col, answer_col = st.columns([1.12, 0.88])
-    with demo_col:
-        st.markdown(
-            """
-            <div class="nexusiq-flow">
-                <div class="nexusiq-flow-step"><b>Question</b><small>User clicks a proven business prompt.</small></div>
-                <div class="nexusiq-flow-step"><b>Router</b><small>System chooses SQL, RAG, Web, or multi-source fusion.</small></div>
-                <div class="nexusiq-flow-step"><b>Agents</b><small>Independent agents run in parallel where possible.</small></div>
-                <div class="nexusiq-flow-step"><b>Validation</b><small>Numbers are reconciled across exact and document sources.</small></div>
-                <div class="nexusiq-flow-step"><b>Answer</b><small>Final response includes confidence, route, and citations.</small></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with answer_col:
-        st.markdown(
-            """
-            <div class="nexusiq-answer">
-                <h4>Featured validation preview</h4>
-                <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
-                <p><b>Expected result:</b> SQL and RAG validate Q4 Electronics revenue at about <b>$15.2M</b>, with source difference and confidence shown in the answer.</p>
-                <p><b>Route:</b> SQL Agent + RAG Agent → Fusion Agent → validated answer.</p>
-                <p><b>Sources:</b> sales_transactions, Q4 2024 Financial Report.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown("### How Answers Are Built")
+    st.markdown(
+        """
+        <div class="nexusiq-flow">
+            <div class="nexusiq-flow-step"><b>Question</b><small>You ask a business question in your own words.</small></div>
+            <div class="nexusiq-flow-step"><b>Router</b><small>System chooses SQL, RAG, Web, or multi-source fusion.</small></div>
+            <div class="nexusiq-flow-step"><b>Agents</b><small>Independent agents run in parallel where possible.</small></div>
+            <div class="nexusiq-flow-step"><b>Validation</b><small>Numbers are reconciled across exact and document sources.</small></div>
+            <div class="nexusiq-flow-step"><b>Answer</b><small>Final response includes confidence, route, and citations.</small></div>
+        </div>
+        <div class="nexusiq-answer">
+            <h4>Featured validation preview</h4>
+            <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
+            <p><b>Expected result:</b> SQL and RAG validate Q4 Electronics revenue at about <b>$31.7M</b>, with source difference and confidence shown in the answer.</p>
+            <p><b>Route:</b> SQL Agent + RAG Agent → Fusion Agent → validated answer.</p>
+            <p><b>Sources:</b> sales_transactions, Q4 2024 Financial Report.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
-    st.markdown("### Guided Demo Prompts")
+    st.markdown("### Starter Questions")
     prompt_cols = st.columns(3)
     for idx, prompt in enumerate(COMMAND_CENTER_PROMPTS):
         with prompt_cols[idx % 3]:
@@ -304,7 +294,7 @@ if page == "🏠 Home":
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button("Run this demo", key=f"home_prompt_{idx}", use_container_width=True):
+            if st.button("Run this question", key=f"home_prompt_{idx}", use_container_width=True):
                 launch_fusion(prompt["question"])
 
     st.divider()
@@ -361,8 +351,8 @@ if page == "🏠 Home":
     )
     col_l2, col_c2, col_r2 = st.columns([1.5, 2, 1.5])
     with col_c2:
-        if st.button("Start with the strongest validation demo", type="primary", use_container_width=True):
-            launch_fusion("Validate Q4 Electronics revenue across SQL and PDF reports.")
+        if st.button("Ask NexusIQ", type="primary", use_container_width=True, key="bottom_ask_nexusiq"):
+            launch_fusion()
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  FUSION AGENT PAGE

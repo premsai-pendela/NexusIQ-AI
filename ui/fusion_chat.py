@@ -61,10 +61,10 @@ INSIGHTS = [
     "⚡ **Did You Know?** Simple queries complete in under 5 seconds",
     "🔄 **Did You Know?** We auto-switch models if one hits quota limits",
     "🔒 **Did You Know?** All SQL queries are read-only — your data stays safe",
-    "📊 **Did You Know?** RAG Agent searches 23 business documents",
+    "📊 **Did You Know?** RAG Agent searches 25 business documents",
     "🎯 **Did You Know?** Web Agent scrapes live competitor pricing",
     "🚀 **Did You Know?** Circuit breaker skips failed models instantly",
-    "💰 **Did You Know?** Database tracks $139M+ in total revenue",
+    "💰 **Did You Know?** Supabase tracks $175.16M in 2024 revenue",
     "🌐 **Did You Know?** We support 5 regions: East, West, North, South, Central",
     "🛒 **Did You Know?** Web Agent supports 5 categories: Electronics, Home, Sports, Food, Clothing",
     "⏱️ **Did You Know?** First query may be slower due to model warm-up",
@@ -531,8 +531,8 @@ def render_chart_builder(msg_id: str, df):
 #  ✨ NEW: FUSION-SPECIFIC UI COMPONENTS
 # ═══════════════════════════════════════════════════════
 
-def render_guided_command_center():
-    """Render the guided first screen for the command-center demo."""
+def render_command_center_welcome():
+    """Render the guided question center without auto-running on entry."""
     st.markdown(
         """
         <style>
@@ -577,7 +577,7 @@ def render_guided_command_center():
             }
             .fusion-agent-flow {
                 display: grid;
-                grid-template-columns: repeat(5, minmax(116px, 1fr));
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
                 gap: 10px;
                 margin: 16px 0 4px;
             }
@@ -637,7 +637,7 @@ def render_guided_command_center():
                     padding: 20px;
                 }
                 .fusion-agent-flow {
-                    grid-template-columns: 1fr;
+                    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
                 }
             }
         </style>
@@ -648,15 +648,15 @@ def render_guided_command_center():
     st.markdown(
         """
         <div class="fusion-command">
-            <h2>Guided Intelligence Command Center</h2>
+            <h2>Intelligence Command Center</h2>
             <p>
-                Start with a guided question that proves the system is more than a chatbot:
-                it routes across structured data, business documents, and web sources, then
-                explains how trustworthy the answer is.
+                Choose a guided question or ask your own below. NexusIQ routes across
+                structured data, business documents, and live web sources, then explains
+                how trustworthy the answer is.
             </p>
             <div class="fusion-chip-row">
-                <div class="fusion-chip">90,500 transactions</div>
-                <div class="fusion-chip">23 business PDFs</div>
+                <div class="fusion-chip">100,000 Supabase transactions</div>
+                <div class="fusion-chip">25 business PDFs</div>
                 <div class="fusion-chip">Hybrid BM25 + vector RAG</div>
                 <div class="fusion-chip">SQL + RAG validation</div>
                 <div class="fusion-chip">Live web pricing</div>
@@ -666,34 +666,26 @@ def render_guided_command_center():
         unsafe_allow_html=True,
     )
 
-    flow_col, preview_col = st.columns([1.1, 0.9])
-    with flow_col:
-        st.markdown(
-            """
-            <div class="fusion-agent-flow">
-                <div class="fusion-agent-step"><b>SQL Agent</b><small>Queries exact transaction facts.</small></div>
-                <div class="fusion-agent-step"><b>RAG Agent</b><small>Retrieves from indexed business docs.</small></div>
-                <div class="fusion-agent-step"><b>Web Agent</b><small>Checks live competitor context.</small></div>
-                <div class="fusion-agent-step"><b>Fusion Agent</b><small>Reconciles outputs and conflicts.</small></div>
-                <div class="fusion-agent-step"><b>Validated Answer</b><small>Shows confidence, route, and sources.</small></div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with preview_col:
-        st.markdown(
-            """
-            <div class="fusion-preview">
-                <h4>Featured answer preview</h4>
-                <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
-                <p><b>Expected result:</b> SQL and RAG validate about <b>$15.2M</b>, then show source difference and confidence.</p>
-                <p><b>Evidence:</b> sales_transactions + Q4 2024 Financial Report.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    st.markdown(
+        """
+        <div class="fusion-agent-flow">
+            <div class="fusion-agent-step"><b>SQL Agent</b><small>Queries exact transaction facts.</small></div>
+            <div class="fusion-agent-step"><b>RAG Agent</b><small>Retrieves from indexed business docs.</small></div>
+            <div class="fusion-agent-step"><b>Web Agent</b><small>Checks live competitor context.</small></div>
+            <div class="fusion-agent-step"><b>Fusion Agent</b><small>Reconciles outputs and conflicts.</small></div>
+            <div class="fusion-agent-step"><b>Validated Answer</b><small>Shows confidence, route, and sources.</small></div>
+        </div>
+        <div class="fusion-preview">
+            <h4>Featured answer preview</h4>
+            <p><b>Question:</b> Validate Q4 Electronics revenue across SQL and PDF reports.</p>
+            <p><b>Expected result:</b> SQL and RAG validate about <b>$31.7M</b>, then show source difference and confidence.</p>
+            <p><b>Evidence:</b> sales_transactions + Q4 2024 Financial Report.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("### Run a Guided Demo")
+    st.markdown("### Starter Questions")
     prompt_cols = st.columns(3)
     for idx, prompt in enumerate(RECRUITER_DEMO_PROMPTS):
         with prompt_cols[idx % 3]:
@@ -706,12 +698,12 @@ def render_guided_command_center():
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button("Run prompt", key=f"command_center_prompt_{idx}", use_container_width=True):
+            if st.button("Run this question", key=f"command_center_prompt_{idx}", use_container_width=True):
                 st.session_state.pending_suggestion = prompt["question"]
                 st.session_state.show_fusion_command_center = False
                 st.rerun()
 
-    st.info("Use Auto routing for the best demo path. Manual SQL, RAG, or Web modes are available in the sidebar for deeper inspection.")
+    st.info("Choose a starter question above, or type your own below. Auto routing selects the most relevant source path.")
 
 def render_routing_badge(source_type: str):
     """
@@ -1530,7 +1522,7 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
     
     with st.sidebar:
-        if st.button("🧭 Show Demo Guide", key="show_demo_guide_top", use_container_width=True):
+        if st.button("🧭 View Guided Questions", key="show_demo_guide_top", use_container_width=True):
             st.session_state.show_fusion_command_center = True
             st.session_state.scroll_target = None
             st.session_state.pending_query_to_process = None
@@ -1574,6 +1566,7 @@ def run_fusion_chat():
                 "• customer_id\n• name, email, region\n"
                 "• signup_date\n• total_purchases"
             )
+            st.caption("Customer and inventory dimensions are defined but not yet populated in Supabase.")
         
         st.markdown("---")
         st.subheader("💡 Example Questions")
@@ -1657,7 +1650,7 @@ def run_fusion_chat():
         st.session_state.scroll_target = None
         st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
         _scroll_to_command_center()
-        render_guided_command_center()
+        render_command_center_welcome()
         st.stop()
     
     total_messages = len(st.session_state.chat_messages)
@@ -1951,7 +1944,7 @@ def run_fusion_chat():
         st.markdown("---")
         st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
         _scroll_to_command_center()
-        render_guided_command_center()
+        render_command_center_welcome()
 
 # Run the app
 if __name__ == "__main__":

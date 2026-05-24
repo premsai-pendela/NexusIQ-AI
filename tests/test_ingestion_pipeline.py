@@ -1,11 +1,11 @@
 import json
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
-from sqlalchemy import create_engine, text
-
+from config.settings import Settings
 from database.ingestion_pipeline import (
     add_single_pdf,
     clear_runtime_caches,
@@ -18,6 +18,7 @@ from database.ingestion_pipeline import (
     save_rag_manifest,
     sync_rag,
 )
+from database.setup import require_destructive_sql_rebuild_authorization
 from database.setup_rag_pipeline import INGESTION_VERSION_FILE, bump_ingestion_version
 
 
@@ -36,28 +37,36 @@ class IngestionPipelineTests(unittest.TestCase):
         self.assertEqual(inventory.by_category["missing"], 0)
         self.assertEqual(inventory.missing_categories, ["missing"])
 
-    def test_inspect_sql_reports_rows_and_revenue_for_sqlite(self):
-        with TemporaryDirectory() as tmp:
-            db_path = Path(tmp) / "sales.db"
-            engine = create_engine(f"sqlite:///{db_path}")
-            with engine.begin() as conn:
-                conn.execute(text("CREATE TABLE sales_transactions (total_amount REAL)"))
-                conn.execute(text("INSERT INTO sales_transactions VALUES (10.50), (20.25)"))
-            engine.dispose()
+    def test_inspect_sql_reports_rows_and_revenue_from_configured_postgresql(self):
+        engine = MagicMock()
+        connection = engine.connect.return_value.__enter__.return_value
+        connection.execute.return_value.fetchone.return_value = (100000, 175164502.35)
 
-            inventory = inspect_sql(f"sqlite:///{db_path}")
+        with patch("database.ingestion_pipeline.create_engine", return_value=engine):
+            inventory = inspect_sql("postgresql://user:secret@example.com:5432/postgres")
 
         self.assertTrue(inventory.available)
-        self.assertEqual(inventory.rows, 2)
-        self.assertAlmostEqual(inventory.revenue, 30.75)
+        self.assertEqual(inventory.rows, 100000)
+        self.assertAlmostEqual(inventory.revenue, 175164502.35)
+        engine.dispose.assert_called_once()
 
-    def test_sql_dry_run_uses_company_targets_without_writing(self):
+    def test_sql_rebuild_is_blocked_to_preserve_supabase_truth(self):
         result = rebuild_sql(dry_run=True)
 
         self.assertTrue(result["dry_run"])
         self.assertEqual(result["action"], "rebuild_sql")
-        self.assertEqual(result["expected_rows"], expected_sql_targets()["expected_rows"])
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["write_policy"], expected_sql_targets()["write_policy"])
         self.assertIn("redacted", result["database_url"])
+
+    def test_settings_reject_sqlite_relational_sources(self):
+        with self.assertRaises(ValueError):
+            Settings(database_url="sqlite:///data/sales.db", _env_file=None)
+
+    def test_destructive_generator_requires_explicit_operator_opt_in(self):
+        with patch.dict(os.environ, {"NEXUSIQ_ALLOW_SQL_REBUILD": ""}):
+            with self.assertRaises(RuntimeError):
+                require_destructive_sql_rebuild_authorization()
 
     def test_redact_database_url_hides_credentials(self):
         url = "postgresql://user:secret@example.com:5432/postgres"

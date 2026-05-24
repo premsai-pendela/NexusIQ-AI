@@ -2,6 +2,7 @@
 NexusIQ AI — Configuration Management
 """
 import os
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -45,8 +46,20 @@ class Settings(BaseSettings):
     # Rate limiting
     max_requests_per_minute: int = 25  # Stay under 30 RPM limit
     
-    # Database (defaults to SQLite for zero-setup deployment)
+    # Relational source: PostgreSQL only. Production/local demo configuration
+    # supplies the Supabase URL via DATABASE_URL; SQLite snapshots are retired.
     database_url: str = "postgresql://nagapremsaipendela@localhost:5432/nexusiq_db"
+
+    @field_validator("database_url")
+    @classmethod
+    def relational_source_must_be_postgresql(cls, value: str) -> str:
+        """Do not silently fall back to a stale local SQLite sales snapshot."""
+        if not value.lower().startswith(("postgresql://", "postgresql+")):
+            raise ValueError(
+                "DATABASE_URL must be a PostgreSQL/Supabase connection URL; "
+                "local SQLite relational sources are retired."
+            )
+        return value
     
     # Vector Store (ChromaDB)
     chroma_persist_directory: str = "./data/chroma_db"

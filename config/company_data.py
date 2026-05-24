@@ -1,6 +1,9 @@
 """
-NexusIQ Corporation - Single Source of Truth
-All numbers referenced across SQL database and PDF reports
+Legacy deterministic SQL-generation targets.
+
+The application relational source of truth is the configured Supabase
+PostgreSQL DATABASE_URL. These fixtures remain only for an explicitly
+authorized synthetic rebuild workflow.
 """
 
 NEXUSIQ_METRICS = {
@@ -239,18 +242,18 @@ NEXUSIQ_METRICS = {
     }
 }
 
-# Calculate annual totals
+# Calculate annual totals for the legacy fixture only; runtime facts come from Supabase.
 NEXUSIQ_METRICS["ANNUAL_2024"] = {
     "total_revenue": sum([
         NEXUSIQ_METRICS["Q1_2024"]["total_revenue"],
         NEXUSIQ_METRICS["Q2_2024"]["total_revenue"],
         NEXUSIQ_METRICS["Q3_2024"]["total_revenue"],
         NEXUSIQ_METRICS["Q4_2024"]["total_revenue"]
-    ]),  # $150.9M
+    ]),
     "total_transactions": sum([
         NEXUSIQ_METRICS["Q1_2024"]["total_transactions"],
         NEXUSIQ_METRICS["Q2_2024"]["total_transactions"],
         NEXUSIQ_METRICS["Q3_2024"]["total_transactions"],
         NEXUSIQ_METRICS["Q4_2024"]["total_transactions"]
-    ])  # 90,500 (we'll generate 100K for full year including some outside Q boundaries)
+    ])
 }

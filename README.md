@@ -25,7 +25,7 @@ NexusIQ AI is a **multi-agent business intelligence system** that answers comple
 
 | Source | What it knows |
 |--------|--------------|
-| 🗄️ **SQL Database** | 90,500 sales transactions across 2024 — revenue, products, regions, payment methods |
+| 🗄️ **SQL Database** | 100,000 Supabase sales transactions across 2024 — revenue, products, regions, payment methods |
 | 📄 **PDF Documents** | 25 internal documents — quarterly reports, strategic plans, compliance policies |
 | 🌐 **Live Web** | Real-time competitor pricing scraped from Newegg, IKEA, Campmor, Swanson |
 
@@ -183,15 +183,15 @@ Create `.env`:
 ```env
 GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
-DATABASE_URL=postgresql://user:password@host:5432/postgres
+DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@POOLER_HOST:6543/postgres
 ```
 
-Inspect or refresh local data:
+Inspect the Supabase relational source or refresh local document retrieval data:
 
 ```bash
 python -m database.ingestion_pipeline status
 python -m database.ingestion_pipeline refresh-all --dry-run
-python -m database.ingestion_pipeline refresh-all
+python -m database.ingestion_pipeline sync-rag
 ```
 
 Run the app:
@@ -253,7 +253,7 @@ python -m observability.inspect_traces --latest
 tail -n 30 data/query_traces.jsonl
 
 # Inspect LLM task usage generated across SQL, RAG, Fusion, and Web
-tail -n 20 data/llm_task_ledger.jsonl
+python -m observability.inspect_llm_usage
 
 # Run all 105 queries
 python run_tests.py
@@ -291,10 +291,10 @@ NexusIQ keeps structured sales data, business PDFs, and the ChromaDB vector inde
 # Show SQL row counts, PDF inventory, Chroma document count, and cache files
 python -m database.ingestion_pipeline status
 
-# Preview a full refresh without writing SQL or Chroma files
+# Preview document-index refresh without writing Chroma files
 python -m database.ingestion_pipeline refresh-all --dry-run
 
-# Rebuild aligned SQL sales data from config/company_data.py
+# SQL facts are protected: this reports that Supabase replacement is disabled
 python -m database.ingestion_pipeline rebuild-sql
 
 # Rebuild the ChromaDB document index from data/pdfs/
@@ -307,7 +307,7 @@ python -m database.ingestion_pipeline sync-rag
 # Incrementally add or replace one PDF without rebuilding every document
 python -m database.ingestion_pipeline add-pdf --path data/pdfs/01_financial/example.pdf --category 01_financial
 
-# Rebuild SQL first, then rebuild RAG
+# Preserve Supabase SQL facts and rebuild local RAG
 python -m database.ingestion_pipeline refresh-all
 
 # Remove local runtime caches only
@@ -316,7 +316,7 @@ python -m database.ingestion_pipeline clear-caches
 
 Use `sync-rag` for everyday document folder updates. It hashes PDFs, skips unchanged files, updates new or edited PDFs, removes chunks for deleted PDFs, and bumps the ingestion version only when something changed. Use `rebuild-rag` when you want a clean full reset from all PDFs.
 
-`refresh-all` deliberately rebuilds generated local state. Do not commit runtime/cache outputs from `data/chroma_db/`, including `data/chroma_db/ingestion_version.json` and `data/chroma_db/pdf_manifest.json`, `data/web_cache.json`, `data/quota_tracker.json`, `data/llm_task_ledger.jsonl`, `data/query_traces.jsonl`, `traces/`, `eval-reports/`, or `.gstack/` unless you intentionally want to update a tracked baseline.
+`DATABASE_URL` is the only supported relational data source and should point to Supabase PostgreSQL. `refresh-all` preserves those SQL facts and rebuilds only generated local RAG state. Do not commit runtime/cache outputs from `data/chroma_db/`, including `data/chroma_db/ingestion_version.json` and `data/chroma_db/pdf_manifest.json`, `data/web_cache.json`, `data/quota_tracker.json`, `data/llm_task_ledger.jsonl`, `data/query_traces.jsonl`, `traces/`, `eval-reports/`, or `.gstack/` unless you intentionally want to update a tracked baseline.
 
 ---
 
@@ -375,8 +375,8 @@ What is the best product?                  → Auto-resolves to "by revenue"
 
 | Attribute | Value |
 |-----------|-------|
-| Transactions | 90,500 |
-| Revenue | ~$150.9M |
+| Transactions | 100,000 |
+| Revenue | ~$175.16M |
 | Time Period | Jan 2024 – Dec 2024 |
 | Regions | East, West, North, South, Central |
 | Categories | Electronics, Clothing, Food, Home, Sports |

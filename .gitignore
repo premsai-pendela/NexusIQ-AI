@@ -15,11 +15,12 @@ ENV/
 
 # Data
 data/synthetic/*.csv
-# SQLite DB and ChromaDB are committed for zero-setup deployment
-# Keep tracked baseline ChromaDB files, but hide new local segment folders.
+# ChromaDB stores the local PDF retrieval index; relational sales facts come
+# from the configured Supabase PostgreSQL DATABASE_URL only.
 data/chroma_db/
 data/chroma_db_local/
-# data/sales.db
+data/sales.db
+data/nexusiq.db
 
 # IDE
 .vscode/
@@ -36,7 +37,6 @@ data/web_cache.json
 data/quota_tracker.json
 data/llm_task_ledger.jsonl
 data/query_traces.jsonl
-data/nexusiq.db
 
 # Test reports (auto-generated)
 .gstack/

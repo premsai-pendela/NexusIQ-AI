@@ -8,6 +8,7 @@ from tempfile import TemporaryDirectory
 from agents.fusion_agent import FusionAgent
 from agents.rag_agent import RAGAgent
 from agents.web_agent import WebAgent
+from config.data_inventory import can_web_answer
 from evals.offline_eval import (
     OFFLINE_EVAL_CASES,
     OfflineEvaluationHarness,
@@ -28,6 +29,7 @@ from evals.golden_eval import (
 )
 from evals.refresh_golden_truth import update_cases
 from observability.inspect_traces import format_trace_summary, get_trace_diagnostics
+from observability.inspect_llm_usage import format_usage_report, summarize_usage
 from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
 from ui.fusion_chat import (
@@ -70,8 +72,8 @@ class FusionValidationTests(unittest.TestCase):
     def test_transaction_count_metadata_does_not_validate_pdf_revenue(self):
         sql_result = {
             "success": True,
-            "answer": "The query analyzed 90,500 transactions.",
-            "results": [{"transactions_analyzed": 90_500}],
+            "answer": "The query analyzed 100,000 transactions.",
+            "results": [{"transactions_analyzed": 100_000}],
         }
         rag_result = {
             "success": True,
@@ -282,6 +284,7 @@ class LLMGatewayTests(unittest.TestCase):
             self.assertEqual(events[0]["model"], "test-model")
             self.assertEqual(events[0]["status"], "success")
             self.assertIn("prompt_hash", events[0])
+            self.assertIn("invocation_id", events[0])
             self.assertNotIn("secret-ish prompt", ledger_path.read_text())
 
     def test_gateway_skips_unavailable_model_then_falls_back(self):
@@ -378,6 +381,8 @@ class LLMGatewayTests(unittest.TestCase):
             self.assertEqual(result["models_tried"][0]["status"], "❌ INVALID RESPONSE")
             events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
             self.assertEqual([event["status"] for event in events], ["failed", "success"])
+            self.assertEqual(events[0]["failure_kind"], "invalid_response")
+            self.assertEqual(events[0]["invocation_id"], events[1]["invocation_id"])
             self.assertIn("task validation", events[0]["error"])
 
 
@@ -520,12 +525,90 @@ class RoutingAndInputTests(unittest.TestCase):
         agent = WebAgent.__new__(WebAgent)
         agent.groq_client = object()
         agent.llm_gateway = RecordingGateway("Competitor summary", "Groq Llama")
-        agent.scrape_competitor_pricing = lambda category: {"competitors": [], "category": category}
+        agent.scrape_competitor_pricing = lambda category, competitor=None: {"competitors": [], "category": category}
 
         result = agent.query("Compare electronics prices", category="Electronics")
 
         self.assertEqual(result["answer"], "Competitor summary")
         self.assertEqual(agent.llm_gateway.calls[0]["task"], "web.answer")
+
+    def test_known_web_competitor_infers_supported_category(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        calls = []
+        agent.web_agent = type("WebRecorder", (), {
+            "query": lambda self, question, category=None, competitor=None: calls.append(
+                (category, competitor)
+            ) or {
+                "answer": "Goal Zero products available.",
+                "raw_data": {"competitors": [{"competitor": "Goal Zero", "products": [{"price": "$1"}]}]},
+                "category": category,
+            }
+        })()
+
+        result = agent._run_web_query("What Goal Zero products and prices are available for all categories?")
+
+        self.assertEqual(result["category"], "electronics")
+        self.assertEqual(result["answer"], "Goal Zero products available.")
+        self.assertEqual(calls, [("electronics", "Goal Zero")])
+
+    def test_known_web_competitor_is_supported_by_fallback_routing(self):
+        result = can_web_answer("What Goal Zero products and prices are available?")
+        ikea_result = can_web_answer("What IKEA products and prices are available?")
+
+        self.assertTrue(result["can_answer"])
+        self.assertEqual(result["suggested_category"], "electronics")
+        self.assertEqual(ikea_result["suggested_category"], "home")
+
+    def test_brand_specific_scrape_skips_other_competitors_in_category(self):
+        agent = WebAgent.__new__(WebAgent)
+        called = []
+        agent._scrape_newegg = lambda category: called.append("Newegg") or {
+            "competitor": "Newegg", "products": [{"price": "$100"}]
+        }
+        agent._scrape_goalzero = lambda category: called.append("Goal Zero") or {
+            "competitor": "Goal Zero", "products": [{"price": "$20"}]
+        }
+
+        import asyncio
+        results, statuses = asyncio.run(
+            agent.scrape_competitor_pricing_async("electronics", competitor="Goal Zero")
+        )
+
+        self.assertEqual(called, ["Goal Zero"])
+        self.assertEqual([item["competitor"] for item in results], ["Goal Zero"])
+        self.assertEqual([item["name"] for item in statuses], ["Goal Zero"])
+
+    def test_web_answer_prompt_retains_pricing_evidence_and_prunes_scraper_metadata(self):
+        agent = WebAgent.__new__(WebAgent)
+        pricing_data = {
+            "category": "electronics",
+            "timestamp": "2026-05-23T00:00:00",
+            "scraper_statuses": [{"name": "Goal Zero", "time": 0.8}],
+            "competitors": [{
+                "competitor": "Goal Zero",
+                "products": [{
+                    "name": "Portable Power Station",
+                    "price": "$499.95",
+                    "compare_at_price": "$599.95",
+                    "source": "Goal Zero",
+                    "sku": "SKU-123",
+                    "url": "https://unused.example/product",
+                    "image": "https://unused.example/image.jpg",
+                    "brand": "Unused Metadata",
+                }],
+            }],
+        }
+
+        prompt = agent._build_answer_prompt("Compare electronics prices", pricing_data)
+
+        self.assertIn("Portable Power Station", prompt)
+        self.assertIn("$499.95", prompt)
+        self.assertIn("$599.95", prompt)
+        self.assertIn("Goal Zero", prompt)
+        self.assertNotIn("SKU-123", prompt)
+        self.assertNotIn("unused.example", prompt)
+        self.assertNotIn("scraper_statuses", prompt)
+        self.assertNotIn("timestamp", prompt)
 
     def test_previous_answer_message_marks_answer_as_cache_result(self):
         previous = {
@@ -730,6 +813,51 @@ class GoldenEvalTests(unittest.TestCase):
 
 
 class ObservabilityTests(unittest.TestCase):
+    def test_llm_usage_report_groups_fallbacks_cost_and_cache_hits(self):
+        events = [
+            {
+                "invocation_id": "route-1",
+                "task": "fusion.route",
+                "model": "gemini",
+                "status": "failed",
+                "failure_kind": "invalid_response",
+                "latency_s": 0.5,
+                "input_tokens_estimate": 100,
+                "output_tokens_estimate": 0,
+                "total_tokens_estimate": 100,
+            },
+            {
+                "invocation_id": "route-1",
+                "task": "fusion.route",
+                "model": "groq",
+                "status": "success",
+                "latency_s": 1.0,
+                "input_tokens_estimate": 100,
+                "output_tokens_estimate": 20,
+                "total_tokens_estimate": 120,
+            },
+            {
+                "task": "web.answer",
+                "model": "groq",
+                "status": "success",
+                "latency_s": 2.0,
+                "input_tokens_estimate": 300,
+                "output_tokens_estimate": 50,
+                "total_tokens_estimate": 350,
+            },
+        ]
+
+        summary = summarize_usage(events, [{"from_cache": True}, {"from_cache": False}])
+        report = format_usage_report(summary)
+
+        self.assertEqual(summary["fallback_invocations"], 1)
+        self.assertEqual(summary["invalid_responses"], 1)
+        self.assertEqual(summary["cache_hits_observed"], 1)
+        self.assertEqual(summary["tokens"], 570)
+        self.assertEqual(summary["ungrouped_legacy_attempts"], 1)
+        self.assertIn("web.answer", report)
+        self.assertIn("token savings are not estimable", report)
+
     def test_trace_session_writes_local_json_without_llm_calls(self):
         previous_dir = os.environ.get("NEXUSIQ_TRACE_DIR")
         previous_index = os.environ.get("NEXUSIQ_TRACE_INDEX_PATH")

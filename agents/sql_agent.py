@@ -146,7 +146,7 @@ class SQLAgent:
         schema = """
     I am using PostgreSQL 15. Here is my database schema:
 
-    TABLE: sales_transactions (90,500 rows)
+    TABLE: sales_transactions (100,000 rows in configured Supabase PostgreSQL source)
     • id (INTEGER, PRIMARY KEY)
     • transaction_date (TIMESTAMP)
     • region (VARCHAR): 'East', 'West', 'North', 'South', 'Central'

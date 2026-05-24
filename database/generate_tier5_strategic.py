@@ -819,7 +819,7 @@ def main():
     print("├── ✅ Products & Operations (4/4)")
     print("├── ✅ Strategic Planning (3/3)")
     print("└── ⏳ HR & Compliance (0/2)")
-    print("\n📈 Total Progress: 21/23 PDFs (91.3%)")
+    print("\n📈 Total Progress: 23/25 PDFs (92.0%)")
     print("\n💡 FINAL TIER: Run database/generate_tier6_hr_compliance.py\n")
 
 

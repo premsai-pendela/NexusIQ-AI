@@ -45,6 +45,19 @@ class FusionAgent:
     """
     Orchestrates SQL Agent, RAG Agent, and Web Agent for cross-source intelligence
     """
+
+    WEB_CATEGORIES = ("electronics", "clothing", "home", "food", "sports")
+    WEB_COMPETITOR_CATEGORIES = {
+        "goal zero": "electronics",
+        "newegg": "electronics",
+        "ikea": "home",
+        "taylor stitch": "clothing",
+        "chubbies": "clothing",
+        "finisterre": "clothing",
+        "swanson": "food",
+        "nativepath": "food",
+        "campmor": "sports",
+    }
     
     def __init__(self):
         logger.info("Initializing Fusion Agent...")
@@ -286,7 +299,7 @@ Standalone question:"""
 
 ## Sources
 
-**SQL** — 90,500 sales transactions for 2024 (Q1-Q4). Columns: date, region, category,
+**SQL** — 100,000 Supabase sales transactions for 2024 (Q1-Q4). Columns: date, region, category,
 product, quantity, unit_price, total_amount, payment_method, customer_id.
 ✅ Use for: revenue, counts, rankings, trends, growth rates, quarterly breakdowns,
    "by quarter", "each quarter", "quarter over quarter", "year-over-year by quarter"
@@ -295,14 +308,15 @@ product, quantity, unit_price, total_amount, payment_method, customer_id.
    if the question asks for a quarterly breakdown SQL must be included)
 ❌ Skip for: policies, strategies, contracts, competitor pricing
 
-**RAG** — 23 PDF documents: Q1-Q4 2024 performance reports, return/privacy/compliance
+**RAG** — 25 PDF documents: Q1-Q4 2024 financial reports, operations/compliance
 policies, expansion plans, budget, digital wallet initiative, vendor contracts.
 ✅ Use for: policies, strategies, plans, performance narratives, compliance
    (also use alongside SQL for quarterly/revenue questions — PDF reports contain
    the same revenue figures, enabling cross-validation)
 ❌ Skip for: granular row-level transaction data
 
-**Web** — live competitor pricing scraped from Newegg, IKEA, Campmor, Swanson.
+**Web** — live competitor pricing scraped from Newegg, Goal Zero, IKEA, Taylor Stitch,
+Chubbies, Finisterre, Swanson, NativePath, and Campmor.
 ✅ Use for: competitor prices, market pricing comparisons
 ❌ Skip for: anything about our own data
 
@@ -474,6 +488,27 @@ Reply with ONLY this JSON (no extra text):
                 'source': 'PDF Documents'
             }
     
+    @classmethod
+    def _infer_web_category(cls, question: str) -> Optional[str]:
+        """Resolve category from a known competitor or explicit category phrase."""
+        q = str(question or "").lower()
+        for competitor, category in cls.WEB_COMPETITOR_CATEGORIES.items():
+            if competitor in q:
+                return category
+        for category in cls.WEB_CATEGORIES:
+            if category in q:
+                return category
+        return None
+
+    @classmethod
+    def _infer_web_competitor(cls, question: str) -> Optional[str]:
+        """Return the canonical competitor named in the question, if configured."""
+        q = str(question or "").lower()
+        for competitor in cls.WEB_COMPETITOR_CATEGORIES:
+            if competitor in q:
+                return competitor.title()
+        return None
+
     def _run_web_query(self, question: str) -> Dict:
         """✅ NEW: Run Web Agent and capture results"""
         
@@ -481,15 +516,9 @@ Reply with ONLY this JSON (no extra text):
         start = time.time()
         
         try:
-            # Detect category from question
-            category = None
-            categories = ['electronics', 'clothing', 'home', 'food', 'sports']
-            for cat in categories:
-                if cat in question.lower():
-                    category = cat
-                    break
-            
-            result = self.web_agent.query(question, category=category)
+            category = self._infer_web_category(question)
+            competitor = self._infer_web_competitor(question)
+            result = self.web_agent.query(question, category=category, competitor=competitor)
             elapsed = time.time() - start
             
             has_answer = bool(result.get('answer'))

@@ -43,6 +43,7 @@ import json
 import io
 import re
 import threading
+import streamlit.components.v2 as components_v2
 from datetime import datetime
 from pathlib import Path
 
@@ -1384,50 +1385,59 @@ def add_to_history(question, result, execution_time, source_filter: str = "Auto"
 #  PAGE LAYOUT
 # ═══════════════════════════════════════════════════════
 
+_SCROLL_COMPONENT = components_v2.component(
+    "nexusiq_scroll",
+    js="""
+        export default function(component) {
+            const data = component.data || {};
+            const d = document;
 
-def _scroll_to_anchor(anchor_id: str, offset: int = 16):
-    import streamlit.components.v1 as components
-    script = """
-        <script>
-            function scrollToAnchor() {
-                var d = window.parent.document;
-                var anchor = d.getElementById('__ANCHOR_ID__');
-                if (!anchor) return false;
+            function scrollToTarget() {
+                const main = d.querySelector('section.stMain')
+                    || d.querySelector('[data-testid="stAppScrollToBottomContainer"]')
+                    || d.querySelector('[data-testid="stAppViewContainer"]')
+                    || d.scrollingElement
+                    || d.documentElement;
 
-                var scrollers = Array.from(d.querySelectorAll('*')).filter(function(el) {
-                    return el.scrollHeight > el.clientHeight + 20;
-                });
-                var main = scrollers.find(function(el) {
-                    return el.matches && (
-                        el.matches('section.stMain') ||
-                        el.getAttribute('data-testid') === 'stAppScrollToBottomContainer'
-                    );
-                }) || d.scrollingElement || d.documentElement;
+                if (data.top) {
+                    if (main && main.scrollTo) {
+                        main.scrollTo({top: 0, behavior: 'smooth'});
+                    } else {
+                        window.scrollTo({top: 0, behavior: 'smooth'});
+                    }
+                    return;
+                }
 
-                var mainRect = main.getBoundingClientRect ? main.getBoundingClientRect() : {top: 0};
-                var anchorRect = anchor.getBoundingClientRect();
-                var currentTop = main === d.scrollingElement || main === d.documentElement
-                    ? (window.parent.pageYOffset || d.documentElement.scrollTop || 0)
+                const anchor = d.getElementById(data.anchor_id);
+                if (!anchor) return;
+
+                const mainRect = main && main.getBoundingClientRect
+                    ? main.getBoundingClientRect()
+                    : {top: 0};
+                const currentTop = main === d.scrollingElement || main === d.documentElement
+                    ? (window.pageYOffset || d.documentElement.scrollTop || 0)
                     : main.scrollTop;
-                var targetTop = currentTop + anchorRect.top - mainRect.top - __OFFSET__;
+                const targetTop = currentTop + anchor.getBoundingClientRect().top
+                    - mainRect.top - (data.offset || 0);
 
-                if (main.scrollTo) {
+                if (main && main.scrollTo) {
                     main.scrollTo({top: Math.max(0, targetTop), behavior: 'smooth'});
                 } else {
                     anchor.scrollIntoView({behavior: 'smooth', block: 'start'});
                 }
-                return true;
             }
-            scrollToAnchor();
-            setTimeout(scrollToAnchor, 150);
-            setTimeout(scrollToAnchor, 350);
-            setTimeout(scrollToAnchor, 700);
-        </script>
-    """
-    components.html(
-        script.replace("__ANCHOR_ID__", anchor_id).replace("__OFFSET__", str(offset)),
-        height=1,
-        scrolling=False,
+
+            scrollToTarget();
+            [150, 350, 700].forEach((delay) => setTimeout(scrollToTarget, delay));
+        }
+    """,
+)
+
+def _scroll_to_anchor(anchor_id: str, offset: int = 16):
+    _SCROLL_COMPONENT(
+        key=f"nexusiq-scroll-{anchor_id}",
+        data={"anchor_id": anchor_id, "offset": offset},
+        height=0,
     )
 
 def _scroll_to_bottom():
@@ -1440,24 +1450,7 @@ def _scroll_to_command_center():
     _scroll_to_anchor("nexusiq-command-center", offset=20)
 
 def _scroll_to_top():
-    import streamlit.components.v1 as components
-    components.html("""
-        <script>
-            function scrollToTop() {
-                var d = window.parent.document;
-                var main = d.querySelector('section.stMain') || d.querySelector('[data-testid="stAppViewContainer"]');
-                if (main) {
-                    main.scrollTo({top: 0, behavior: 'smooth'});
-                    return true;
-                }
-                window.parent.scrollTo({top: 0, behavior: 'smooth'});
-                return false;
-            }
-            scrollToTop();
-            setTimeout(scrollToTop, 200);
-            setTimeout(scrollToTop, 500);
-        </script>
-    """, height=1, scrolling=False)
+    _SCROLL_COMPONENT(key="nexusiq-scroll-top", data={"top": True}, height=0)
 
 def run_fusion_chat():
     """Main function for Fusion Chat interface"""

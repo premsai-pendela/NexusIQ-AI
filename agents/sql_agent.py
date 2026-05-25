@@ -303,7 +303,8 @@ RULES:
 6. Return ONLY the SQL query, no explanations
 7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
 8. For single aggregate questions over {table_name}, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
-9. For display, list, sample, or "show rows" requests, return detail columns with LIMIT only; never add aggregate columns such as COUNT(*)
+9. For display, list, sample, or "show rows" requests (not validation queries), return detail columns with LIMIT only; never add aggregate columns such as COUNT(*)
+10. For questions using "validate", "verify", "confirm", or "compare" with a single category or time period, generate a single-row aggregate query using SUM/COUNT WITHOUT GROUP BY on detail columns (region, store, product) — one total number is required for cross-source comparison
 
 SQL QUERY:"""
 

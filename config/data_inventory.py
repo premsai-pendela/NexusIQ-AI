@@ -314,7 +314,7 @@ def can_rag_answer(question: str) -> dict:
     rag_patterns = {
         "products_operations": ["policy", "return", "refund", "conditions"],
         "strategic_plans": ["plan", "strategy", "initiative", "roadmap", "expansion"],
-        "financial": ["q1", "q2", "q3", "q4", "quarter", "performance", "report"],
+        "financial": ["q1", "q2", "q3", "q4", "quarter", "performance", "report", "outperform"],
         "hr_compliance": ["compliance", "regulation", "guideline", "legal"]
     }
     

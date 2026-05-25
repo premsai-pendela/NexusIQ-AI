@@ -1913,11 +1913,16 @@ def run_fusion_chat():
     # ═══════════════════════════════════════════════════════
     
     with st.sidebar:
-        if st.button("🧭 View Guided Questions", key="show_demo_guide_top", use_container_width=True):
-            st.session_state.show_fusion_command_center = True
-            st.session_state.scroll_target = None
-            st.session_state.pending_query_to_process = None
-            st.rerun()
+        if st.session_state.get("show_fusion_command_center"):
+            if st.button("← Back to Chat", key="hide_demo_guide_top", use_container_width=True):
+                st.session_state.show_fusion_command_center = False
+                st.rerun()
+        else:
+            if st.button("🧭 View Guided Questions", key="show_demo_guide_top", use_container_width=True):
+                st.session_state.show_fusion_command_center = True
+                st.session_state.scroll_target = None
+                st.session_state.pending_query_to_process = None
+                st.rerun()
 
         st.markdown("---")
         st.header("⚙️ Source Controls")
@@ -2047,6 +2052,11 @@ def run_fusion_chat():
         st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
         _scroll_to_command_center()
         render_command_center_welcome(data_context.key)
+        guided_question = st.chat_input("💬 Ask a question across all data sources...")
+        if guided_question:
+            st.session_state.pending_suggestion = guided_question
+            st.session_state.show_fusion_command_center = False
+            st.rerun()
         st.stop()
     
     total_messages = len(st.session_state.chat_messages)

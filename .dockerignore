@@ -27,6 +27,9 @@ data/chroma_db_local
 data/chroma_staging
 data/nexusiq.db
 data/pdfs_staging
+data/expansion
+data/synthetic
+data/csvs
 
 Screenshots
 campmor_raw.bin

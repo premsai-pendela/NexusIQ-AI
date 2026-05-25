@@ -185,6 +185,8 @@ Create `.env`:
 GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
 DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@POOLER_HOST:6543/postgres
+# Optional demo mode only; leave false for evidence-grounded Web answers
+WEB_ALLOW_SAMPLE_FALLBACK=false
 ```
 
 Inspect the Supabase relational source or refresh local document retrieval data:
@@ -318,6 +320,36 @@ python -m database.ingestion_pipeline clear-caches
 Use `sync-rag` for everyday document folder updates. It hashes PDFs, skips unchanged files, updates new or edited PDFs, removes chunks for deleted PDFs, and bumps the ingestion version only when something changed. Use `rebuild-rag` when you want a clean full reset from all PDFs.
 
 `DATABASE_URL` is the only supported relational data source and should point to Supabase PostgreSQL. `refresh-all` preserves those SQL facts and rebuilds only generated local RAG state. Do not commit runtime/cache outputs from `data/chroma_db/`, including `data/chroma_db/ingestion_version.json` and `data/chroma_db/pdf_manifest.json`, `data/web_cache.json`, `data/quota_tracker.json`, `data/llm_task_ledger.jsonl`, `data/query_traces.jsonl`, `traces/`, `eval-reports/`, or `.gstack/` unless you intentionally want to update a tracked baseline.
+
+### Enterprise Data Expansion
+
+The deployed 2024 Supabase dataset remains the validated truth baseline. A
+separate generator creates versioned, linked staging extracts for a larger
+2021-through-June-2026 retail scenario without connecting to Supabase or
+overwriting live tables:
+
+```bash
+# Inspect the intended 5-million-transaction portfolio dataset
+python -m database.generate_enterprise_expansion plan --profile portfolio
+
+# Produce a smaller local staging dataset first
+python -m database.generate_enterprise_expansion generate --profile pilot
+python -m database.generate_enterprise_expansion validate --dataset-dir data/expansion/enterprise_pilot_v1
+```
+
+The portfolio profile includes customers, products, stores, vendors,
+promotions, transactions, returns, inventory snapshots, support cases, and a
+business-event timeline. Its future five-million-row sales view is composed
+of the untouched 100,000-row live 2024 baseline plus 4,900,000 generated rows
+outside 2024, so current PDF cross-validation remains valid. Generated files
+are ignored under `data/expansion/`; they must eventually be loaded into a
+dedicated staging namespace and validated before any reviewed production promotion. See
+[docs/data_expansion_plan.md](docs/data_expansion_plan.md).
+
+The generator validates linked staged rows and rejects generated sales inside
+the protected 2024 PDF-aligned period. New reporting-year PDFs must be
+generated from staged SQL aggregates and pass SQL-to-PDF golden evaluation
+before the expanded data can replace the live query source.
 
 ---
 

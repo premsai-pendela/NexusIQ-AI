@@ -15,6 +15,9 @@ ENV/
 
 # Data
 data/synthetic/*.csv
+# Versioned enterprise expansion extracts are generated locally, validated,
+# then loaded to Supabase staging by an explicit later workflow.
+data/expansion/
 # ChromaDB stores the local PDF retrieval index; relational sales facts come
 # from the configured Supabase PostgreSQL DATABASE_URL only.
 data/chroma_db/

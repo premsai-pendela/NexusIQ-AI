@@ -6,6 +6,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Ec2PilotDeployContractTests(unittest.TestCase):
+    def test_runtime_includes_pilot_pdf_renderer_dependency(self):
+        requirements = (REPO_ROOT / "requirements.txt").read_text()
+
+        self.assertIn("reportlab", requirements.lower())
+
     def test_docker_context_never_bakes_local_pilot_evidence(self):
         dockerignore = (REPO_ROOT / ".dockerignore").read_text()
 

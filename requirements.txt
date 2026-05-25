@@ -33,6 +33,7 @@ psycopg2-binary>=2.9.0
 # PDF Processing
 pypdf>=4.0.0
 pdfplumber>=0.10.3
+reportlab>=4.0.0
 
 # Data & Visualization
 pandas>=2.1.0

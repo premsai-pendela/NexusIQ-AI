@@ -86,6 +86,30 @@ class PilotDemoModeTests(unittest.TestCase):
         self.assertFalse(agent._validate_query(unrelated_join)[0])
         self.assertFalse(agent._validate_query(implicit_join)[0])
 
+    def test_pilot_row_display_request_uses_detail_query_without_aggregate(self):
+        agent = SQLAgent.__new__(SQLAgent)
+        agent.data_context = PILOT_CONTEXT
+
+        result = agent.generate_query("display the 2025 transactions upto 10 rows")
+        query = result["query"].upper()
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["model_used"], "Deterministic pilot row retrieval")
+        self.assertIn("TRANSACTION_ID", query)
+        self.assertIn("LIMIT 10", query)
+        self.assertNotIn("COUNT(", query)
+        self.assertTrue(agent._validate_query(result["query"])[0])
+
+    def test_sql_prompt_for_row_requests_forbids_aggregate_columns(self):
+        agent = SQLAgent.__new__(SQLAgent)
+        agent.data_context = PILOT_CONTEXT
+        agent.schema_context = "pilot schema"
+
+        prompt = agent._create_sql_prompt("show 2025 transactions up to 10 rows")
+
+        self.assertIn("return detail columns with LIMIT only", prompt)
+        self.assertIn("never add aggregate columns", prompt)
+
     def test_pilot_routing_only_cross_validates_supported_document_periods(self):
         agent = FusionAgent.__new__(FusionAgent)
         agent.data_context = PILOT_CONTEXT

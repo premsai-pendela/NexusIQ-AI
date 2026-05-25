@@ -17,7 +17,7 @@ from config.settings import settings
 from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import logging
 import re
 import time
@@ -303,6 +303,7 @@ RULES:
 6. Return ONLY the SQL query, no explanations
 7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
 8. For single aggregate questions over {table_name}, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
+9. For display, list, sample, or "show rows" requests, return detail columns with LIMIT only; never add aggregate columns such as COUNT(*)
 
 SQL QUERY:"""
 
@@ -311,6 +312,45 @@ SQL QUERY:"""
             question=question,
             table_name=self.data_context.sql_table,
         )
+
+    def _deterministic_pilot_row_query(self, question: str) -> Optional[str]:
+        """Build safe pilot sample-row SQL without relying on LLM aggregate choices."""
+        if not self.data_context.is_pilot:
+            return None
+
+        lowered = question.lower()
+        requests_rows = (
+            any(term in lowered for term in ("display", "show", "list", "sample"))
+            and "transaction" in lowered
+            and any(term in lowered for term in ("row", "record", "up to", "upto", "limit"))
+        )
+        if not requests_rows:
+            return None
+
+        years = [int(year) for year in re.findall(r"\b20\d{2}\b", question)]
+        if not years or any(year not in self.data_context.available_years for year in years):
+            return None
+
+        limit_match = re.search(r"(?:up\s*to|upto|limit)\s+(\d+)", lowered)
+        limit = min(int(limit_match.group(1)), 100) if limit_match else 10
+        year = years[0]
+
+        return f"""SELECT
+    p.transaction_id,
+    p.transaction_date,
+    p.region,
+    p.store_id,
+    p.product_category,
+    p.product_name,
+    p.quantity,
+    p.unit_price,
+    p.total_amount,
+    p.customer_id,
+    p.payment_method
+FROM {self.data_context.sql_table} p
+WHERE EXTRACT(YEAR FROM p.transaction_date) = {year}
+ORDER BY p.transaction_date, p.transaction_id
+LIMIT {limit};"""
     
     
     def _validate_query(self, sql_query: str) -> tuple[bool, str]:
@@ -373,6 +413,17 @@ SQL QUERY:"""
         """Generate SQL from natural language"""
         
         complexity = self._detect_query_complexity(question)
+        deterministic_query = self._deterministic_pilot_row_query(question)
+        if deterministic_query:
+            return {
+                "success": True,
+                "query": deterministic_query,
+                "question": question,
+                "complexity": complexity,
+                "model_used": "Deterministic pilot row retrieval",
+                "models_tried": [],
+            }
+
         prompt = self._create_sql_prompt(question)
         
         logger.info(f"🤔 Generating SQL for: {question} (Complexity: {complexity})")

@@ -15,7 +15,7 @@ from config.data_contexts import (
     PILOT_CONTEXT,
     get_data_context,
 )
-from ui.fusion_chat import PILOT_DEMO_PROMPTS
+from ui.fusion_chat import PILOT_DEMO_PROMPTS, PILOT_EVIDENCE_TIMELINE
 from utils.validators import validate_question
 
 
@@ -146,6 +146,13 @@ class PilotDemoModeTests(unittest.TestCase):
         for title, route in routes.items():
             if title != "Show expanded data scale":
                 self.assertEqual(route, "sql_rag")
+
+    def test_pilot_evidence_timeline_shows_only_pdf_validated_non_live_periods(self):
+        periods = [item["period"] for item in PILOT_EVIDENCE_TIMELINE]
+
+        self.assertEqual(periods, ["FY 2021", "FY 2022", "FY 2023", "FY 2025", "H1 2026"])
+        self.assertNotIn("FY 2024", periods)
+        self.assertTrue(all(item["status"] == "SQL = PDF" for item in PILOT_EVIDENCE_TIMELINE))
 
     def test_live_context_does_not_apply_pilot_routing_override(self):
         agent = FusionAgent.__new__(FusionAgent)

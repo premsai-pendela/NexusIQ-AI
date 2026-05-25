@@ -167,6 +167,39 @@ PILOT_DEMO_PROMPTS = [
     },
 ]
 
+PILOT_EVIDENCE_TIMELINE = [
+    {
+        "period": "FY 2021",
+        "revenue": "$38.90M",
+        "transactions": "33,337 transactions",
+        "status": "SQL = PDF",
+    },
+    {
+        "period": "FY 2022",
+        "revenue": "$36.73M",
+        "transactions": "33,580 transactions",
+        "status": "SQL = PDF",
+    },
+    {
+        "period": "FY 2023",
+        "revenue": "$35.53M",
+        "transactions": "33,295 transactions",
+        "status": "SQL = PDF",
+    },
+    {
+        "period": "FY 2025",
+        "revenue": "$36.81M",
+        "transactions": "33,324 transactions",
+        "status": "SQL = PDF",
+    },
+    {
+        "period": "H1 2026",
+        "revenue": "$17.52M",
+        "transactions": "16,464 transactions",
+        "status": "SQL = PDF",
+    },
+]
+
 # ═══════════════════════════════════════════════════════
 #  LAZY LOADERS — heavy modules loaded only when needed
 # ═══════════════════════════════════════════════════════
@@ -577,6 +610,17 @@ def render_chart_builder(msg_id: str, df):
 def render_command_center_welcome(data_context_key: str = "live"):
     """Render the guided question center without auto-running on entry."""
     is_pilot = data_context_key == "enterprise_pilot"
+    pilot_timeline_cards = "".join(
+        f"""
+        <div class="pilot-period">
+            <span class="pilot-period-label">{item["period"]}</span>
+            <strong>{item["revenue"]}</strong>
+            <small>{item["transactions"]}</small>
+            <em>{item["status"]}</em>
+        </div>
+        """
+        for item in PILOT_EVIDENCE_TIMELINE
+    )
     st.markdown(
         """
         <style>
@@ -618,6 +662,128 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 background: rgba(8, 47, 73, 0.42);
                 font-size: 0.78rem;
                 font-weight: 700;
+            }
+            .pilot-story {
+                margin: 18px 0 8px;
+                padding: 18px;
+                border-radius: 10px;
+                border: 1px solid rgba(14, 116, 144, 0.2);
+                background: #f8fafc;
+            }
+            .pilot-story-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-end;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-bottom: 14px;
+            }
+            .pilot-story-head h3 {
+                margin: 0;
+                color: #0f172a;
+                font-size: 1.08rem;
+            }
+            .pilot-story-head p {
+                margin: 0;
+                color: #64748b;
+                font-size: 0.82rem;
+            }
+            .pilot-timeline {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(110px, 1fr));
+                gap: 8px;
+            }
+            .pilot-period {
+                position: relative;
+                padding: 12px 10px 11px;
+                border-radius: 8px;
+                background: white;
+                border: 1px solid #e2e8f0;
+                min-height: 108px;
+            }
+            .pilot-period::before {
+                content: "";
+                display: block;
+                width: 100%;
+                height: 3px;
+                margin-bottom: 10px;
+                border-radius: 999px;
+                background: #0ea5e9;
+            }
+            .pilot-period-label {
+                color: #0369a1;
+                font-size: 0.73rem;
+                font-weight: 700;
+                letter-spacing: 0.04em;
+                text-transform: uppercase;
+            }
+            .pilot-period strong {
+                display: block;
+                margin: 5px 0 2px;
+                color: #0f172a;
+                font-size: 1rem;
+            }
+            .pilot-period small {
+                display: block;
+                color: #475569;
+                font-size: 0.73rem;
+            }
+            .pilot-period em {
+                display: inline-block;
+                margin-top: 9px;
+                padding: 3px 7px;
+                border-radius: 99px;
+                color: #047857;
+                background: #ecfdf5;
+                font-size: 0.69rem;
+                font-style: normal;
+                font-weight: 700;
+            }
+            .pilot-protected {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-top: 10px;
+                padding: 10px 12px;
+                border-radius: 8px;
+                color: #334155;
+                background: #eff6ff;
+                border: 1px dashed #93c5fd;
+                font-size: 0.83rem;
+            }
+            .pilot-protected b {
+                color: #1d4ed8;
+                white-space: nowrap;
+            }
+            .pilot-proofline {
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 8px;
+                margin: 12px 0 4px;
+            }
+            .pilot-proofstep {
+                padding: 12px;
+                border-radius: 8px;
+                background: #0f172a;
+                color: #f8fafc;
+            }
+            .pilot-proofstep span {
+                display: block;
+                margin-bottom: 6px;
+                color: #38bdf8;
+                font-size: 0.68rem;
+                font-weight: 700;
+                letter-spacing: 0.08em;
+            }
+            .pilot-proofstep b {
+                display: block;
+                margin-bottom: 4px;
+                font-size: 0.84rem;
+            }
+            .pilot-proofstep small {
+                color: #cbd5e1;
+                font-size: 0.73rem;
+                line-height: 1.35;
             }
             .fusion-agent-flow {
                 display: grid;
@@ -680,6 +846,9 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 .fusion-command {
                     padding: 20px;
                 }
+                .pilot-timeline, .pilot-proofline {
+                    grid-template-columns: repeat(2, minmax(140px, 1fr));
+                }
                 .fusion-agent-flow {
                     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
                 }
@@ -730,16 +899,26 @@ def render_command_center_welcome(data_context_key: str = "live"):
 
     st.markdown(
         (
-            """
-        <div class="fusion-agent-flow">
-            <div class="fusion-agent-step"><b>Staged SQL</b><small>Reads the controlled pilot view only.</small></div>
-            <div class="fusion-agent-step"><b>Pilot PDFs</b><small>Five verified non-2024 reports.</small></div>
-            <div class="fusion-agent-step"><b>Isolated RAG</b><small>Retrieves pilot documents only.</small></div>
-            <div class="fusion-agent-step"><b>Validation</b><small>Checks document totals against SQL.</small></div>
-            <div class="fusion-agent-step"><b>Protected Live</b><small>2024 truth stays unchanged.</small></div>
+            f"""
+        <div class="pilot-story">
+            <div class="pilot-story-head">
+                <h3>Audited evidence timeline</h3>
+                <p>Five generated-period PDFs independently match staged SQL totals.</p>
+            </div>
+            <div class="pilot-timeline">{pilot_timeline_cards}</div>
+            <div class="pilot-protected">
+                <b>FY 2024 protected baseline</b>
+                <span>100,000 live Supabase transactions are carried into the combined view; no pilot PDF is claimed for this year.</span>
+            </div>
+        </div>
+        <div class="pilot-proofline">
+            <div class="pilot-proofstep"><span>01 / DATA</span><b>Read-only staging view</b><small>250,000 combined transactions; production remains untouched.</small></div>
+            <div class="pilot-proofstep"><span>02 / DOCUMENTS</span><b>PDF alignment gate</b><small>Five reports publish only after SQL totals match.</small></div>
+            <div class="pilot-proofstep"><span>03 / RETRIEVAL</span><b>Isolated RAG index</b><small>Pilot documents are separated from production evidence.</small></div>
+            <div class="pilot-proofstep"><span>04 / ANSWER</span><b>Cross-source proof</b><small>Answers expose route, values, and confidence.</small></div>
         </div>
         <div class="fusion-preview">
-            <h4>Verified pilot evidence</h4>
+            <h4>Try the strongest interview demo</h4>
             <p><b>Question:</b> Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.</p>
             <p><b>Expected result:</b> SQL and indexed PDF evidence match at <b>$36,813,023.66</b> across <b>33,324</b> transactions.</p>
             <p><b>Boundary:</b> Enterprise pilot staging SQL + validated_v2 isolated index only.</p>

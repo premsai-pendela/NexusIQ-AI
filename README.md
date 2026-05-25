@@ -351,6 +351,19 @@ the protected 2024 PDF-aligned period. New reporting-year PDFs must be
 generated from staged SQL aggregates and pass SQL-to-PDF golden evaluation
 before the expanded data can replace the live query source.
 
+Review the isolated Supabase staging load locally before approving any remote
+write:
+
+```bash
+python -m database.load_enterprise_staging plan --dataset-dir data/expansion/enterprise_pilot_v1
+python -m database.load_enterprise_staging ddl --dataset-dir data/expansion/enterprise_pilot_v1
+```
+
+The execution command is locked behind an explicit staging-only confirmation
+token and loads only `nexusiq_expansion_staging`; it does not modify existing
+public production tables. Load the pilot dataset before the full portfolio
+extract.
+
 ---
 
 ## Query Examples

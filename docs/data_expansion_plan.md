@@ -98,3 +98,31 @@ claim SQL-to-PDF alignment after this release gate completes:
 Current status: existing 2024 PDFs are backed by the live Supabase baseline.
 No new-period PDFs have been generated yet, so the expansion is validated
 staging data, not yet a document-aligned production dataset.
+
+## Staging Loader
+
+The loader in `database.load_enterprise_staging` accepts only a validated
+generated package and writes only into the isolated
+`nexusiq_expansion_staging` schema. Its combined sales view reads
+`public.sales_transactions` for the preserved baseline; it does not update,
+delete, or replace public tables.
+
+Review the pilot load plan and generated DDL locally first:
+
+```bash
+python -m database.load_enterprise_staging plan --dataset-dir data/expansion/enterprise_pilot_v1
+python -m database.load_enterprise_staging ddl --dataset-dir data/expansion/enterprise_pilot_v1
+```
+
+A staging write requires an explicit acknowledgement token:
+
+```bash
+python -m database.load_enterprise_staging execute \
+  --dataset-dir data/expansion/enterprise_pilot_v1 \
+  --execute \
+  --confirm-staging-only LOAD_INTO_NEXUSIQ_EXPANSION_STAGING_ONLY
+```
+
+Always load and verify the 23 MB pilot before attempting the 697 MB portfolio
+extract. A dataset ID is immutable after loading; generate a new dataset ID
+for another trial instead of overwriting staged facts.

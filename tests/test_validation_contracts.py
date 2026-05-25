@@ -36,6 +36,7 @@ from observability.tracer import get_tracer, summarize_agent_result
 from run_tests import parse_queries, routing_matches
 from ui.fusion_chat import (
     _format_answer_method,
+    _format_fusion_answer_method,
     _routing_status_text,
     escape_streamlit_math,
     find_previous_answer,
@@ -49,6 +50,7 @@ from utils.validators import validate_question
 class FusionValidationTests(unittest.TestCase):
     def setUp(self):
         self.agent = FusionAgent.__new__(FusionAgent)
+        self.agent._history = []
 
     def test_q4_electronics_revenue_validates_against_rounded_pdf_value(self):
         sql_result = {
@@ -153,6 +155,87 @@ class FusionValidationTests(unittest.TestCase):
         self.assertIn("**Confidence:** HIGH", answer)
         self.assertNotIn("fromtheSQL", answer)
         self.assertNotIn("*from", answer)
+
+    def test_degraded_multi_source_answer_skips_final_llm_synthesis(self):
+        self.agent.llm_gateway = RecordingGateway("Should not run", "Fusion LLM")
+        rag_result = {
+            "success": True,
+            "answer": "Customers may return most items within 30 days. (Source: Returns Policy.pdf)",
+            "chunks_retrieved": 1,
+        }
+
+        answer = self.agent._generate_fused_answer(
+            "Validate the refund policy against records.",
+            sql_result={"success": False, "error": "database timeout"},
+            rag_result=rag_result,
+        )
+
+        self.assertEqual(self.agent.llm_gateway.calls, [])
+        self.assertIn("Customers may return most items within 30 days", answer)
+        self.assertIn("SQL Database could not provide usable evidence", answer)
+        self.assertIn("cross-source synthesis and validation were not performed", answer)
+        self.assertEqual(self.agent._last_answer_generation["mode"], "deterministic_degraded")
+
+    def test_conflicting_multi_source_answer_still_uses_fusion_llm(self):
+        self.agent.llm_gateway = RecordingGateway("Reconciled answer", "Fusion LLM")
+        self.agent._gateway_models = lambda: [{"name": "fusion", "type": "fake", "description": "Fusion LLM"}]
+        sql_result = {
+            "success": True,
+            "answer": "Actual Q4 transaction revenue was $45,195,318.45.",
+            "results": [{"q4_revenue": 45_195_318.45}],
+        }
+        rag_result = {
+            "success": True,
+            "answer": "Reported Q4 revenue was $38.7M.",
+            "chunks_retrieved": 1,
+        }
+        validation = self.agent._cross_validate(sql_result, rag_result)
+
+        answer = self.agent._generate_fused_answer(
+            "Validate Q4 revenue.",
+            sql_result=sql_result,
+            rag_result=rag_result,
+            validation=validation,
+        )
+
+        self.assertEqual(answer, "Reconciled answer")
+        self.assertEqual(self.agent.llm_gateway.calls[0]["task"], "fusion.answer")
+        self.assertEqual(self.agent._last_answer_generation["mode"], "llm_synthesis")
+
+    def test_degraded_source_type_reports_the_only_usable_source(self):
+        source_type = self.agent._degraded_source_type(
+            "sql_web",
+            {"success": True, "answer": "SQL evidence"},
+            None,
+            {"success": False, "error": "scrape failed"},
+        )
+
+        self.assertEqual(source_type, "sql_only (web_failed)")
+
+    def test_all_route_runs_sql_rag_and_web_sources(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._query_cache = {}
+        agent._cache_ttl = 3600
+        agent._cache_max = 50
+        agent._history = []
+        agent._history_max = 5
+        agent._last_routing_model = None
+        agent._last_routing_fallback = False
+        agent._no_data_reason = None
+        captured = {}
+        agent._run_agents_parallel = lambda question, **kwargs: captured.update(kwargs) or (
+            {"success": True, "answer": "SQL"},
+            {"success": True, "answer": "RAG"},
+            {"success": True, "answer": "Web"},
+        )
+        agent._generate_fused_answer = lambda *args, **kwargs: "Combined"
+
+        with patch.dict(os.environ, {"NEXUSIQ_TRACE_ENABLED": "0"}):
+            agent.query("Combine internal and market evidence.", force_source="all")
+
+        self.assertTrue(captured["run_sql"])
+        self.assertTrue(captured["run_rag"])
+        self.assertTrue(captured["run_web"])
 
     def test_high_confidence_sql_rag_result_is_cacheable(self):
         result = {
@@ -1166,6 +1249,8 @@ class RoutingAndInputTests(unittest.TestCase):
             "answer": "Prior answer",
             "source_type": "sql_rag",
             "timestamp": datetime.now(),
+            "answer_generation_mode": "deterministic_validated",
+            "answer_generation_reason": "high_confidence_cross_source_validation",
         }
 
         msg = previous_answer_message(previous, "msg-1")
@@ -1174,6 +1259,7 @@ class RoutingAndInputTests(unittest.TestCase):
         self.assertTrue(msg["from_cache"])
         self.assertEqual(msg["cache_label"], "previous_answer")
         self.assertEqual(msg["query_time"], 0.0)
+        self.assertEqual(msg["answer_generation_mode"], "deterministic_validated")
 
 
 class OfflineEvalHarnessTests(unittest.TestCase):
@@ -1409,6 +1495,15 @@ class ObservabilityTests(unittest.TestCase):
         self.assertIn("Router LLM not needed", _routing_status_text("Rules-based Web routing"))
         self.assertEqual(_routing_status_text("Gemini Flash"), "Router LLM: Gemini Flash")
 
+    def test_fusion_answer_method_distinguishes_deterministic_and_llm_finalization(self):
+        method, detail = _format_fusion_answer_method("RAG: Groq", "deterministic_degraded")
+        self.assertEqual(method, "Source")
+        self.assertIn("skipped final synthesis", detail)
+
+        method, detail = _format_fusion_answer_method("SQL: Groq; RAG: Groq", "llm_synthesis", "Gemini Flash")
+        self.assertEqual(method, "LLM")
+        self.assertIn("Gemini Flash", detail)
+
     def test_no_data_does_not_treat_router_as_answer_model(self):
         agent = FusionAgent.__new__(FusionAgent)
         self.assertEqual(
@@ -1504,6 +1599,39 @@ class ObservabilityTests(unittest.TestCase):
             os.environ.pop("NEXUSIQ_TRACE_ENABLED", None)
         else:
             os.environ["NEXUSIQ_TRACE_ENABLED"] = previous_enabled
+
+    def test_fusion_trace_records_selective_answer_generation_method(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._history = []
+        agent._history_max = 5
+        with TemporaryDirectory() as tmp, patch.dict(
+            os.environ,
+            {
+                "NEXUSIQ_TRACE_DIR": tmp,
+                "NEXUSIQ_TRACE_INDEX_PATH": str(Path(tmp) / "query_traces.jsonl"),
+                "NEXUSIQ_TRACE_ENABLED": "1",
+            },
+        ):
+            trace = get_tracer().start_trace("Validate policy evidence.")
+            result = agent._finalize_trace(
+                trace,
+                {
+                    "answer": "Documents answer only.",
+                    "source_type": "rag_only (sql_failed)",
+                    "rag_result": {"success": True, "answer": "Documents answer only.", "model_used": "Groq"},
+                    "answer_generation_mode": "deterministic_degraded",
+                    "answer_generation_reason": "only_one_requested_source_succeeded",
+                    "fusion_model_used": None,
+                },
+            )
+
+            payload = json.loads(Path(result["trace_path"]).read_text())
+            self.assertEqual(payload["final"]["answer_generation_mode"], "deterministic_degraded")
+            self.assertEqual(
+                payload["final"]["answer_generation_reason"],
+                "only_one_requested_source_succeeded",
+            )
+            self.assertIsNone(payload["final"]["fusion_model_used"])
 
     def test_agent_result_summary_keeps_debug_fields_compact(self):
         summary = summarize_agent_result(

@@ -227,6 +227,9 @@ def previous_answer_message(previous: dict, msg_id: str) -> dict:
         "trace_path": previous.get("trace_path"),
         "routing_model": previous.get("routing_model"),
         "answer_models": previous.get("answer_models"),
+        "answer_generation_mode": previous.get("answer_generation_mode"),
+        "answer_generation_reason": previous.get("answer_generation_reason"),
+        "fusion_model_used": previous.get("fusion_model_used"),
         "routing_fallback": previous.get("routing_fallback"),
         "cache_label": "previous_answer",
     }
@@ -1170,6 +1173,22 @@ def _format_answer_method(answer_models: str) -> tuple[str, str]:
         return "N/A", "No answer model recorded."
     return "LLM", f"Answer model: {raw}"
 
+def _format_fusion_answer_method(
+    answer_models: str,
+    generation_mode: str = "",
+    fusion_model_used: str = "",
+) -> tuple[str, str]:
+    """Explain when Fusion formatted evidence directly versus synthesizing with an LLM."""
+    if generation_mode == "deterministic_validated":
+        return "Validated", "Final answer formatted from validated SQL and document facts; no Fusion answer LLM used."
+    if generation_mode == "deterministic_degraded":
+        return "Source", "Only one requested source returned usable evidence; Fusion skipped final synthesis and disclosed the missing validation."
+    if generation_mode == "deterministic_fallback":
+        return "Fallback", "Fusion answer LLM was unavailable; available source answers were shown directly."
+    if generation_mode == "llm_synthesis":
+        return "LLM", f"Fusion synthesis model: {fusion_model_used or 'recorded model'}"
+    return _format_answer_method(answer_models)
+
 def _routing_status_text(routing_model: str) -> str:
     """Explain how the route was selected without implying an LLM always ran."""
     if not routing_model or routing_model == "n/a":
@@ -1201,7 +1220,11 @@ def render_observability_panel(msg: dict):
     answer_models = final.get("answer_models") or msg.get("answer_models") or routing_model
     if route == "no_data" and answer_models == routing_model:
         answer_models = "System response"
-    answer_method, answer_method_detail = _format_answer_method(answer_models)
+    answer_method, answer_method_detail = _format_fusion_answer_method(
+        answer_models,
+        final.get("answer_generation_mode") or msg.get("answer_generation_mode") or "",
+        final.get("fusion_model_used") or msg.get("fusion_model_used") or "",
+    )
     validation = final.get("validation") or msg.get("validation") or {}
     validation_label = validation.get("confidence") or "n/a"
 
@@ -1373,6 +1396,9 @@ def add_to_history(question, result, execution_time, source_filter: str = "Auto"
         "trace_path": result.get("trace_path"),
         "routing_model": result.get("routing_model"),
         "answer_models": result.get("answer_models"),
+        "answer_generation_mode": result.get("answer_generation_mode"),
+        "answer_generation_reason": result.get("answer_generation_reason"),
+        "fusion_model_used": result.get("fusion_model_used"),
         "routing_fallback": result.get("routing_fallback"),
         "source_filter": source_filter,
         "time": execution_time,
@@ -1962,6 +1988,9 @@ def run_fusion_chat():
                 "trace_path": result.get("trace_path"),
                 "routing_model": result.get("routing_model"),
                 "answer_models": result.get("answer_models"),
+                "answer_generation_mode": result.get("answer_generation_mode"),
+                "answer_generation_reason": result.get("answer_generation_reason"),
+                "fusion_model_used": result.get("fusion_model_used"),
                 "routing_fallback": result.get("routing_fallback")
             }, is_latest=True)
             
@@ -1981,6 +2010,9 @@ def run_fusion_chat():
                 "trace_path": result.get("trace_path"),
                 "routing_model": result.get("routing_model"),
                 "answer_models": result.get("answer_models"),
+                "answer_generation_mode": result.get("answer_generation_mode"),
+                "answer_generation_reason": result.get("answer_generation_reason"),
+                "fusion_model_used": result.get("fusion_model_used"),
                 "routing_fallback": result.get("routing_fallback")
             })
             st.session_state.scroll_target = "answer"

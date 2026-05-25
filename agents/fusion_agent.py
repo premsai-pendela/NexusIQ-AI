@@ -895,7 +895,25 @@ Reply with ONLY this JSON (no extra text):
             web_result=web_result,
         )
         if validated_answer:
+            self._last_answer_generation = {
+                "mode": "deterministic_validated",
+                "reason": "high_confidence_cross_source_validation",
+                "model_used": None,
+            }
             return validated_answer
+
+        degraded_answer = self._format_degraded_multi_source_answer(
+            sql_result=sql_result,
+            rag_result=rag_result,
+            web_result=web_result,
+        )
+        if degraded_answer:
+            self._last_answer_generation = {
+                "mode": "deterministic_degraded",
+                "reason": "only_one_requested_source_succeeded",
+                "model_used": None,
+            }
+            return degraded_answer
         
         # Build source summaries
         sources_text = ""
@@ -989,10 +1007,20 @@ ANSWER:"""
         )
         if result.get("success"):
             logger.info("✅ Fused answer generated with %s", result.get("model_used"))
+            self._last_answer_generation = {
+                "mode": "llm_synthesis",
+                "reason": "multiple_sources_require_reconciliation",
+                "model_used": result.get("model_used"),
+            }
             return result["response"]
         
         # Fallback: Simple combination without LLM
         logger.warning("All LLM models failed, using simple fusion")
+        self._last_answer_generation = {
+            "mode": "deterministic_fallback",
+            "reason": "fusion_llm_unavailable",
+            "model_used": None,
+        }
         return self._simple_fusion(sql_result, rag_result, web_result, validation)
 
     def _format_validated_sql_rag_answer(
@@ -1099,6 +1127,56 @@ ANSWER:"""
 
         row_label = "result row" if row_count == 1 else "result rows"
         return f"{row_count} {row_label} returned"
+
+    def _format_degraded_multi_source_answer(
+        self,
+        sql_result: Optional[Dict],
+        rag_result: Optional[Dict],
+        web_result: Optional[Dict],
+    ) -> Optional[str]:
+        """Return one complete surviving source answer without an unnecessary LLM call."""
+        sources = (
+            ("SQL Database", sql_result),
+            ("Documents", rag_result),
+            ("Web Data", web_result),
+        )
+        attempted = [(label, result) for label, result in sources if result is not None]
+        successful = [
+            (label, result)
+            for label, result in attempted
+            if result.get("success") and str(result.get("answer") or "").strip()
+        ]
+        unavailable = [label for label, result in attempted if not result.get("success")]
+
+        if len(attempted) < 2 or len(successful) != 1 or not unavailable:
+            return None
+
+        source_label, source_result = successful[0]
+        unavailable_text = ", ".join(unavailable)
+        return (
+            f"{source_result['answer']}\n\n"
+            f"**Availability note:** {unavailable_text} could not provide usable evidence for this request. "
+            f"The answer above uses **{source_label}** only; cross-source synthesis and validation were not performed."
+        )
+
+    @staticmethod
+    def _degraded_source_type(
+        source_type: str,
+        sql_result: Optional[Dict],
+        rag_result: Optional[Dict],
+        web_result: Optional[Dict],
+    ) -> str:
+        """Label a multi-source attempt accurately when only one source survives."""
+        attempted = [
+            (name, result)
+            for name, result in (("sql", sql_result), ("rag", rag_result), ("web", web_result))
+            if result is not None
+        ]
+        successful = [name for name, result in attempted if result.get("success")]
+        failed = [name for name, result in attempted if not result.get("success")]
+        if len(attempted) >= 2 and len(successful) == 1 and failed:
+            return f"{successful[0]}_only ({'_'.join(failed)}_failed)"
+        return source_type
     
     def _simple_fusion(
         self, 
@@ -1212,6 +1290,9 @@ ANSWER:"""
             "source_type": result.get("source_type"),
             "routing_model": result.get("routing_model"),
             "answer_models": result.get("answer_models"),
+            "answer_generation_mode": result.get("answer_generation_mode"),
+            "answer_generation_reason": result.get("answer_generation_reason"),
+            "fusion_model_used": result.get("fusion_model_used"),
             "routing_fallback": result.get("routing_fallback"),
             "query_time_s": round(float(result.get("query_time", 0) or 0), 3),
             "from_cache": cached or bool(result.get("_from_cache")),
@@ -1491,12 +1572,13 @@ ANSWER:"""
 
         else:
             logger.info(f"→ Using MULTI-SOURCE fusion (parallel): {source_type.upper()}")
+            run_all_sources = source_type == "all"
 
             sql_result, rag_result, web_result = self._run_agents_parallel(
                 resolved_question,
-                run_sql='sql' in source_type,
-                run_rag='rag' in source_type,
-                run_web='web' in source_type,
+                run_sql=run_all_sources or 'sql' in source_type,
+                run_rag=run_all_sources or 'rag' in source_type,
+                run_web=run_all_sources or 'web' in source_type,
                 progress_cb=progress_cb,
                 trace=trace,
             )
@@ -1510,13 +1592,20 @@ ANSWER:"""
                     span["metadata"]["matches"] = len(validation.get("matches", []))
                     span["metadata"]["discrepancies"] = len(validation.get("discrepancies", []))
 
-            # Downgrade source_type label when SQL silently failed
-            if sql_result and not sql_result.get('success') and rag_result and rag_result.get('success'):
-                logger.warning(f"SQL failed in {source_type} route — answer will be RAG-only. SQL error: {sql_result.get('error', 'unknown')}")
-                source_type = "rag_only (sql_failed)"
+            degraded_source_type = self._degraded_source_type(
+                source_type, sql_result, rag_result, web_result
+            )
+            if degraded_source_type != source_type:
+                logger.warning(
+                    "Only one source succeeded for %s route; reporting degraded route as %s",
+                    source_type,
+                    degraded_source_type,
+                )
+                source_type = degraded_source_type
 
             # Generate fused answer
             with trace.span("fusion.answer_generation") as span:
+                self._last_answer_generation = {}
                 answer = self._generate_fused_answer(
                     question,
                     sql_result,
@@ -1525,6 +1614,7 @@ ANSWER:"""
                     validation
                 )
                 span["metadata"]["answer_preview"] = str(answer or "")[:500]
+                span["metadata"].update(self._last_answer_generation)
             
             query_time = (datetime.now() - start_time).total_seconds()
 
@@ -1540,6 +1630,9 @@ ANSWER:"""
                 'sources': rag_result.get('sources', []) if rag_result else [],
                 'routing_model': self._last_routing_model,
                 'routing_fallback': self._last_routing_fallback,
+                'answer_generation_mode': self._last_answer_generation.get("mode"),
+                'answer_generation_reason': self._last_answer_generation.get("reason"),
+                'fusion_model_used': self._last_answer_generation.get("model_used"),
                 'query_time': query_time
             }
             if not force_source:

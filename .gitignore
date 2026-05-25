@@ -18,6 +18,11 @@ data/synthetic/*.csv
 # Versioned enterprise expansion extracts are generated locally, validated,
 # then loaded to Supabase staging by an explicit later workflow.
 data/expansion/
+# New-period pilot documents are generated from isolated staging SQL and are
+# kept outside the production-aligned PDF archive until evaluation approves them.
+data/pdfs_staging/
+# Pilot document indexing is evaluated in an isolated local Chroma collection.
+data/chroma_staging/
 # ChromaDB stores the local PDF retrieval index; relational sales facts come
 # from the configured Supabase PostgreSQL DATABASE_URL only.
 data/chroma_db/

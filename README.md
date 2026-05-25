@@ -364,6 +364,61 @@ token and loads only `nexusiq_expansion_staging`; it does not modify existing
 public production tables. Load the pilot dataset before the full portfolio
 extract.
 
+Plan the next SQL-to-PDF evidence step without connecting to Supabase or
+writing documents:
+
+```bash
+python -m database.generate_pilot_financial_pdfs plan
+python -m database.generate_pilot_financial_pdfs sql
+```
+
+The pilot document generator is locked to direct generated tables in
+`nexusiq_expansion_staging` for `enterprise_pilot_v1`; it never reads the
+combined view containing public live rows and excludes the protected 2024
+reporting year. When separately approved, generation requires the
+acknowledgement token `GENERATE_PILOT_PDFS_FROM_STAGING_ONLY` and atomically
+publishes all new-period PDFs under the repository-owned
+`data/pdfs_staging/enterprise_pilot_v1/validated_v2/01_financial/` directory, outside the
+existing `data/pdfs/` archive and local RAG index.
+Only `validated_v2` is eligible for pilot indexing; older staged pilot
+document folders are superseded and must remain unindexed.
+
+After staged PDFs have been separately reviewed, inspect the isolated pilot
+RAG and alignment work without opening Chroma or the database:
+
+```bash
+python -m database.pilot_document_phase plan-ingestion
+python -m database.pilot_document_phase plan-alignment
+python -m database.pilot_document_phase plan-index-alignment
+```
+
+Execution remains gated. PDF-to-SQL validation can be run independently, and
+is also required inside ingestion before the isolated index can be published:
+
+```bash
+python -m database.pilot_document_phase validate-alignment \
+  --execute-remote \
+  --confirm-staging-only VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
+
+python -m database.pilot_document_phase ingest \
+  --execute \
+  --confirm-staging-only INGEST_PILOT_PDFS_TO_ISOLATED_STAGING_ONLY \
+  --confirm-pdf-validation VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
+
+python -m database.pilot_document_phase validate-index-alignment \
+  --execute-remote \
+  --confirm-staging-only VALIDATE_PILOT_STAGING_INDEX_AGAINST_STAGING_SQL_ONLY
+```
+
+Pilot ingestion writes only to
+`data/chroma_staging/enterprise_pilot_v1/validated_v2/financial_documents/` in the
+separate `nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2` collection,
+published atomically only after PDF headline revenue and transaction totals pass.
+The final index-alignment validation proves that evidence retrieved from this
+isolated staged index matches direct staging SQL aggregates.
+Production PDFs, `data/chroma_db/`, and the live `nexusiq_docs` RAG collection
+remain untouched until staging SQL-to-PDF/index validation passes.
+
 ---
 
 ## Query Examples

@@ -96,8 +96,10 @@ claim SQL-to-PDF alignment after this release gate completes:
    metric passes; otherwise leave the current Supabase source active.
 
 Current status: existing 2024 PDFs are backed by the live Supabase baseline.
-No new-period PDFs have been generated yet, so the expansion is validated
-staging data, not yet a document-aligned production dataset.
+The isolated `validated_v2` pilot flow has locally generated and indexed five
+new-period headline-evidence PDFs, with exact PDF-to-SQL and index-to-SQL
+checks passing against staging. These ignored local artifacts are not part of
+production RAG, so the expansion is not yet a production dataset.
 
 ## Staging Loader
 
@@ -126,3 +128,91 @@ python -m database.load_enterprise_staging execute \
 Always load and verify the 23 MB pilot before attempting the 697 MB portfolio
 extract. A dataset ID is immutable after loading; generate a new dataset ID
 for another trial instead of overwriting staged facts.
+
+## Pilot Financial PDF Generator
+
+`database.generate_pilot_financial_pdfs` is a document-alignment gate for the
+loaded `enterprise_pilot_v1` dataset. It reads only the generated
+`nexusiq_expansion_staging.sales_transactions` table, scoped to that dataset
+ID. It never queries the combined view that can
+include public live rows.
+
+The generator covers only new reporting periods: FY 2021, FY 2022, FY 2023,
+FY 2025, and H1 2026. It rejects any reporting period that overlaps 2024. Its
+CLI output destination is fixed to the repository staging directory; it
+validates all period results and renders temporary documents before atomically
+publishing the completed directory, refusing any existing destination.
+
+Inspect the output plan and read-only query templates locally:
+
+```bash
+python -m database.generate_pilot_financial_pdfs plan
+python -m database.generate_pilot_financial_pdfs sql
+```
+
+No database connection or document write occurs in either command. A later
+reviewed generation run must use the explicit staging-only acknowledgement:
+
+```bash
+python -m database.generate_pilot_financial_pdfs generate \
+  --execute \
+  --confirm-staging-only GENERATE_PILOT_PDFS_FROM_STAGING_ONLY
+```
+
+Generated files go to
+`data/pdfs_staging/enterprise_pilot_v1/validated_v2/01_financial/`; they are deliberately
+outside the production-aligned `data/pdfs/` archive and must not enter RAG
+until numeric SQL-to-PDF evaluation passes. These pilot documents publish only
+the transaction-count and total-revenue facts that are checked exactly.
+Only the `validated_v2` path may be indexed; any earlier pilot PDF output is
+superseded and must remain outside retrieval.
+
+## Isolated Pilot RAG and Evaluation
+
+`database.pilot_document_phase` keeps document ingestion and PDF-to-SQL
+validation isolated from the current production retrieval collection. It
+accepts only the five staged pilot financial PDFs and writes only to
+`data/chroma_staging/enterprise_pilot_v1/validated_v2/financial_documents/` using the
+collection `nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2`.
+
+Review both plans without accessing Chroma or Supabase:
+
+```bash
+python -m database.pilot_document_phase plan-ingestion
+python -m database.pilot_document_phase plan-alignment
+python -m database.pilot_document_phase plan-index-alignment
+```
+
+Read-only validation first compares every fact published in the staged PDFs
+with direct `nexusiq_expansion_staging.sales_transactions` aggregates:
+
+```bash
+python -m database.pilot_document_phase validate-alignment \
+  --execute-remote \
+  --confirm-staging-only VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
+```
+
+Isolated ingestion enforces that same PDF-to-SQL validation before it writes
+anything, and atomically publishes a new staged index only after all five
+documents are successfully embedded:
+
+```bash
+python -m database.pilot_document_phase ingest \
+  --execute \
+  --confirm-staging-only INGEST_PILOT_PDFS_TO_ISOLATED_STAGING_ONLY \
+  --confirm-pdf-validation VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
+```
+
+The final evidence gate compares values retrieved from the isolated staged
+index with the same direct staging SQL aggregates:
+
+```bash
+python -m database.pilot_document_phase validate-index-alignment \
+  --execute-remote \
+  --confirm-staging-only VALIDATE_PILOT_STAGING_INDEX_AGAINST_STAGING_SQL_ONLY
+```
+
+This phase does not read or update the production PDF archive, production
+`data/chroma_db/` index, or the live `nexusiq_docs` collection. The current
+production RAG experience remains untouched unless every staged validation
+check passes and a separate promotion decision is made.

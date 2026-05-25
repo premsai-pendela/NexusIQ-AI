@@ -15,6 +15,7 @@ from config.data_contexts import (
     PILOT_CONTEXT,
     get_data_context,
 )
+from ui.fusion_chat import PILOT_DEMO_PROMPTS
 from utils.validators import validate_question
 
 
@@ -128,6 +129,23 @@ class PilotDemoModeTests(unittest.TestCase):
             agent._pilot_routing_override("Show competitor web prices."),
             "no_data",
         )
+
+    def test_visible_pilot_starter_questions_remain_inside_validated_routes(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent.data_context = PILOT_CONTEXT
+        agent._last_routing_model = None
+        agent._no_data_reason = None
+
+        routes = {
+            prompt["title"]: agent._pilot_routing_override(prompt["question"])
+            for prompt in PILOT_DEMO_PROMPTS
+        }
+
+        self.assertEqual(len(PILOT_DEMO_PROMPTS), 6)
+        self.assertEqual(routes["Show expanded data scale"], "sql_only")
+        for title, route in routes.items():
+            if title != "Show expanded data scale":
+                self.assertEqual(route, "sql_rag")
 
     def test_live_context_does_not_apply_pilot_routing_override(self):
         agent = FusionAgent.__new__(FusionAgent)

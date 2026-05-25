@@ -214,7 +214,9 @@ Current status:
 - `.github/workflows/deploy-ec2.yml` builds the Docker image on push to `main`.
 - The workflow pushes `latest` to ECR.
 - The workflow copies `scripts/deploy_ec2.sh` to EC2 over SSH.
-- EC2 pulls the new image, restarts the `nexusiq` container, and runs a public health check.
+- EC2 pulls the new image, provisions or revalidates isolated Enterprise Pilot
+  PDF/RAG evidence in persistent Docker volumes, restarts the `nexusiq`
+  container with those volumes mounted, and runs a public health check.
 
 Note: Track B (pgvector/S3 ingestion) still eliminates the long-term need to bundle ChromaDB in the image.
 

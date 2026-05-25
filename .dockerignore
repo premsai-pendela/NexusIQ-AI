@@ -24,7 +24,9 @@ eval-reports
 data/web_cache.json
 data/quota_tracker.json
 data/chroma_db_local
+data/chroma_staging
 data/nexusiq.db
+data/pdfs_staging
 
 Screenshots
 campmor_raw.bin

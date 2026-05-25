@@ -227,8 +227,9 @@ workspace is locked to the read-only combined staging view for SQL and the
 RAG. It does not permit live web routing or production-document retrieval.
 
 Because `data/pdfs_staging/` and `data/chroma_staging/` are intentionally
-ignored, deploying the source code alone does not deploy pilot evidence files.
-Each deployment target that should demonstrate Pilot mode must run the guarded
-PDF generation, isolated ingestion, and index-to-SQL validation commands after
-the staging database load is present. No production-promotion decision is
-implied by enabling this demo workspace.
+ignored, the EC2 deploy path provisions them into separate persistent Docker
+volumes before replacing the running app container. The deploy step uses the
+same guarded PDF generation, isolated ingestion, and SQL validation commands;
+later deployments validate existing evidence again. It refuses automatic
+overwrite if only a partial artifact set exists. No production-promotion
+decision is implied by enabling this demo workspace.

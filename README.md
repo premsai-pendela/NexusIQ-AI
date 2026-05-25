@@ -436,9 +436,11 @@ questions. It disables Web routing and refuses to treat production documents
 as pilot evidence. The live experience remains the default.
 
 The pilot PDFs and Chroma index are ignored runtime artifacts rather than Git
-assets. On a deployed EC2 instance, create and validate them after the code is
-deployed, using the guarded generation/ingestion/validation commands above,
-before opening Pilot mode in the app.
+assets. The EC2 deployment script provisions them in dedicated persistent
+Docker volumes before replacing the running app container and re-runs
+PDF-to-SQL and index-to-SQL validation on each deployment. If a partial pilot
+artifact set is found, deployment fails rather than overwriting evidence
+automatically.
 
 ---
 

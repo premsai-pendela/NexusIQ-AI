@@ -38,13 +38,12 @@ class PilotFinancialPdfTests(unittest.TestCase):
         (sales_table,) = staging_source_tables()
         queries = render_metric_queries()
 
-        self.assertEqual(sales_table, '"nexusiq_expansion_staging"."sales_transactions"')
+        self.assertIn("combined_sales_transactions_enterprise_pilot", sales_table)
         self.assertEqual(set(queries), {"summary"})
         for query in queries.values():
             lowered = query.lower()
             self.assertIn(f"from {sales_table}".lower(), lowered)
             self.assertIn("dataset_id = %s", lowered)
-            self.assertNotIn("combined_sales_transactions", lowered)
             self.assertNotIn("public.", lowered)
             self.assertNotIn("insert ", lowered)
             self.assertNotIn("update ", lowered)

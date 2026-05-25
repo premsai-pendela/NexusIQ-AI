@@ -100,7 +100,8 @@ def _qualified_staging_table(table: str) -> str:
 def staging_source_tables(dataset_id: str = PILOT_DATASET_ID) -> Sequence[str]:
     """Return the only direct staged fact/dimension tables used for PDF metrics."""
     _validate_dataset_id(dataset_id)
-    return (_qualified_staging_table("sales_transactions"),)
+    from config.data_contexts import PILOT_COMBINED_VIEW
+    return (PILOT_COMBINED_VIEW,)
 
 
 def build_pdf_plan(

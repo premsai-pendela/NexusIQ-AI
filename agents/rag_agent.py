@@ -37,6 +37,7 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
+from config.data_contexts import DataContext, LIVE_CONTEXT, get_data_context
 from config.settings import settings
 from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
@@ -116,17 +117,20 @@ class RAGAgent:
         ]
     }
     
-    def __init__(self):
+    def __init__(self, data_context: DataContext = LIVE_CONTEXT):
         """Initialize RAG agent with embedding model, vector DB, and LLM clients"""
         
         logger.info("Initializing RAG Agent...")
+        self.data_context = data_context
+        self.collection_name = data_context.chroma_collection
         
         # Initialize embedding model (same as setup)
         logger.info("Loading embedding model...")
         self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
         
         # Initialize ChromaDB
-        chroma_dir = Path(settings.chroma_persist_directory)
+        chroma_dir = Path(data_context.chroma_directory or settings.chroma_persist_directory)
+        self.chroma_directory = chroma_dir
         if not chroma_dir.exists():
             raise FileNotFoundError(
                 f"ChromaDB directory not found: {chroma_dir}\n"
@@ -140,10 +144,13 @@ class RAGAgent:
         )
         
         try:
-            self.collection = self.chroma_client.get_collection("nexusiq_docs")
+            self.collection = self.chroma_client.get_collection(self.collection_name)
             logger.info(f"Connected to collection with {self.collection.count()} documents")
         except Exception as e:
-            raise Exception(f"Collection 'nexusiq_docs' not found. Run setup_rag_pipeline.py first! Error: {e}")
+            raise Exception(
+                f"Collection {self.collection_name!r} not found for {data_context.label}. "
+                f"Prepare the configured evidence index first. Error: {e}"
+            )
         
         # Initialize LLM clients
         self._init_llm_clients()
@@ -221,7 +228,7 @@ class RAGAgent:
 
     def _read_ingestion_version(self) -> int:
         """Read the ingestion version counter written by the ingestion pipeline."""
-        version_file = Path(settings.chroma_persist_directory) / "ingestion_version.json"
+        version_file = self.chroma_directory / "ingestion_version.json"
         if not version_file.exists():
             return 0
         try:
@@ -1440,7 +1447,7 @@ ANSWER:"""
         return {
             'total_chunks': total_docs,
             'categories': categories,
-            'collection_name': 'nexusiq_docs'
+            'collection_name': self.collection_name
         }
     
     def hybrid_search(
@@ -1556,17 +1563,15 @@ ANSWER:"""
         
         return results
 
-# Singleton instance
-_rag_agent_instance = None
+# Singleton instances are isolated by data context so live and pilot evidence never share state.
+_rag_agent_instances = {}
 
-def get_rag_agent() -> RAGAgent:
-    """Get singleton RAG agent instance"""
-    global _rag_agent_instance
-    
-    if _rag_agent_instance is None:
-        _rag_agent_instance = RAGAgent()
-    
-    return _rag_agent_instance
+
+def get_rag_agent(data_context_key: str = "live") -> RAGAgent:
+    """Get a RAG agent instance scoped to one evidence context."""
+    if data_context_key not in _rag_agent_instances:
+        _rag_agent_instances[data_context_key] = RAGAgent(get_data_context(data_context_key))
+    return _rag_agent_instances[data_context_key]
 
 
 # ═══════════════════════════════════════════════════════════

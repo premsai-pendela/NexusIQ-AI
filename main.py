@@ -42,9 +42,27 @@ COMMAND_CENTER_PROMPTS = [
 ]
 
 
-def launch_fusion(question: str | None = None, show_command_center: bool = False):
+def launch_fusion(
+    question: str | None = None,
+    show_command_center: bool = False,
+    data_context_key: str = "live",
+):
     if question:
         st.session_state.pending_suggestion = question
+    if st.session_state.get("data_context_key", "live") != data_context_key:
+        for key in (
+            "query_history",
+            "chat_messages",
+            "pending_suggestion",
+            "pending_query_to_process",
+            "pending_repeat_decision",
+            "source_filter_radio",
+        ):
+            st.session_state.pop(key, None)
+        st.session_state.source_filter = "Auto"
+    st.session_state.data_context_key = data_context_key
+    st.session_state.pop("data_context_selector", None)
+    st.session_state.pop("nexusiq_agent", None)
     st.session_state.show_fusion_command_center = show_command_center
     st.session_state.nav_to_fusion = True
     st.rerun()
@@ -242,6 +260,22 @@ if page == "🏠 Home":
     with cta_center:
         if st.button("Ask NexusIQ", type="primary", use_container_width=True):
             launch_fusion()
+
+    st.divider()
+
+    st.markdown("### Enterprise Pilot Evidence Lab")
+    pilot_left, pilot_right = st.columns([2, 1])
+    with pilot_left:
+        st.markdown(
+            """
+            A protected staging demo expands the story to **250,000 transactions** and
+            **$340.66M combined revenue** while keeping the validated 2024 live baseline unchanged.
+            Five new-period PDFs are independently checked against staged SQL and an isolated RAG index.
+            """
+        )
+    with pilot_right:
+        if st.button("Open Enterprise Pilot", type="primary", use_container_width=True):
+            launch_fusion(show_command_center=True, data_context_key="enterprise_pilot")
 
     st.divider()
 

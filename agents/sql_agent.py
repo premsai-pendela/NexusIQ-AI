@@ -12,12 +12,14 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from config.data_contexts import DataContext, LIVE_CONTEXT
 from config.settings import settings
 from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
 from typing import Dict, Any, List
 import logging
+import re
 import time
 from functools import wraps
 
@@ -121,10 +123,11 @@ class SQLAgent:
         ]
     }
     
-    def __init__(self, mode: str = "development"):
+    def __init__(self, mode: str = "development", data_context: DataContext = LIVE_CONTEXT):
         """Initialize SQL Agent"""
         
         self.mode = mode
+        self.data_context = data_context
         self.tracker = get_tracker()
         self.llm_gateway = get_llm_gateway()
         
@@ -142,7 +145,36 @@ class SQLAgent:
     
     def _get_schema_info(self) -> str:
         """Get database schema for LLM context"""
-        
+
+        if self.data_context.is_pilot:
+            return f"""
+    I am using PostgreSQL 15. This session is locked to the isolated Enterprise Pilot evidence boundary.
+
+    TABLE: {self.data_context.sql_table}
+    SCOPE: {self.data_context.sql_scope}
+    Columns:
+    - data_source (TEXT): 'live' for preserved 2024 baseline rows, 'generated' for staged expansion rows
+    - dataset_id (TEXT): enterprise_pilot_v1 for generated rows, NULL for preserved live rows
+    - transaction_id (TEXT)
+    - transaction_date (TIMESTAMP)
+    - region (VARCHAR)
+    - store_id (VARCHAR)
+    - product_category (VARCHAR)
+    - product_name (VARCHAR)
+    - quantity (INTEGER)
+    - unit_price (NUMERIC)
+    - total_amount (NUMERIC)
+    - customer_id (VARCHAR)
+    - payment_method (VARCHAR)
+
+    CRITICAL EVIDENCE RULES:
+    - {self.data_context.date_guidance}
+    - Use ONLY the exact qualified table name {self.data_context.sql_table}.
+    - Do not read public.sales_transactions or any other table in this pilot session.
+    - Total revenue = ROUND(SUM(total_amount)::numeric, 2).
+    - For generated-only pilot totals, filter data_source = 'generated'.
+    """
+
         schema = """
     I am using PostgreSQL 15. Here is my database schema:
 
@@ -270,11 +302,15 @@ RULES:
 5. NEVER use DELETE, DROP, UPDATE, INSERT
 6. Return ONLY the SQL query, no explanations
 7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
-8. For single aggregate questions over sales_transactions, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
+8. For single aggregate questions over {table_name}, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
 
 SQL QUERY:"""
 
-        return prompt_template.format(schema=self.schema_context, question=question)
+        return prompt_template.format(
+            schema=self.schema_context,
+            question=question,
+            table_name=self.data_context.sql_table,
+        )
     
     
     def _validate_query(self, sql_query: str) -> tuple[bool, str]:
@@ -290,6 +326,37 @@ SQL QUERY:"""
         
         if not query_upper.startswith('SELECT') and not query_upper.startswith('WITH'):
             return False, "Only SELECT queries allowed"
+
+        if self.data_context.is_pilot:
+            normalize_relation = lambda relation: re.sub(r"\s+", "", relation).lower()
+            allowed_table = normalize_relation(self.data_context.sql_table)
+            cte_names = {
+                name.lower()
+                for name in re.findall(r"(?:\bWITH|,)\s+([a-z_][a-z0-9_]*)\s+AS\s*\(", sql_query, re.IGNORECASE)
+            }
+            relations = [
+                normalize_relation(relation)
+                for relation in re.findall(
+                    r"\b(?:FROM|JOIN)\s+([a-z_\"][a-z0-9_\"]*(?:\s*\.\s*[a-z_\"][a-z0-9_\"]*)?)",
+                    sql_query,
+                    re.IGNORECASE,
+                )
+            ]
+            if allowed_table not in relations:
+                return False, "Enterprise Pilot SQL must read only its validated staging view"
+            from_clauses = re.findall(
+                r"\bFROM\s+(.*?)(?=\bWHERE\b|\bGROUP\b|\bORDER\b|\bLIMIT\b|\bHAVING\b|\bUNION\b|\bJOIN\b|\)|;|$)",
+                sql_query,
+                re.IGNORECASE | re.DOTALL,
+            )
+            if any("," in clause for clause in from_clauses):
+                return False, "Enterprise Pilot SQL cannot use implicit multi-table reads"
+            unapproved_relations = [
+                relation for relation in relations
+                if relation != allowed_table and relation not in cte_names
+            ]
+            if unapproved_relations:
+                return False, "Enterprise Pilot SQL cannot mix staging evidence with other relational tables"
         
         return True, ""
     
@@ -480,8 +547,8 @@ EXPLANATION:"""
             if "AVG(" in sql_upper:
                 explanation_parts.append("• **Average:** Calculating averages using AVG()")
         
-        if "FROM SALES_TRANSACTIONS" in sql_upper:
-            explanation_parts.append("• **Data source:** Using the sales transactions table (100K records)")
+        if self.data_context.sql_table.upper() in sql_upper:
+            explanation_parts.append(f"• **Data source:** Using {self.data_context.label}")
         
         if "WHERE" in sql_upper:
             explanation_parts.append("• **Filtering:** Applying conditions to narrow down results")

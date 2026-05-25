@@ -216,3 +216,19 @@ This phase does not read or update the production PDF archive, production
 `data/chroma_db/` index, or the live `nexusiq_docs` collection. The current
 production RAG experience remains untouched unless every staged validation
 check passes and a separate promotion decision is made.
+
+## Controlled Pilot Demo Mode
+
+The application exposes the validated pilot through a separate Fusion Agent
+workspace rather than switching the production data source. The live workspace
+still defaults to the 2024 Supabase table and `nexusiq_docs`. The pilot
+workspace is locked to the read-only combined staging view for SQL and the
+`nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2` collection for
+RAG. It does not permit live web routing or production-document retrieval.
+
+Because `data/pdfs_staging/` and `data/chroma_staging/` are intentionally
+ignored, deploying the source code alone does not deploy pilot evidence files.
+Each deployment target that should demonstrate Pilot mode must run the guarded
+PDF generation, isolated ingestion, and index-to-SQL validation commands after
+the staging database load is present. No production-promotion decision is
+implied by enabling this demo workspace.

@@ -419,6 +419,27 @@ isolated staged index matches direct staging SQL aggregates.
 Production PDFs, `data/chroma_db/`, and the live `nexusiq_docs` RAG collection
 remain untouched until staging SQL-to-PDF/index validation passes.
 
+### Enterprise Pilot Demo Mode
+
+The Fusion Agent page now has two explicit evidence workspaces:
+
+- `Live Baseline (2024)` continues to use the production Supabase transaction table,
+  the `nexusiq_docs` collection, and live web pricing.
+- `Enterprise Pilot (Validated Staging)` uses only the read-only
+  `nexusiq_expansion_staging.combined_sales_transactions_enterprise_pilot_v1_793cb277`
+  view and the isolated
+  `nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2` collection.
+
+Pilot mode displays the verified 250,000-transaction / $340.66M combined
+staging scale and guided FY 2021-FY 2023, FY 2025, and H1 2026 evidence
+questions. It disables Web routing and refuses to treat production documents
+as pilot evidence. The live experience remains the default.
+
+The pilot PDFs and Chroma index are ignored runtime artifacts rather than Git
+assets. On a deployed EC2 instance, create and validate them after the code is
+deployed, using the guarded generation/ingestion/validation commands above,
+before opening Pilot mode in the app.
+
 ---
 
 ## Query Examples

@@ -29,6 +29,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from agents.sql_agent import SQLAgent
 from agents.rag_agent import get_rag_agent
 from agents.web_agent import get_web_agent  # ✅ NEW: Import Web Agent
+from config.data_contexts import DataContext, LIVE_CONTEXT, get_data_context
 from config.settings import settings
 from observability.tracer import TraceSession, get_tracer, summarize_agent_result
 from utils.llm_gateway import get_llm_gateway
@@ -59,12 +60,13 @@ class FusionAgent:
         "campmor": "sports",
     }
     
-    def __init__(self):
+    def __init__(self, data_context: DataContext = LIVE_CONTEXT):
         logger.info("Initializing Fusion Agent...")
+        self.data_context = data_context
         
         # Initialize sub-agents
-        self.sql_agent = SQLAgent(mode="development")
-        self.rag_agent = get_rag_agent()
+        self.sql_agent = SQLAgent(mode="development", data_context=data_context)
+        self.rag_agent = get_rag_agent(data_context.key)
         self.web_agent = get_web_agent()  # ✅ NEW: Initialize Web Agent
         
         # LLM clients (reuse from RAG agent)
@@ -92,7 +94,62 @@ class FusionAgent:
         self._history: List[Dict[str, str]] = []
         self._history_max = 5
 
-        logger.info("✅ Fusion Agent initialized with SQL + RAG + Web!")
+        logger.info("✅ Fusion Agent initialized for %s!", data_context.label)
+
+    def _routing_context_prompt(self) -> str:
+        """Describe only the sources available inside this agent's data boundary."""
+        context = getattr(self, "data_context", LIVE_CONTEXT)
+        if context.is_pilot:
+            return """**SQL** - 250,000 transactions in an isolated read-only staging view: 100,000
+preserved live 2024 rows plus 150,000 generated non-2024 pilot rows. Use SQL for exact totals,
+counts, rankings, or combined portfolio summaries.
+
+**RAG** - exactly 5 isolated, validated pilot financial PDFs: FY 2021, FY 2022, FY 2023,
+FY 2025, and H1 2026. Use RAG alongside SQL only for revenue or transaction totals in these
+five periods. Do not claim PDF evidence for 2024, rankings, regions, categories, or policy.
+
+**Web** - unavailable in Enterprise Pilot mode; never set web=true.
+
+Cross-validation rules:
+- Use sql=true AND rag=true only for a requested validated period total or explicit PDF/index validation.
+- Use sql=true and rag=false for the 250,000 combined total, 2024, rankings, breakdowns, or trends.
+- Questions outside these SQL/PDF facts have no pilot evidence; select no sources."""
+
+        return """**SQL** - 100,000 Supabase sales transactions for 2024 (Q1-Q4). Use for
+revenue, counts, rankings, trends, growth rates, and quarterly breakdowns.
+
+**RAG** - 25 PDF documents: Q1-Q4 2024 financial reports, operations/compliance policies,
+expansion plans, budget, digital wallet initiative, and vendor contracts. Use alongside SQL
+for quarterly or annual revenue validation, and alone for policy or strategy.
+
+**Web** - live competitor pricing from supported retail sources. Use only for competitor or
+market pricing; do not use it for our transaction facts.
+
+Cross-validation rules:
+- Use sql=true AND rag=true for quarterly/annual totals and explicit validation requests.
+- Use sql=true and rag=false for rankings, non-quarterly breakdowns, monthly trends, or counts.
+- Use rag=true alone for policy or strategy; use web=true alone for competitor pricing."""
+
+    def _pilot_routing_override(self, question: str) -> Optional[str]:
+        """Keep isolated pilot sessions inside their deliberately narrow evidence scope."""
+        context = getattr(self, "data_context", LIVE_CONTEXT)
+        if not context.is_pilot:
+            return None
+        q = str(question or "").lower()
+        if any(term in q for term in ("competitor", "market price", "web", "policy", "contract", "strategy")):
+            self._no_data_reason = (
+                "Enterprise Pilot mode contains only staged transaction totals and five validated financial PDFs."
+            )
+            return "no_data"
+        evidence_period = any(term in q for term in ("2021", "2022", "2023", "2025", "h1 2026"))
+        wants_validation = any(term in q for term in ("validate", "verify", "confirm", "pdf", "document", "index"))
+        if evidence_period and wants_validation:
+            self._last_routing_model = "Pilot evidence boundary"
+            return "sql_rag"
+        if any(term in q for term in ("revenue", "transaction", "sales", "250,000", "combined", "pilot")):
+            self._last_routing_model = "Pilot evidence boundary"
+            return "sql_only"
+        return None
     
     def _classify_query_source(self, question: str) -> str:
         """
@@ -323,48 +380,9 @@ Standalone question:"""
         """
         prompt = f"""You are a data routing agent for NexusIQ AI. Decide which sources answer the user question.
 
-## Sources
+## Sources And Rules
 
-**SQL** — 100,000 Supabase sales transactions for 2024 (Q1-Q4). Columns: date, region, category,
-product, quantity, unit_price, total_amount, payment_method, customer_id.
-✅ Use for: revenue, counts, rankings, trends, growth rates, quarterly breakdowns,
-   "by quarter", "each quarter", "quarter over quarter", "year-over-year by quarter"
-   (SQL has all 4 quarters of 2024 so it CAN show quarterly trends and compute
-   quarter-over-quarter growth — even when the phrase "year-over-year" appears,
-   if the question asks for a quarterly breakdown SQL must be included)
-❌ Skip for: policies, strategies, contracts, competitor pricing
-
-**RAG** — 25 PDF documents: Q1-Q4 2024 financial reports, operations/compliance
-policies, expansion plans, budget, digital wallet initiative, vendor contracts.
-✅ Use for: policies, strategies, plans, performance narratives, compliance
-   (also use alongside SQL for quarterly/revenue questions — PDF reports contain
-   the same revenue figures, enabling cross-validation)
-❌ Skip for: granular row-level transaction data
-
-**Web** — live competitor pricing scraped from Newegg, Goal Zero, IKEA, Taylor Stitch,
-Chubbies, Finisterre, Swanson, NativePath, and Campmor.
-✅ Use for: competitor prices, market pricing comparisons
-❌ Skip for: anything about our own data
-
-## Cross-Validation Rules (IMPORTANT — follow strictly)
-
-**When to use sql=true AND rag=true (cross_validate=true):**
-- Quarterly totals: "Q1/Q2/Q3/Q4 revenue", "quarterly performance", "compare quarters"
-- Annual totals: "total revenue", "annual revenue", "full year"
-- "Validate", "verify", "confirm", "cross-check" — always cross-validate
-REASON: PDF quarterly reports independently confirm these aggregate figures.
-
-**When to use sql=true ONLY (rag=false):**
-- Rankings/top-N: "top 5 products", "best performing store", "highest revenue product"
-- Breakdowns without quarterly context: "sales by region", "by payment method", "by category"
-- Trends over months: "monthly trend", "month by month", "weekly sales"
-- Counts: "how many transactions", "number of orders"
-REASON: PDF reports do NOT contain product rankings, monthly trends, or payment breakdowns.
-Adding RAG to these queries wastes time and adds no validation value.
-
-**Other rules:**
-- Strategy/policy only: rag=true, sql=false
-- Competitor pricing only: web=true, sql=false, rag=false
+{self._routing_context_prompt()}
 
 {self._history_context()}## Question
 "{question}"
@@ -1434,10 +1452,15 @@ ANSWER:"""
                 source_type = force_source
                 logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
             else:
-                source_type = self._rule_based_web_route(question)
+                source_type = self._pilot_routing_override(question)
                 if source_type:
-                    self._last_routing_model = "Rules-based Web routing"
-                    logger.info(f"📋 Query routing: {source_type.upper()} (explicit web pricing rule)")
+                    logger.info(f"📋 Query routing: {source_type.upper()} (pilot evidence boundary)")
+                else:
+                    source_type = self._rule_based_web_route(question)
+                if source_type:
+                    if not self._last_routing_model:
+                        self._last_routing_model = "Rules-based Web routing"
+                        logger.info(f"📋 Query routing: {source_type.upper()} (explicit web pricing rule)")
                 else:
                     source_type = self._classify_query_source_llm(question)
                     if source_type:
@@ -1447,6 +1470,9 @@ ANSWER:"""
                         self._last_routing_model = "keyword fallback"
                         self._last_routing_fallback = True
                         logger.info(f"📋 Query routing: {source_type.upper()} (keyword fallback)")
+            if getattr(self, "data_context", LIVE_CONTEXT).is_pilot and "web" in source_type:
+                source_type = "no_data"
+                self._no_data_reason = "Web data is intentionally disabled in Enterprise Pilot mode."
             span["metadata"].update(
                 {
                     "source_type": source_type,
@@ -1656,15 +1682,15 @@ ANSWER:"""
         logger.info("🔌 Fusion Agent closed")
 
 
-# Singleton
-_fusion_instance = None
+# Singleton agents remain separated by context so cached answers cannot cross evidence boundaries.
+_fusion_instances = {}
 
-def get_fusion_agent() -> FusionAgent:
-    """Get singleton Fusion Agent instance"""
-    global _fusion_instance
-    if _fusion_instance is None:
-        _fusion_instance = FusionAgent()
-    return _fusion_instance
+
+def get_fusion_agent(data_context_key: str = "live") -> FusionAgent:
+    """Get a Fusion Agent scoped to a live or pilot data context."""
+    if data_context_key not in _fusion_instances:
+        _fusion_instances[data_context_key] = FusionAgent(get_data_context(data_context_key))
+    return _fusion_instances[data_context_key]
 
 
 # ═══════════════════════════════════════════════════════════

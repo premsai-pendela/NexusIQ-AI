@@ -128,6 +128,45 @@ RECRUITER_DEMO_PROMPTS = [
     },
 ]
 
+PILOT_DEMO_PROMPTS = [
+    {
+        "title": "Validate FY 2025 revenue",
+        "question": "Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.",
+        "route": "Pilot SQL + RAG",
+        "proof": "Shows staged SQL-to-PDF-to-index agreement for a new reporting year.",
+    },
+    {
+        "title": "Validate H1 2026 revenue",
+        "question": "Validate H1 2026 total revenue and transaction count across SQL and PDF evidence.",
+        "route": "Pilot SQL + RAG",
+        "proof": "Shows new-period evidence without altering the live 2024 baseline.",
+    },
+    {
+        "title": "Show expanded data scale",
+        "question": "What is the total revenue and transaction count in the Enterprise Pilot combined view?",
+        "route": "Pilot SQL",
+        "proof": "Queries the combined 250,000-row read-only staging view.",
+    },
+    {
+        "title": "Validate FY 2021 evidence",
+        "question": "Validate FY 2021 total revenue and transaction count across SQL and PDF evidence.",
+        "route": "Pilot SQL + RAG",
+        "proof": "Demonstrates historical expansion with verified evidence.",
+    },
+    {
+        "title": "Validate FY 2022 evidence",
+        "question": "Validate FY 2022 total revenue and transaction count across SQL and PDF evidence.",
+        "route": "Pilot SQL + RAG",
+        "proof": "Reads the isolated staged index rather than production documents.",
+    },
+    {
+        "title": "Validate FY 2023 evidence",
+        "question": "Validate FY 2023 total revenue and transaction count across SQL and PDF evidence.",
+        "route": "Pilot SQL + RAG",
+        "proof": "Completes the validated multi-year pilot timeline.",
+    },
+]
+
 # ═══════════════════════════════════════════════════════
 #  LAZY LOADERS — heavy modules loaded only when needed
 # ═══════════════════════════════════════════════════════
@@ -535,8 +574,9 @@ def render_chart_builder(msg_id: str, df):
 #  ✨ NEW: FUSION-SPECIFIC UI COMPONENTS
 # ═══════════════════════════════════════════════════════
 
-def render_command_center_welcome():
+def render_command_center_welcome(data_context_key: str = "live"):
     """Render the guided question center without auto-running on entry."""
+    is_pilot = data_context_key == "enterprise_pilot"
     st.markdown(
         """
         <style>
@@ -650,7 +690,24 @@ def render_command_center_welcome():
     )
 
     st.markdown(
+        (
+            """
+        <div class="fusion-command">
+            <h2>Enterprise Pilot Evidence Lab</h2>
+            <p>
+                Demonstrate expanded data scale without replacing production truth.
+                Every pilot document fact is traced to staged SQL and an isolated RAG index.
+            </p>
+            <div class="fusion-chip-row">
+                <div class="fusion-chip">250,000 combined transactions</div>
+                <div class="fusion-chip">$340.66M combined revenue</div>
+                <div class="fusion-chip">5 validated new-period PDFs</div>
+                <div class="fusion-chip">Isolated staging index</div>
+            </div>
+        </div>
         """
+            if is_pilot
+            else """
         <div class="fusion-command">
             <h2>Intelligence Command Center</h2>
             <p>
@@ -666,12 +723,30 @@ def render_command_center_welcome():
                 <div class="fusion-chip">Live web pricing</div>
             </div>
         </div>
-        """,
+        """
+        ),
         unsafe_allow_html=True,
     )
 
     st.markdown(
+        (
+            """
+        <div class="fusion-agent-flow">
+            <div class="fusion-agent-step"><b>Staged SQL</b><small>Reads the controlled pilot view only.</small></div>
+            <div class="fusion-agent-step"><b>Pilot PDFs</b><small>Five verified non-2024 reports.</small></div>
+            <div class="fusion-agent-step"><b>Isolated RAG</b><small>Retrieves pilot documents only.</small></div>
+            <div class="fusion-agent-step"><b>Validation</b><small>Checks document totals against SQL.</small></div>
+            <div class="fusion-agent-step"><b>Protected Live</b><small>2024 truth stays unchanged.</small></div>
+        </div>
+        <div class="fusion-preview">
+            <h4>Verified pilot evidence</h4>
+            <p><b>Question:</b> Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.</p>
+            <p><b>Expected result:</b> SQL and indexed PDF evidence match at <b>$36,813,023.66</b> across <b>33,324</b> transactions.</p>
+            <p><b>Boundary:</b> Enterprise pilot staging SQL + validated_v2 isolated index only.</p>
+        </div>
         """
+            if is_pilot
+            else """
         <div class="fusion-agent-flow">
             <div class="fusion-agent-step"><b>SQL Agent</b><small>Queries exact transaction facts.</small></div>
             <div class="fusion-agent-step"><b>RAG Agent</b><small>Retrieves from indexed business docs.</small></div>
@@ -685,13 +760,15 @@ def render_command_center_welcome():
             <p><b>Expected result:</b> SQL and RAG validate about <b>$31.7M</b>, then show source difference and confidence.</p>
             <p><b>Evidence:</b> sales_transactions + Q4 2024 Financial Report.</p>
         </div>
-        """,
+        """
+        ),
         unsafe_allow_html=True,
     )
 
     st.markdown("### Starter Questions")
     prompt_cols = st.columns(3)
-    for idx, prompt in enumerate(RECRUITER_DEMO_PROMPTS):
+    prompts = PILOT_DEMO_PROMPTS if is_pilot else RECRUITER_DEMO_PROMPTS
+    for idx, prompt in enumerate(prompts):
         with prompt_cols[idx % 3]:
             st.markdown(
                 f"""
@@ -702,12 +779,20 @@ def render_command_center_welcome():
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button("Run this question", key=f"command_center_prompt_{idx}", use_container_width=True):
+            if st.button(
+                "Run this question",
+                key=f"command_center_prompt_{data_context_key}_{idx}",
+                use_container_width=True,
+            ):
                 st.session_state.pending_suggestion = prompt["question"]
                 st.session_state.show_fusion_command_center = False
                 st.rerun()
 
-    st.info("Choose a starter question above, or type your own below. Auto routing selects the most relevant source path.")
+    st.info(
+        "Pilot mode intentionally exposes staged SQL and five validated PDFs only; live web and production PDFs are excluded."
+        if is_pilot
+        else "Choose a starter question above, or type your own below. Auto routing selects the most relevant source path."
+    )
 
 def render_routing_badge(source_type: str):
     """
@@ -1375,9 +1460,9 @@ def render_fusion_message(msg: dict, is_latest: bool = False):
 # ═══════════════════════════════════════════════════════
 
 @st.cache_resource(show_spinner=False)
-def get_agent():
+def get_agent(data_context_key: str = "live"):
     from agents.fusion_agent import get_fusion_agent    # ✅ lazy import
-    return get_fusion_agent()
+    return get_fusion_agent(data_context_key)
 
 
 
@@ -1478,9 +1563,49 @@ def _scroll_to_command_center():
 def _scroll_to_top():
     _SCROLL_COMPONENT(key="nexusiq-scroll-top", data={"top": True}, height=0)
 
+
+def _select_data_context():
+    """Render the live/pilot switch and clear conversational state on a boundary change."""
+    from config.data_contexts import LIVE_CONTEXT_KEY, PILOT_CONTEXT_KEY, get_data_context
+
+    if "data_context_key" not in st.session_state:
+        st.session_state.data_context_key = LIVE_CONTEXT_KEY
+    if "data_context_selector" not in st.session_state:
+        st.session_state.data_context_selector = st.session_state.data_context_key
+
+    with st.sidebar:
+        st.subheader("Data Workspace")
+        selected = st.radio(
+            "Choose evidence boundary:",
+            [LIVE_CONTEXT_KEY, PILOT_CONTEXT_KEY],
+            format_func=lambda key: get_data_context(key).label,
+            key="data_context_selector",
+            help="Enterprise Pilot uses staged SQL and its isolated validated PDF index only.",
+        )
+
+    if selected != st.session_state.data_context_key:
+        st.session_state.data_context_key = selected
+        for key in (
+            "nexusiq_agent",
+            "_agent_loader",
+            "query_history",
+            "chat_messages",
+            "pending_suggestion",
+            "pending_query_to_process",
+            "pending_repeat_decision",
+            "source_filter_radio",
+        ):
+            st.session_state.pop(key, None)
+        st.session_state.source_filter = "Auto"
+        st.rerun()
+
+    return get_data_context(st.session_state.data_context_key)
+
+
 def run_fusion_chat():
     """Main function for Fusion Chat interface"""
     from streamlit.runtime.scriptrunner import add_script_run_ctx, get_script_run_ctx
+    data_context = _select_data_context()
 
     # ═══════════════════════════════════════════════════════
     #  LOAD AGENT (cached — only slow on first load)
@@ -1500,7 +1625,7 @@ def run_fusion_chat():
             def _worker():
                 add_script_run_ctx(threading.current_thread(), _ctx)
                 try:
-                    _result["agent"] = get_agent()
+                    _result["agent"] = get_agent(data_context.key)
                 except Exception as _exc:
                     _result["error"] = _exc
 
@@ -1579,7 +1704,14 @@ def run_fusion_chat():
         st.session_state.bypass_cache_once_question = None
     
     st.title("🔗 Fusion Agent — Multi-Source Intelligence")
-    st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
+    if data_context.is_pilot:
+        st.markdown("*Validated staged evidence demo: expanded SQL scale plus isolated pilot PDFs*")
+        st.success(
+            "Enterprise Pilot is isolated from production PDFs and live web: "
+            "250,000 combined transactions, $340.66M combined revenue, 5 validated new-period reports."
+        )
+    else:
+        st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
     st.markdown(
         "<p style='font-size:13px; color:#6b7280; margin-top:-8px;'>"
         "<code>Gemini 2.5</code> &nbsp;·&nbsp; <code>Groq LLaMA 3.3</code> &nbsp;·&nbsp; "
@@ -1589,7 +1721,7 @@ def run_fusion_chat():
         unsafe_allow_html=True,
     )
     st.caption(
-        f"Routing: {st.session_state.source_filter}"
+        f"Dataset: {data_context.label} · Routing: {st.session_state.source_filter}"
         + (
             f" · Web category: {st.session_state.web_category}"
             if st.session_state.source_filter == "Web Only"
@@ -1613,9 +1745,10 @@ def run_fusion_chat():
         
         # ✨ NEW: Source Filter
         st.subheader("🎯 Routing Mode")
+        routing_options = ["Auto", "SQL Only", "RAG Only"] if data_context.is_pilot else ["Auto", "SQL Only", "RAG Only", "Web Only"]
         source_filter = st.radio(
             "Choose how to route queries:",
-            ["Auto", "SQL Only", "RAG Only", "Web Only"],
+            routing_options,
             index=0,
             key="source_filter_radio",
             help="Auto: Let Fusion Agent decide | Manual: Force a specific source"
@@ -1635,29 +1768,33 @@ def run_fusion_chat():
             st.session_state.web_category = web_category
         
         with st.expander("📊 Database Schema", expanded=False):
-            st.markdown("**📋 sales_transactions**")
+            st.markdown(f"**📋 {data_context.sql_table}**")
             st.code(
                 "• transaction_date\n• region (5 regions)\n• store_id\n"
                 "• product_category\n• product_name\n• quantity, unit_price\n"
                 "• total_amount\n• customer_id\n• payment_method"
             )
-            st.markdown("**👥 customers**")
-            st.code(
-                "• customer_id\n• name, email, region\n"
-                "• signup_date\n• total_purchases"
-            )
-            st.caption("Customer and inventory dimensions are defined but not yet populated in Supabase.")
+            st.caption(data_context.sql_scope)
+            st.caption(data_context.document_scope)
         
         st.markdown("---")
         st.subheader("💡 Example Questions")
         
-        example_questions = [
-            ("What was Q4 2024 revenue?", "Fusion (SQL+RAG)"),
-            ("Compare Q3 and Q4 performance", "RAG Comparison"),
-            ("What are competitor prices for electronics?", "Web Scraping"),
-            ("Top 5 products by revenue", "SQL Only"),
-            ("What is the return policy?", "RAG Only"),
-        ]
+        example_questions = (
+            [
+                ("Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.", "Pilot SQL + RAG"),
+                ("Validate H1 2026 total revenue and transaction count across SQL and PDF evidence.", "Pilot SQL + RAG"),
+                ("What is the total revenue and transaction count in the Enterprise Pilot combined view?", "Pilot SQL"),
+            ]
+            if data_context.is_pilot
+            else [
+                ("What was Q4 2024 revenue?", "Fusion (SQL+RAG)"),
+                ("Compare Q3 and Q4 performance", "RAG Comparison"),
+                ("What are competitor prices for electronics?", "Web Scraping"),
+                ("Top 5 products by revenue", "SQL Only"),
+                ("What is the return policy?", "RAG Only"),
+            ]
+        )
         
         for eq, hint in example_questions:
             if st.button(f"💬 {eq}", key=f"ex_{eq[:20]}", use_container_width=True):
@@ -1730,7 +1867,7 @@ def run_fusion_chat():
         st.session_state.scroll_target = None
         st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
         _scroll_to_command_center()
-        render_command_center_welcome()
+        render_command_center_welcome(data_context.key)
         st.stop()
     
     total_messages = len(st.session_state.chat_messages)
@@ -2031,7 +2168,7 @@ def run_fusion_chat():
         st.markdown("---")
         st.markdown('<div id="nexusiq-command-center"></div>', unsafe_allow_html=True)
         _scroll_to_command_center()
-        render_command_center_welcome()
+        render_command_center_welcome(data_context.key)
 
 # Run the app
 if __name__ == "__main__":

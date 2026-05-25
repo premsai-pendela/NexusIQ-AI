@@ -28,6 +28,7 @@ class DataContext:
     sql_scope: str
     date_guidance: str
     document_scope: str
+    available_years: tuple[int, ...] = (2024,)
     chroma_directory: Optional[Path] = None
     chroma_collection: str = "nexusiq_docs"
     isolated_pilot: bool = False
@@ -66,6 +67,7 @@ PILOT_CONTEXT = DataContext(
     document_scope=(
         "5 isolated validated financial PDFs for FY 2021, FY 2022, FY 2023, FY 2025, and H1 2026"
     ),
+    available_years=(2021, 2022, 2023, 2024, 2025, 2026),
     chroma_directory=PILOT_CHROMA_DIRECTORY,
     chroma_collection=PILOT_COLLECTION_NAME,
     isolated_pilot=True,

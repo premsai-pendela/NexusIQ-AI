@@ -330,15 +330,23 @@ SQL QUERY:"""
         if self.data_context.is_pilot:
             normalize_relation = lambda relation: re.sub(r"\s+", "", relation).lower()
             allowed_table = normalize_relation(self.data_context.sql_table)
+            # EXTRACT(YEAR FROM column) contains FROM as expression syntax, not
+            # a relational read. Remove it before inspecting actual relations.
+            relation_sql = re.sub(
+                r"\bEXTRACT\s*\(\s*[a-z_]+\s+FROM\s+[^)]*\)",
+                "EXTRACT_VALUE",
+                sql_query,
+                flags=re.IGNORECASE,
+            )
             cte_names = {
                 name.lower()
-                for name in re.findall(r"(?:\bWITH|,)\s+([a-z_][a-z0-9_]*)\s+AS\s*\(", sql_query, re.IGNORECASE)
+                for name in re.findall(r"(?:\bWITH|,)\s+([a-z_][a-z0-9_]*)\s+AS\s*\(", relation_sql, re.IGNORECASE)
             }
             relations = [
                 normalize_relation(relation)
                 for relation in re.findall(
                     r"\b(?:FROM|JOIN)\s+([a-z_\"][a-z0-9_\"]*(?:\s*\.\s*[a-z_\"][a-z0-9_\"]*)?)",
-                    sql_query,
+                    relation_sql,
                     re.IGNORECASE,
                 )
             ]
@@ -346,7 +354,7 @@ SQL QUERY:"""
                 return False, "Enterprise Pilot SQL must read only its validated staging view"
             from_clauses = re.findall(
                 r"\bFROM\s+(.*?)(?=\bWHERE\b|\bGROUP\b|\bORDER\b|\bLIMIT\b|\bHAVING\b|\bUNION\b|\bJOIN\b|\)|;|$)",
-                sql_query,
+                relation_sql,
                 re.IGNORECASE | re.DOTALL,
             )
             if any("," in clause for clause in from_clauses):
@@ -587,7 +595,11 @@ EXPLANATION:"""
         # Step 0: Validate question with auto-correction
         # ═══════════════════════════════════════════════════════
         
-        validation = validate_question(question, auto_fix=True)
+        validation = validate_question(
+            question,
+            auto_fix=True,
+            available_years=self.data_context.available_years,
+        )
         
         # If auto-corrected, use the corrected question
         if validation.get("auto_corrected"):

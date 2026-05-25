@@ -4,7 +4,7 @@ Context-aware validation with auto-correction
 """
 
 from difflib import get_close_matches
-from typing import List, Optional, Tuple, Dict
+from typing import Iterable, List, Optional, Tuple, Dict
 from datetime import datetime
 import re
 
@@ -144,24 +144,30 @@ def check_category_typo(question: str) -> Optional[dict]:
 #  DATE VALIDATION
 # ═══════════════════════════════════════════════════════════
 
-def check_date_range(question: str) -> Optional[dict]:
+def check_date_range(question: str, available_years: Optional[Iterable[int]] = None) -> Optional[dict]:
     """Check if question mentions dates outside available range"""
 
-    # Match years that are clearly outside 2024
-    year_pattern = r'\b(19\d{2}|20[0-1]\d|202[0-3]|202[5-9])\b'
-    years = re.findall(year_pattern, question)
+    years = [int(year) for year in re.findall(r'\b(?:19\d{2}|20\d{2})\b', question)]
 
     if not years:
         return None
 
-    mentioned_year = int(years[0])
+    if available_years is None:
+        valid_years = (DATA_START_DATE.year,)
+        data_range = f"{DATA_START_DATE.strftime('%b %Y')} to {DATA_END_DATE.strftime('%b %Y')}"
+        suggestion = "Try '2024' or a quarter like 'Q4 2024' instead"
+    else:
+        valid_years = tuple(sorted(set(available_years)))
+        data_range = ", ".join(str(year) for year in valid_years)
+        suggestion = f"Try an available year: {data_range}"
 
-    if mentioned_year < DATA_START_DATE.year or mentioned_year > DATA_END_DATE.year:
+    mentioned_year = next((year for year in years if year not in valid_years), None)
+    if mentioned_year is not None:
         return {
             "issue": f"Data not available for {mentioned_year}",
             "mentioned_year": mentioned_year,
-            "data_range": f"{DATA_START_DATE.strftime('%b %Y')} to {DATA_END_DATE.strftime('%b %Y')}",
-            "suggestion": f"Try '2024' or a quarter like 'Q4 2024' instead"
+            "data_range": data_range,
+            "suggestion": suggestion,
         }
 
     return None
@@ -308,7 +314,11 @@ def auto_correct_question(question: str) -> dict:
 #  MAIN VALIDATION (ENHANCED)
 # ═══════════════════════════════════════════════════════════
 
-def validate_question(question: str, auto_fix: bool = True) -> dict:
+def validate_question(
+    question: str,
+    auto_fix: bool = True,
+    available_years: Optional[Iterable[int]] = None,
+) -> dict:
     """
     ✅ ENHANCED: Run context-aware validations with auto-correction
     
@@ -351,7 +361,7 @@ def validate_question(question: str, auto_fix: bool = True) -> dict:
     suggestions = []
     
     # Check date range
-    date_issue = check_date_range(question)
+    date_issue = check_date_range(question, available_years=available_years)
     if date_issue:
         issues.append({
             "type": "date_range",

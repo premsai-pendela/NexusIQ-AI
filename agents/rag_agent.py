@@ -1490,9 +1490,17 @@ ANSWER:"""
         tokenized_query = query.lower().split()
         bm25_scores = self.bm25_index.get_scores(tokenized_query)
         
-        # Normalize BM25 scores to 0-1
-        max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1
-        bm25_normalized = bm25_scores / max_bm25
+        # BM25 can be negative when query terms occur throughout a small corpus.
+        # Min-max scaling preserves relative keyword relevance without penalizing
+        # otherwise strong vector matches below zero.
+        min_bm25 = float(min(bm25_scores)) if len(bm25_scores) else 0.0
+        max_bm25 = float(max(bm25_scores)) if len(bm25_scores) else 0.0
+        if max_bm25 > min_bm25:
+            bm25_normalized = (bm25_scores - min_bm25) / (max_bm25 - min_bm25)
+        elif max_bm25 > 0:
+            bm25_normalized = bm25_scores / max_bm25
+        else:
+            bm25_normalized = bm25_scores * 0
         
         # ═══════════════════════════════════════════════
         # Part B: Vector Semantic Search

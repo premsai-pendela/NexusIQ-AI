@@ -485,6 +485,7 @@ Reply with ONLY this JSON (no extra text):
             return {
                 'success': result.get('success', False),
                 'answer': result.get('answer', ''),
+                'error': result.get('error', ''),
                 'query': result.get('query', ''),
                 'results': result.get('results', []),
                 'row_count': result.get('row_count', 0),

@@ -17,6 +17,14 @@ PILOT_CHROMA_DIRECTORY = (
 )
 PILOT_COLLECTION_NAME = "nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2"
 
+PORTFOLIO_DATASET_ID = "enterprise_portfolio_v1"
+# sha256("enterprise_portfolio_v1")[:8] = 502a08ab
+PORTFOLIO_COMBINED_VIEW = '"nexusiq_expansion_staging"."combined_sales_transactions_enterprise_portfolio_v1_502a08ab"'
+PORTFOLIO_CHROMA_DIRECTORY = (
+    REPO_ROOT / "data" / "chroma_staging" / PORTFOLIO_DATASET_ID / "validated_v2" / "financial_documents"
+)
+PORTFOLIO_COLLECTION_NAME = "nexusiq_portfolio_financial_docs_enterprise_portfolio_v1_validated_v2"
+
 
 @dataclass(frozen=True)
 class DataContext:

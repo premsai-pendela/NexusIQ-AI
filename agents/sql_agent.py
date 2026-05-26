@@ -211,6 +211,57 @@ class SQLAgent:
     • CURRENT_DATE (data is historical from 2024)
     • EXTRACT(QUARTER FROM ...) without explicit year filter
 
+    TABLE: customers (14,979 rows — one per unique customer in sales_transactions)
+    • id (INTEGER, PRIMARY KEY)
+    • customer_id (VARCHAR): matches customer_id in sales_transactions, e.g. 'CUST00001'
+    • name (VARCHAR): full name
+    • email (VARCHAR)
+    • region (VARCHAR): dominant region from purchase history
+    • signup_date (TIMESTAMP): date customer first registered
+    • total_purchases (NUMERIC): lifetime spend derived from sales_transactions
+
+    TABLE: products (20 rows — full product catalog)
+    • id (INTEGER, PRIMARY KEY)
+    • product_name (VARCHAR): matches product_name in sales_transactions
+    • category (VARCHAR): matches product_category in sales_transactions
+    • avg_unit_price (NUMERIC): historical average price from sales
+    • min_unit_price (NUMERIC)
+    • max_unit_price (NUMERIC)
+    • description (TEXT): product description
+
+    TABLE: inventory (2,000 rows — stock levels per store per product)
+    • id (INTEGER, PRIMARY KEY)
+    • store_id (VARCHAR): matches store_id in sales_transactions, e.g. 'E001'
+    • product_name (VARCHAR): matches product_name in sales_transactions
+    • stock_level (INTEGER): current units in stock
+    • reorder_point (INTEGER): threshold that triggers reorder
+    • last_restocked (TIMESTAMP)
+
+    TABLE: returns (3,000 rows — product return records)
+    • id (INTEGER, PRIMARY KEY)
+    • transaction_id (INTEGER): references id in sales_transactions
+    • customer_id (VARCHAR): references customer_id in sales_transactions
+    • product_name (VARCHAR)
+    • return_date (TIMESTAMP)
+    • reason (VARCHAR): 'Changed mind', 'Defective product', 'Wrong size', 'Not as described', 'Better price found', 'Duplicate order', 'Quality not satisfactory'
+    • refund_amount (NUMERIC)
+    • status (VARCHAR): 'pending', 'approved', 'received', 'refunded', 'rejected'
+
+    TABLE: support_cases (2,000 rows — customer support tickets)
+    • id (INTEGER, PRIMARY KEY)
+    • customer_id (VARCHAR): references customer_id in sales_transactions
+    • subject (VARCHAR): issue description
+    • priority (VARCHAR): 'low', 'medium', 'high', 'urgent'
+    • status (VARCHAR): 'open', 'in_progress', 'resolved', 'closed'
+    • created_at (TIMESTAMP): when ticket was opened (all in 2024)
+    • resolved_at (TIMESTAMP): NULL if not yet resolved
+
+    JOIN EXAMPLES:
+    • sales + customers: JOIN customers c ON st.customer_id = c.customer_id
+    • sales + returns: JOIN returns r ON st.id = r.transaction_id
+    • sales + support: JOIN support_cases sc ON st.customer_id = sc.customer_id
+    • inventory by store: SELECT store_id, SUM(stock_level) FROM inventory GROUP BY store_id
+
     POSTGRESQL NOTES:
     • Use ILIKE for case-insensitive matching
     • Use DATE_TRUNC('month', column) for grouping by month

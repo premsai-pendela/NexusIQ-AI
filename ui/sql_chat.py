@@ -543,20 +543,56 @@ def run_sql_chat():
 
         with st.expander("👥 customers"):
             st.code(
-                "• customer_id\n• name, email, region\n"
-                "• signup_date\n• total_purchases"
+                "• customer_id (joins sales_transactions)\n• name, email, region\n"
+                "• signup_date\n• total_purchases (lifetime spend)"
             )
-            st.caption("Defined in Supabase; customer dimension records are not populated yet.")
+            st.caption("14,979 rows — one per unique customer in sales data")
+
+        with st.expander("📦 products"):
+            st.code(
+                "• product_name (joins sales_transactions)\n• category\n"
+                "• avg_unit_price, min_unit_price, max_unit_price\n• description"
+            )
+            st.caption("20 rows — full product catalog with price ranges")
+
+        with st.expander("🏪 inventory"):
+            st.code(
+                "• store_id (joins sales_transactions)\n• product_name\n"
+                "• stock_level\n• reorder_point\n• last_restocked"
+            )
+            st.caption("2,000 rows — stock levels for all 100 stores × 20 products")
+
+        with st.expander("↩️ returns"):
+            st.code(
+                "• transaction_id (joins sales_transactions.id)\n• customer_id\n"
+                "• product_name\n• return_date\n• reason\n"
+                "• refund_amount\n• status"
+            )
+            st.caption("3,000 rows — ~3% return rate across 2024 transactions")
+
+        with st.expander("🎧 support_cases"):
+            st.code(
+                "• customer_id (joins sales_transactions)\n• subject\n"
+                "• priority (low/medium/high/urgent)\n"
+                "• status (open/in_progress/resolved/closed)\n"
+                "• created_at\n• resolved_at"
+            )
+            st.caption("2,000 rows — customer support tickets from 2024")
 
         st.markdown("---")
         st.subheader("💡 Example Questions")
-        
+
         example_questions = [
             "What is the total revenue?",
             "Show sales by region",
             "Top 5 products by revenue",
             "Monthly sales trend",
-            "Compare payment methods"
+            "Compare payment methods",
+            "How many customers do we have?",
+            "Which customers have the highest lifetime spend?",
+            "What is our product return rate?",
+            "How many open support cases are there?",
+            "Which stores have the lowest inventory stock?",
         ]
         
         for eq in example_questions:

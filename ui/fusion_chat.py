@@ -1977,6 +1977,10 @@ def run_fusion_chat():
                 ("What are competitor prices for electronics?", "Web Scraping"),
                 ("Top 5 products by revenue", "SQL Only"),
                 ("What is the return policy?", "RAG Only"),
+                ("How many customers do we have and what is their average lifetime spend?", "SQL Only"),
+                ("Which products have the highest return rate?", "SQL Only"),
+                ("How many open support cases do we have by priority?", "SQL Only"),
+                ("Which stores have inventory below reorder point?", "SQL Only"),
             ]
         )
         

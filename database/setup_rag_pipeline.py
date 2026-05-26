@@ -36,7 +36,8 @@ CATEGORIES = [
     "03_contracts_legal",
     "04_products_operations",
     "05_strategic_planning",
-    "06_hr_compliance"
+    "06_hr_compliance",
+    "07_communications",
 ]
 
 

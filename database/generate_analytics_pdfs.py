@@ -1,11 +1,13 @@
 """
-Generate 5 analytics PDFs for NexusIQ RAG stress-testing.
+Generate 5 data-dense analytics PDFs for NexusIQ RAG stress-testing.
 
-All numbers are pulled from the live DB (see summary below). Each PDF covers
-a different business dimension but deliberately overlaps on revenue, regions,
-and products — so RAG must work hard to surface the right chunk.
+These are NOT executive summaries. Each PDF mirrors how a real company
+actually stores operational data — row-level tables, monthly cadence,
+per-store/per-product granularity, case logs with IDs.
 
-Ground-truth DB values (pulled 2026-05-26):
+Target: 80-200 chunks per PDF (vs 9 in the summary version).
+
+Ground-truth DB values (live Supabase, pulled 2026-05-26):
   transactions: 100,000 | revenue: $175,595,178.16
   customers: 14,979 | avg_spend: $11,722.76 | max: $59,521.80
   customer_regions: Central(4599), East(3676), West(2351), South(2330), North(2023)
@@ -20,7 +22,7 @@ Ground-truth DB values (pulled 2026-05-26):
   revenue_by_region: West($37,880,499.39), East($36,314,020.57), Central($35,679,253.01),
                      South($35,470,111.47), North($30,251,293.72)
 
-Output: data/pdfs/08_analytics/ (5 PDFs)
+Output: data/pdfs/08_analytics/ (5 PDFs, ~100-200 chunks each after ingestion)
 
 Usage:
     python -m database.generate_analytics_pdfs generate
@@ -31,66 +33,80 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import random
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = REPO_ROOT / "data" / "pdfs" / "08_analytics"
 CATEGORY = "08_analytics"
 
-# ─── Shared ground-truth constants ────────────────────────────────────────────
+# ─── Ground-truth constants ────────────────────────────────────────────────────
 
-TOTAL_REVENUE = "$175,595,178.16"
-TOTAL_REVENUE_SHORT = "$175.6M"
-TOTAL_TRANSACTIONS = "100,000"
-TOTAL_CUSTOMERS = "14,979"
-AVG_SPEND = "$11,722.76"
-MAX_SPEND = "$59,521.80"
-TOTAL_RETURNS = "6,000"
-AVG_REFUND = "$1,618.61"
-RETURN_RATE = "6.0%"          # 6000 / 100000
-TOTAL_INVENTORY_RECORDS = "2,000"
-LOW_STOCK_COUNT = "72"
-TOTAL_SUPPORT_CASES = "2,000"
-
-REGION_CUSTOMERS = {
-    "Central": 4599, "East": 3676, "West": 2351, "South": 2330, "North": 2023,
+REGIONS = ["Central", "East", "West", "South", "North"]
+REGION_CUSTOMERS = {"Central": 4599, "East": 3676, "West": 2351, "South": 2330, "North": 2023}
+REGION_REVENUE   = {
+    "West": 37880499.39, "East": 36314020.57, "Central": 35679253.01,
+    "South": 35470111.47, "North": 30251293.72,
 }
-REGION_REVENUE = {
-    "West":    "$37,880,499.39",
-    "East":    "$36,314,020.57",
-    "Central": "$35,679,253.01",
-    "South":   "$35,470,111.47",
-    "North":   "$30,251,293.72",
+PRODUCTS = [
+    "Laptop", "Phone", "Tablet", "Headphones",
+    "Jacket", "Jeans", "Shoes", "T-Shirt",
+    "Bedding", "Decor", "Furniture", "Kitchen",
+    "Accessories", "Apparel", "Equipment", "Footwear",
+    "Drinks", "Frozen", "Produce", "Snacks",
+]
+CATEGORIES_MAP = {
+    "Laptop": "Electronics", "Phone": "Electronics", "Tablet": "Electronics",
+    "Headphones": "Electronics",
+    "Jacket": "Clothing", "Jeans": "Clothing", "Shoes": "Clothing", "T-Shirt": "Clothing",
+    "Bedding": "Home", "Decor": "Home", "Furniture": "Home", "Kitchen": "Home",
+    "Accessories": "Sports", "Apparel": "Sports", "Equipment": "Sports", "Footwear": "Sports",
+    "Drinks": "Food", "Frozen": "Food", "Produce": "Food", "Snacks": "Food",
 }
 CATEGORY_REVENUE = {
-    "Electronics": "$91,010,125.61",
-    "Home":        "$40,877,008.66",
-    "Sports":      "$27,478,085.87",
-    "Clothing":    "$11,731,765.10",
-    "Food":        "$4,498,192.92",
+    "Electronics": 91010125.61, "Home": 40877008.66,
+    "Sports": 27478085.87, "Clothing": 11731765.10, "Food": 4498192.92,
 }
-TOP_RETURNED_PRODUCTS = [
-    ("Jeans",    331),
-    ("Bedding",  325),
-    ("Decor",    322),
-    ("Kitchen",  315),
-    ("Tablet",   314),
-    ("Phone",    309),
-    ("Laptop",   302),
-    ("Shoes",    298),
-    ("Jacket",   287),
-    ("Headphones", 281),
+STORES = {r: [f"{r[0]}{str(i).zfill(3)}" for i in range(1, 21)] for r in REGIONS}
+ALL_STORES = [s for r in REGIONS for s in STORES[r]]  # 100 stores
+
+TOP_RETURN_COUNTS = {
+    "Jeans": 331, "Bedding": 325, "Decor": 322, "Kitchen": 315, "Tablet": 314,
+    "Phone": 309, "Laptop": 302, "Shoes": 298, "Jacket": 287, "Headphones": 281,
+    "T-Shirt": 274, "Furniture": 267, "Equipment": 261, "Apparel": 258,
+    "Accessories": 252, "Footwear": 244, "Frozen": 198, "Drinks": 187,
+    "Produce": 175, "Snacks": 169,
+}  # sums to ~5,312 of 6,000
+
+RETURN_REASONS = ["Defective", "Size/Fit", "Not as Described", "Wrong Item",
+                  "Changed Mind", "Quality Issue", "Damaged in Shipping", "Duplicate Order"]
+RETURN_STATUSES = ["rejected", "refunded", "pending", "received", "approved"]
+RETURN_STATUS_COUNTS = {"rejected": 1242, "refunded": 1207, "pending": 1197,
+                         "received": 1181, "approved": 1173}
+SUPPORT_PRIORITIES = ["low", "high", "urgent", "medium"]
+SUPPORT_STATUSES   = ["closed", "in_progress", "open", "resolved"]
+SUPPORT_SUBJECTS = [
+    "Defective product received", "Order not delivered", "Return request",
+    "Wrong item shipped", "Refund not processed", "Account access issue",
+    "Billing discrepancy", "Product setup assistance", "Warranty claim",
+    "Damaged packaging", "Missing accessories", "Subscription cancellation",
+    "Price match request", "Delivery delay", "Exchange request",
 ]
-RETURN_STATUSES = {
-    "rejected": 1242, "refunded": 1207, "pending": 1197,
-    "received": 1181, "approved": 1173,
-}
-SUPPORT_PRIORITIES = {"low": 520, "high": 502, "urgent": 497, "medium": 481}
-SUPPORT_STATUSES   = {"closed": 530, "in_progress": 506, "open": 489, "resolved": 475}
+
+_rng = random.Random(42)
 
 
-# ─── ReportLab helpers ────────────────────────────────────────────────────────
+def _fmt(v: float) -> str:
+    return f"${v:,.2f}"
+
+
+def _date_in_2024(offset_days: int) -> str:
+    return (date(2024, 1, 1) + timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+
+# ─── ReportLab helpers ─────────────────────────────────────────────────────────
 
 def _make_doc(path: Path, title: str):
     from reportlab.lib.pagesizes import letter
@@ -98,9 +114,9 @@ def _make_doc(path: Path, title: str):
     from reportlab.lib.units import inch
     return SimpleDocTemplate(
         str(path), pagesize=letter,
-        leftMargin=0.9 * inch, rightMargin=0.9 * inch,
-        topMargin=0.9 * inch, bottomMargin=0.9 * inch,
-        title=title, author="NexusIQ Analytics Team",
+        leftMargin=0.7 * inch, rightMargin=0.7 * inch,
+        topMargin=0.8 * inch, bottomMargin=0.8 * inch,
+        title=title, author="NexusIQ Analytics",
     )
 
 
@@ -110,53 +126,48 @@ def _styles():
     s = getSampleStyleSheet()
     extra = {
         "Subtitle": ParagraphStyle("Subtitle", parent=s["Normal"],
-                                    fontSize=11, textColor=colors.HexColor("#555555"),
-                                    spaceAfter=14),
+                                    fontSize=10, textColor=colors.HexColor("#555555"),
+                                    spaceAfter=10),
         "SectionHead": ParagraphStyle("SectionHead", parent=s["Heading2"],
-                                       fontSize=13, textColor=colors.HexColor("#1a3c6e"),
-                                       spaceBefore=18, spaceAfter=6),
+                                       fontSize=12, textColor=colors.HexColor("#1a3c6e"),
+                                       spaceBefore=14, spaceAfter=5),
         "SubHead": ParagraphStyle("SubHead", parent=s["Heading3"],
-                                   fontSize=11, textColor=colors.HexColor("#2c5f9e"),
-                                   spaceBefore=12, spaceAfter=4),
+                                   fontSize=10, textColor=colors.HexColor("#2c5f9e"),
+                                   spaceBefore=8, spaceAfter=3),
         "Body": ParagraphStyle("Body", parent=s["Normal"],
-                                fontSize=10, leading=15, spaceAfter=6),
-        "Bullet": ParagraphStyle("Bullet", parent=s["Normal"],
-                                  fontSize=10, leading=14, leftIndent=20,
-                                  spaceAfter=3, bulletIndent=8),
+                                fontSize=9, leading=13, spaceAfter=5),
         "Caption": ParagraphStyle("Caption", parent=s["Normal"],
-                                   fontSize=8, textColor=colors.grey,
-                                   spaceAfter=10),
-        "KPI": ParagraphStyle("KPI", parent=s["Normal"],
-                               fontSize=14, textColor=colors.HexColor("#0d47a1"),
-                               spaceAfter=4, leading=18),
+                                   fontSize=7.5, textColor=colors.grey, spaceAfter=8),
         "Alert": ParagraphStyle("Alert", parent=s["Normal"],
-                                 fontSize=10, textColor=colors.HexColor("#b71c1c"),
-                                 leading=14, spaceAfter=6),
+                                 fontSize=9, textColor=colors.HexColor("#b71c1c"),
+                                 leading=13, spaceAfter=5),
+        "Mono": ParagraphStyle("Mono", parent=s["Normal"],
+                                fontName="Courier", fontSize=8, leading=11, spaceAfter=3),
     }
     s.__dict__["byName"].update(extra)
     return s, extra
 
 
-def _table(data: list[list], col_widths=None):
+def _table(data, col_widths=None, small=False):
     from reportlab.platypus import Table, TableStyle
     from reportlab.lib import colors
+    fs = 7.5 if small else 8.5
     t = Table(data, colWidths=col_widths)
     t.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, 0), colors.HexColor("#1a3c6e")),
-        ("TEXTCOLOR",    (0, 0), (-1, 0), colors.white),
-        ("FONTNAME",     (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE",     (0, 0), (-1, 0), 9),
-        ("BOTTOMPADDING",(0, 0), (-1, 0), 8),
-        ("TOPPADDING",   (0, 0), (-1, 0), 8),
-        ("FONTNAME",     (0, 1), (-1, -1), "Helvetica"),
-        ("FONTSIZE",     (0, 1), (-1, -1), 9),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1),
-         [colors.white, colors.HexColor("#f0f4ff")]),
-        ("GRID",         (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
-        ("TOPPADDING",   (0, 1), (-1, -1), 5),
-        ("BOTTOMPADDING",(0, 1), (-1, -1), 5),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("BACKGROUND",    (0, 0), (-1, 0), colors.HexColor("#1a3c6e")),
+        ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 0), fs),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+        ("TOPPADDING",    (0, 0), (-1, 0), 5),
+        ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 1), (-1, -1), fs),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, colors.HexColor("#f0f4ff")]),
+        ("GRID",          (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("TOPPADDING",    (0, 1), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 3),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
     ]))
     return t
 
@@ -164,860 +175,1020 @@ def _table(data: list[list], col_widths=None):
 def _hr():
     from reportlab.platypus import HRFlowable
     from reportlab.lib import colors
-    return HRFlowable(width="100%", thickness=0.8, color=colors.HexColor("#1a3c6e"),
-                      spaceAfter=6, spaceBefore=6)
+    return HRFlowable(width="100%", thickness=0.6, color=colors.HexColor("#1a3c6e"),
+                      spaceAfter=4, spaceBefore=4)
 
 
-def _sp(h=0.1):
+def _sp(h=0.08):
     from reportlab.platypus import Spacer
     from reportlab.lib.units import inch
     return Spacer(1, h * inch)
 
 
-# ─── PDF 1: Customer Segmentation Report ──────────────────────────────────────
+def _pgbreak():
+    from reportlab.platypus import PageBreak
+    return PageBreak()
 
-def build_customer_segmentation(out_path: Path) -> None:
+
+# ─── PDF 1: Customer CRM Export ───────────────────────────────────────────────
+# Real format: monthly acquisition tables, cohort retention, per-customer records,
+# spend brackets, region×category cross-tab, churn flags.
+
+def build_customer_crm_export(out_path: Path) -> None:
     from reportlab.platypus import Paragraph
-    doc = _make_doc(out_path, "Customer Segmentation Report 2024")
+    doc = _make_doc(out_path, "Customer CRM Export 2024")
     s, e = _styles()
+
+    MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
+                   "Jul","Aug","Sep","Oct","Nov","Dec"]
+    # Monthly acquisition per region (sums to 14,979)
+    monthly_acq = {
+        r: [_rng.randint(90, 150) for _ in range(12)]
+        for r in REGIONS
+    }
+    # Scale to match exact totals
+    for r in REGIONS:
+        raw_total = sum(monthly_acq[r])
+        scale = REGION_CUSTOMERS[r] / raw_total
+        monthly_acq[r] = [int(v * scale) for v in monthly_acq[r]]
+        # fix rounding diff on last month
+        diff = REGION_CUSTOMERS[r] - sum(monthly_acq[r])
+        monthly_acq[r][-1] += diff
+
     story = []
-
     story += [
-        Paragraph("NexusIQ Corporation", s["Heading1"]),
-        Paragraph("Customer Segmentation & Lifetime Value Analysis — FY 2024",
+        Paragraph("NexusIQ Corporation — Customer Relationship Management", s["Heading1"]),
+        Paragraph("CRM Data Export: FY 2024 Customer Acquisition, Cohorts & Spend Analysis",
                   e["Subtitle"]),
-        Paragraph("Prepared by: Analytics & Customer Intelligence Team | "
-                  "Classification: Internal | Date: January 2025", e["Caption"]),
-        _hr(), _sp(0.15),
+        Paragraph("System: NexusIQ CRM v4.2 | Export date: 2025-01-03 | "
+                  "Records: 14,979 customers | Classification: Internal", e["Caption"]),
+        _hr(), _sp(),
     ]
 
-    # Executive Summary
+    # ── Section 1: Monthly acquisition by region ──
     story += [
-        Paragraph("Executive Summary", e["SectionHead"]),
-        Paragraph(
-            "NexusIQ served <b>14,979 unique customers</b> across five geographic regions "
-            "in FY 2024, generating total revenue of <b>$175,595,178.16</b> from "
-            "100,000 transactions. Average customer lifetime value for the year reached "
-            "<b>$11,722.76</b>, with the highest-spending customer contributing "
-            "<b>$59,521.80</b>. This report segments the customer base by region, "
-            "purchase frequency, product category affinity, and support engagement to "
-            "identify growth opportunities and retention risks.", e["Body"]),
-        _sp(),
+        Paragraph("1. Monthly Customer Acquisition by Region — FY 2024", e["SectionHead"]),
+        Paragraph("New unique customers added each month, broken down by geographic region. "
+                  "Cumulative total at year-end: 14,979 active customers.", e["Body"]),
     ]
+    hdr = ["Month"] + REGIONS + ["Total"]
+    rows = [hdr]
+    running = {r: 0 for r in REGIONS}
+    for mi, mn in enumerate(MONTH_NAMES):
+        row_vals = [monthly_acq[r][mi] for r in REGIONS]
+        running = {r: running[r] + monthly_acq[r][mi] for r in REGIONS}
+        rows.append([mn] + [str(v) for v in row_vals] + [str(sum(row_vals))])
+    rows.append(["YTD Total"] + [str(REGION_CUSTOMERS[r]) for r in REGIONS] + ["14,979"])
+    story.append(_table(rows, col_widths=[50, 80, 60, 60, 60, 60, 55], small=True))
+    story.append(e["Caption"].__class__ and
+                 Paragraph("Source: customers.signup_date grouped by region and month.", e["Caption"]))
+    story.append(_sp())
 
-    # KPI grid
+    # ── Section 2: Running cumulative acquisition ──
     story += [
-        Paragraph("Key Performance Indicators", e["SectionHead"]),
-        _table([
-            ["Metric", "Value", "YoY Change"],
-            ["Total Unique Customers",    "14,979", "+8.3%"],
-            ["Total Revenue",             "$175,595,178.16", "+11.2%"],
-            ["Avg Customer Lifetime Value","$11,722.76", "+2.6%"],
-            ["Max Single-Customer Spend", "$59,521.80", "—"],
-            ["Avg Transactions per Customer", "6.68", "+0.4"],
-            ["Customer Retention Rate",   "74.2%", "+1.1 pp"],
-        ], col_widths=[210, 160, 110]),
-        _sp(0.2),
+        Paragraph("2. Cumulative Customer Base Growth — FY 2024", e["SectionHead"]),
+        Paragraph("Cumulative unique customers at end of each month:", e["Body"]),
     ]
+    cum_rows = [["Month"] + REGIONS + ["Total Cumulative"]]
+    cum = {r: 0 for r in REGIONS}
+    for mi, mn in enumerate(MONTH_NAMES):
+        cum = {r: cum[r] + monthly_acq[r][mi] for r in REGIONS}
+        cum_rows.append([mn] + [str(cum[r]) for r in REGIONS] + [str(sum(cum.values()))])
+    story.append(_table(cum_rows, col_widths=[50, 80, 60, 60, 60, 60, 80], small=True))
+    story.append(_sp())
 
-    # Regional breakdown
+    # ── Section 3: Customer spend brackets ──
     story += [
-        Paragraph("Regional Customer Distribution", e["SectionHead"]),
-        Paragraph(
-            "The Central region leads with 4,599 customers (30.7% of base), followed by "
-            "East with 3,676 (24.5%). The North region has the smallest customer count "
-            "at 2,023 (13.5%) but shows the highest average order value at $254.18. "
-            "West customers (2,351) drive the highest total regional revenue at "
-            "$37,880,499.39, despite ranking third in customer count — indicating a "
-            "premium-heavy purchasing pattern.", e["Body"]),
-        _table([
-            ["Region", "Customers", "% of Base", "Regional Revenue", "Avg Order Value"],
-            ["Central", "4,599", "30.7%", "$35,679,253.01", "$214.91"],
-            ["East",    "3,676", "24.5%", "$36,314,020.57", "$236.52"],
-            ["West",    "2,351", "15.7%", "$37,880,499.39", "$271.18"],
-            ["South",   "2,330", "15.6%", "$35,470,111.47", "$245.32"],
-            ["North",   "2,023", "13.5%", "$30,251,293.72", "$254.18"],
-            ["Total",   "14,979", "100%", "$175,595,178.16", "$244.17"],
-        ], col_widths=[80, 80, 80, 150, 110]),
-        Paragraph(
-            "Note: Regional revenue totals reflect all 100,000 transactions in "
-            "sales_transactions. West leads in revenue despite third-place customer "
-            "count, suggesting higher per-transaction values in that market.", e["Caption"]),
-        _sp(0.2),
+        Paragraph("3. Customer Spend Distribution — FY 2024", e["SectionHead"]),
+        Paragraph("Distribution of 14,979 customers by total FY 2024 spend. Average: $11,722.76. "
+                  "Maximum single customer: $59,521.80. Minimum: $127.40.", e["Body"]),
     ]
-
-    # Customer tiers
-    story += [
-        Paragraph("Customer Value Tiers", e["SectionHead"]),
-        Paragraph(
-            "Customers are segmented into four spend tiers based on FY 2024 cumulative "
-            "purchase value. The top 5% (approximately 749 customers) account for an "
-            "estimated 28% of total revenue — a concentration pattern consistent with "
-            "B2C retail industry benchmarks (Pareto principle: 20% of customers drive "
-            "~60-80% of revenue in retail). The bottom tier (under $2,000 annual spend) "
-            "represents new or lapsed customers and is the primary target for re-engagement "
-            "campaigns in Q1 2025.", e["Body"]),
-        _table([
-            ["Tier", "Spend Range", "Est. Customers", "% of Total Revenue"],
-            ["Platinum", "> $30,000",   "~224",   "~8.2%"],
-            ["Gold",     "$15,000–$30,000", "~748", "~19.8%"],
-            ["Silver",   "$5,000–$15,000",  "~5,241", "~42.7%"],
-            ["Bronze",   "< $5,000",    "~8,766",  "~29.3%"],
-        ], col_widths=[80, 130, 120, 140]),
-        _sp(0.2),
+    brackets = [
+        ("$0 - $500",          623,  "$189,280"),
+        ("$500 - $1,000",      841,  "$631,012"),
+        ("$1,000 - $2,500",   1847, "$3,282,450"),
+        ("$2,500 - $5,000",   2932, "$10,971,840"),
+        ("$5,000 - $10,000",  4112, "$30,419,840"),
+        ("$10,000 - $15,000", 2318, "$28,975,000"),
+        ("$15,000 - $20,000", 1022, "$17,578,200"),
+        ("$20,000 - $30,000",  892, "$21,634,800"),
+        ("$30,000 - $45,000",  274, "$10,378,600"),
+        ("$45,000+",           118, "$7,126,758"),
     ]
+    br_rows = [["Spend Range", "Customers", "Cum. %", "Segment Revenue", "% of Total Rev"]]
+    cum_pct = 0
+    total_rev = 175595178.16
+    for bracket, cnt, rev_str in brackets:
+        cum_pct += cnt
+        rev_num = float(rev_str.replace("$","").replace(",",""))
+        br_rows.append([
+            bracket, f"{cnt:,}",
+            f"{cum_pct/14979*100:.1f}%",
+            rev_str,
+            f"{rev_num/total_rev*100:.2f}%",
+        ])
+    story.append(_table(br_rows, col_widths=[110, 80, 70, 110, 90]))
+    story.append(_sp())
 
-    # Category affinity
+    # ── Section 4: Region × Category spend cross-tab ──
     story += [
-        Paragraph("Category Purchase Affinity by Region", e["SectionHead"]),
-        Paragraph(
-            "Electronics dominates revenue at $91,010,125.61 (51.8% of total) driven by "
-            "high-value items like Laptops, Tablets, and Phones. West region customers "
-            "index 23% above average on Electronics purchases, while Central region "
-            "customers over-index on Home ($40,877,008.66) and Food ($4,498,192.92) "
-            "categories. Clothing ($11,731,765.10) and Sports ($27,478,085.87) show "
-            "more even regional distribution.", e["Body"]),
-        _table([
-            ["Category",     "FY 2024 Revenue",    "Top Region", "% of Total"],
-            ["Electronics",  "$91,010,125.61", "West",    "51.8%"],
-            ["Home",         "$40,877,008.66", "Central", "23.3%"],
-            ["Sports",       "$27,478,085.87", "East",    "15.6%"],
-            ["Clothing",     "$11,731,765.10", "South",   "6.7%"],
-            ["Food",         "$4,498,192.92",  "Central", "2.6%"],
-        ], col_widths=[100, 150, 100, 100]),
-        _sp(0.2),
+        Paragraph("4. Revenue by Region × Product Category — FY 2024", e["SectionHead"]),
+        Paragraph("Cross-tabulation of sales_transactions revenue (100,000 rows, $175,595,178.16 total) "
+                  "by customer region and product category:", e["Body"]),
     ]
+    cat_region_pct = {
+        "Electronics": {"Central": 0.19, "East": 0.22, "West": 0.26, "South": 0.18, "North": 0.15},
+        "Home":        {"Central": 0.24, "East": 0.20, "West": 0.21, "South": 0.19, "North": 0.16},
+        "Sports":      {"Central": 0.20, "East": 0.22, "West": 0.20, "South": 0.21, "North": 0.17},
+        "Clothing":    {"Central": 0.22, "East": 0.21, "West": 0.19, "South": 0.21, "North": 0.17},
+        "Food":        {"Central": 0.25, "East": 0.20, "West": 0.18, "South": 0.20, "North": 0.17},
+    }
+    cats = ["Electronics", "Home", "Sports", "Clothing", "Food"]
+    cr_rows = [["Category"] + REGIONS + ["Total"]]
+    for cat in cats:
+        row = [cat]
+        cat_total = CATEGORY_REVENUE[cat]
+        for r in REGIONS:
+            row.append(_fmt(cat_total * cat_region_pct[cat][r]))
+        row.append(_fmt(cat_total))
+        cr_rows.append(row)
+    total_row = ["Total"]
+    for r in REGIONS:
+        total_row.append(_fmt(REGION_REVENUE[r]))
+    total_row.append("$175,595,178.16")
+    cr_rows.append(total_row)
+    story.append(_table(cr_rows, col_widths=[90, 80, 80, 75, 75, 70, 85]))
+    story.append(_sp())
 
-    # Support engagement cross-ref
+    # ── Section 5: Cohort retention analysis ──
     story += [
-        Paragraph("Customer Support Engagement", e["SectionHead"]),
-        Paragraph(
-            "Of the 14,979 customers, 2,000 generated at least one support case in FY 2024 "
-            "(13.4% engagement rate). Analysis of support cases cross-referenced with "
-            "customer lifetime value reveals a notable pattern: customers in the Gold and "
-            "Platinum tiers submit 42% of all high-priority and urgent support cases "
-            "despite representing only 12.9% of the customer base. This suggests that "
-            "high-value customers have higher expectations and lower tolerance for service "
-            "issues.", e["Body"]),
-        _table([
-            ["Support Priority", "Case Count", "Pct of Total", "Avg Customer Spend"],
-            ["Low",    "520", "26.0%", "$8,412"],
-            ["High",   "502", "25.1%", "$13,841"],
-            ["Urgent", "497", "24.9%", "$15,203"],
-            ["Medium", "481", "24.1%", "$9,734"],
-        ], col_widths=[120, 100, 110, 140]),
-        _sp(0.2),
+        Paragraph("5. Customer Cohort Retention Analysis — FY 2024", e["SectionHead"]),
+        Paragraph("Quarterly cohort analysis tracking customer re-purchase rates after initial acquisition. "
+                  "Cohort size = customers acquired in that quarter.", e["Body"]),
     ]
-
-    # Returns correlation
-    story += [
-        Paragraph("Return Behavior by Customer Segment", e["SectionHead"]),
-        Paragraph(
-            "The 6,000 returns recorded in FY 2024 (overall return rate: 6.0%) show "
-            "a disproportionate concentration among first-year customers. Silver-tier "
-            "customers (spend $5,000–$15,000) have the highest return rate at 7.2%, "
-            "while Platinum-tier customers return at only 3.1%. Average refund amount "
-            "across all returns is $1,618.61, compared to an average transaction value "
-            "of $1,755.95. Electronics and Home categories drive the highest return "
-            "volumes. Return policy: customers may return items within <b>30 days</b> "
-            "of purchase for a full refund (current policy v2.0, effective Q3 2024).",
-            e["Body"]),
-        _sp(0.2),
+    cohorts = [
+        ("Q1 2024 Cohort", 3780, [100.0, 74.2, 61.8, 55.3]),
+        ("Q2 2024 Cohort", 3841, [100.0, 72.9, 60.1, 53.7]),
+        ("Q3 2024 Cohort", 3822, [100.0, 71.4, 59.4, None]),
+        ("Q4 2024 Cohort", 3536, [100.0, 68.8, None, None]),
     ]
+    coh_rows = [["Cohort", "Size", "M0 (Acq)", "M+1 (Q ret)", "M+2 (H ret)", "M+3 (Ann ret)"]]
+    for cname, csize, rets in cohorts:
+        row = [cname, f"{csize:,}"]
+        for r in rets:
+            row.append(f"{r:.1f}%" if r is not None else "—")
+        coh_rows.append(row)
+    story.append(_table(coh_rows, col_widths=[110, 70, 80, 85, 85, 95]))
+    story.append(_sp())
 
-    # Recommendations
+    # ── Section 6: Top 200 customers by lifetime spend ──
     story += [
-        Paragraph("Strategic Recommendations", e["SectionHead"]),
-        Paragraph("1. <b>North Region Activation:</b> Lowest customer count (2,023) "
-                  "but highest AOV ($254.18). Targeted acquisition could yield "
-                  "disproportionate revenue uplift.", e["Bullet"]),
-        Paragraph("2. <b>West Region Upsell:</b> West leads revenue ($37.9M) — "
-                  "expand premium Electronics and Home bundles.", e["Bullet"]),
-        Paragraph("3. <b>Bronze Tier Re-engagement:</b> 8,766 low-spend customers "
-                  "represent the largest churn risk. Q1 2025 loyalty campaign recommended.",
-                  e["Bullet"]),
-        Paragraph("4. <b>High-Value Support SLAs:</b> Platinum/Gold customers generating "
-                  "42% of urgent cases — dedicated support tier warranted.", e["Bullet"]),
-        Paragraph("5. <b>Return Rate Reduction:</b> Silver tier 7.2% return rate vs "
-                  "3.1% for Platinum suggests product-fit issues for mid-spend customers. "
-                  "Enhanced pre-purchase guidance for Clothing and Home categories.",
-                  e["Bullet"]),
-        _sp(0.2),
+        Paragraph("6. Top 200 Customers by FY 2024 Lifetime Spend", e["SectionHead"]),
+        Paragraph("CRM export of highest-value customers. Fields: customer_id, region, "
+                  "total_purchases (FY 2024), signup_date, support_cases_opened.", e["Body"]),
+    ]
+    top_cust_rows = [["Customer ID", "Region", "FY 2024 Spend", "Signup Date",
+                       "Transactions", "Support Cases"]]
+    spend_vals = sorted(
+        [_rng.uniform(25000, 59521) for _ in range(200)],
+        reverse=True
+    )
+    spend_vals[0] = 59521.80  # max from DB
+    for i, spend in enumerate(spend_vals):
+        cid = f"CUST{_rng.randint(1, 14979):05d}"
+        region = _rng.choice(REGIONS)
+        txn_count = _rng.randint(int(spend / 2500), int(spend / 800))
+        signup = _date_in_2024(_rng.randint(0, 300))
+        cases = _rng.randint(0, 4)
+        top_cust_rows.append([
+            cid, region, _fmt(spend), signup, str(txn_count), str(cases)
+        ])
+    story.append(_table(top_cust_rows,
+                         col_widths=[85, 65, 95, 85, 80, 80], small=True))
+    story.append(_sp())
+
+    # ── Section 7: Churn risk flags ──
+    story += [
+        Paragraph("7. Churn Risk Assessment — Q4 2024", e["SectionHead"]),
+        Paragraph("Customers flagged as high churn risk based on: last purchase > 90 days ago, "
+                  "declining spend QoQ, or 2+ unresolved support cases. "
+                  "Total at-risk customers: 1,847 (12.3% of base).", e["Body"]),
+    ]
+    churn_rows = [["Region", "At-Risk Count", "% of Region", "Primary Signal",
+                   "Est. Revenue at Risk"]]
+    churn_data = [
+        ("Central", 612, "13.3%", "Declining spend", "$4,218,000"),
+        ("East",    482, "13.1%", "Long dormancy",   "$3,812,000"),
+        ("West",    284, "12.1%", "High return rate","$5,124,000"),
+        ("South",   284, "12.2%", "Unresolved cases","$2,987,000"),
+        ("North",   185, "9.1%",  "Declining spend", "$2,041,000"),
+    ]
+    for row in churn_data:
+        churn_rows.append(list(row))
+    churn_rows.append(["Total", "1,847", "12.3%", "—", "~$18,182,000"])
+    story.append(_table(churn_rows, col_widths=[80, 100, 90, 130, 120]))
+    story.append(_sp())
+
+    # ── Section 8: Customer × support × return summary ──
+    story += [
+        Paragraph("8. Customer Service Interaction Summary — FY 2024", e["SectionHead"]),
+        Paragraph("Cross-reference of customers table with support_cases (2,000 rows) and "
+                  "returns (6,000 rows). Interaction rate: 13.4% of customers opened "
+                  "at least one support case; 23.8% initiated at least one return.", e["Body"]),
+    ]
+    svc_rows = [["Metric", "Count", "% of 14,979 Customers"]]
+    svc_data = [
+        ("Customers with 0 interactions", "9,842", "65.7%"),
+        ("Customers with 1 return only",  "2,340", "15.6%"),
+        ("Customers with 1 support case only", "921", "6.1%"),
+        ("Customers with both return + support", "1,085", "7.2%"),
+        ("Customers with 3+ returns",     "482",  "3.2%"),
+        ("Customers with 2+ support cases","309",  "2.1%"),
+    ]
+    for row in svc_data:
+        svc_rows.append(list(row))
+    story.append(_table(svc_rows, col_widths=[250, 100, 150]))
+    story.append(_sp())
+
+    story += [
         _hr(),
-        Paragraph("Report Sources: customers table (14,979 rows), sales_transactions "
-                  "(100,000 rows), support_cases (2,000 rows), returns (6,000 rows). "
-                  "Cross-table joins via customer_id. FY 2024 data.", e["Caption"]),
+        Paragraph("Export generated by NexusIQ CRM v4.2 | Tables: customers (14,979), "
+                  "sales_transactions (100,000), support_cases (2,000), returns (6,000). "
+                  "FY 2024. All monetary values USD.", e["Caption"]),
     ]
 
     doc.build(story)
     print(f"  ✅ {out_path.name}")
 
 
-# ─── PDF 2: Product Returns Analysis ──────────────────────────────────────────
+# ─── PDF 2: Returns Processing Register ───────────────────────────────────────
+# Real format: individual return records with IDs, monthly cadence, per-product
+# drill-down tables, reason codes, regional rates.
 
-def build_returns_analysis(out_path: Path) -> None:
+def build_returns_register(out_path: Path) -> None:
     from reportlab.platypus import Paragraph
-    doc = _make_doc(out_path, "Product Returns Analysis 2024")
+    doc = _make_doc(out_path, "Returns Processing Register 2024")
     s, e = _styles()
+    MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
+                   "Jul","Aug","Sep","Oct","Nov","Dec"]
+
     story = []
-
     story += [
-        Paragraph("NexusIQ Corporation", s["Heading1"]),
-        Paragraph("Product Returns & Refund Analysis — FY 2024", e["Subtitle"]),
-        Paragraph("Prepared by: Operations & Risk Analytics | "
-                  "Classification: Internal | Date: January 2025", e["Caption"]),
-        _hr(), _sp(0.15),
-    ]
-
-    story += [
-        Paragraph("Executive Summary", e["SectionHead"]),
-        Paragraph(
-            "NexusIQ processed <b>6,000 product returns</b> in FY 2024, representing a "
-            "return rate of <b>6.0%</b> against 100,000 total transactions. Total refund "
-            "exposure was approximately <b>$9,711,660</b> (average refund: $1,618.61). "
-            "Returns are distributed across all five product categories, with Clothing "
-            "(Jeans, Jacket, Shoes) and Home (Bedding, Decor, Kitchen) accounting for "
-            "the highest individual product return counts. Electronics returns carry the "
-            "highest per-unit refund values.", e["Body"]),
-        _sp(),
-    ]
-
-    story += [
-        Paragraph("Return Volume KPIs", e["SectionHead"]),
-        _table([
-            ["Metric", "Value"],
-            ["Total Returns",          "6,000"],
-            ["Return Rate (vs transactions)", "6.0%"],
-            ["Average Refund Amount",  "$1,618.61"],
-            ["Total Refund Exposure",  "~$9,711,660"],
-            ["Median Processing Time", "4.2 days"],
-            ["First-Contact Resolution","68.3%"],
-        ], col_widths=[250, 200]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Returns by Product (Top 10)", e["SectionHead"]),
-        Paragraph(
-            "Jeans lead all products with 331 returns, followed closely by Bedding (325) "
-            "and Decor (322). The top 10 products account for 3,078 returns — 51.3% of "
-            "total volume. Electronics items (Tablet, Phone, Laptop, Headphones) appear "
-            "in the top 10 despite lower unit counts because of high refund amounts. "
-            "Clothing items appear due to sizing issues; Home items due to quality "
-            "and expectations mismatches.", e["Body"]),
-        _table([
-            ["Rank", "Product", "Return Count", "% of Total Returns",
-             "Est. Avg Refund", "Primary Reason"],
-            ["1",  "Jeans",       "331", "5.5%", "$89.50",    "Size/Fit"],
-            ["2",  "Bedding",     "325", "5.4%", "$124.30",   "Quality"],
-            ["3",  "Decor",       "322", "5.4%", "$98.20",    "Not as Described"],
-            ["4",  "Kitchen",     "315", "5.3%", "$112.40",   "Defective"],
-            ["5",  "Tablet",      "314", "5.2%", "$389.00",   "Defective/Performance"],
-            ["6",  "Phone",       "309", "5.2%", "$521.00",   "Defective"],
-            ["7",  "Laptop",      "302", "5.0%", "$812.50",   "Performance"],
-            ["8",  "Shoes",       "298", "5.0%", "$94.00",    "Size/Fit"],
-            ["9",  "Jacket",      "287", "4.8%", "$118.00",   "Quality/Size"],
-            ["10", "Headphones",  "275", "4.6%", "$178.00",   "Defective"],
-        ], col_widths=[35, 80, 80, 100, 100, 105]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Return Status Pipeline", e["SectionHead"]),
-        Paragraph(
-            "Returns flow through five statuses: received → pending → approved/rejected → "
-            "refunded. Of 6,000 returns, 1,242 (20.7%) were rejected — primarily due to "
-            "items returned outside the 30-day return window or missing original packaging. "
-            "1,207 (20.1%) have been fully refunded. 1,197 (20.0%) are pending review. "
-            "The 1,173 approved-but-not-yet-refunded cases represent an outstanding "
-            "liability of approximately $1.9M.", e["Body"]),
-        _table([
-            ["Status", "Count", "% of Total", "Est. Liability / Resolution"],
-            ["Rejected",  "1,242", "20.7%", "$0 (closed — no refund)"],
-            ["Refunded",  "1,207", "20.1%", "$1,953,661 (settled)"],
-            ["Pending",   "1,197", "20.0%", "~$1,936,453 (under review)"],
-            ["Received",  "1,181", "19.7%", "~$1,910,563 (awaiting processing)"],
-            ["Approved",  "1,173", "19.6%", "~$1,897,429 (refund in queue)"],
-        ], col_widths=[90, 80, 80, 230]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Returns by Category vs Sales Revenue", e["SectionHead"]),
-        Paragraph(
-            "Comparing return volumes against category sales revenue reveals that "
-            "Electronics — the top revenue category at $91,010,125.61 — has a "
-            "disproportionately high per-return refund value but a moderate return "
-            "rate. Clothing ($11,731,765.10 revenue) has the highest return rate "
-            "by volume due to sizing, yet low per-return refund amounts. Home "
-            "($40,877,008.66) balances both dimensions. Cross-referencing with "
-            "inventory data shows that high-return products (Jeans, Bedding) "
-            "maintain adequate stock levels at reorder points — suggesting returns "
-            "are not yet creating inventory distortion.", e["Body"]),
-        _table([
-            ["Category",    "FY Revenue",          "Return Count", "Return Rate", "Avg Refund"],
-            ["Electronics", "$91,010,125.61", "~1,200", "5.5%",  "$589.00"],
-            ["Home",        "$40,877,008.66", "~1,560", "7.1%",  "$111.00"],
-            ["Sports",      "$27,478,085.87", "~840",   "5.2%",  "$142.00"],
-            ["Clothing",    "$11,731,765.10", "~1,680", "9.2%",  "$98.00"],
-            ["Food",        "$4,498,192.92",  "~720",   "4.8%",  "$28.00"],
-        ], col_widths=[90, 150, 90, 90, 90]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Return Policy Reference", e["SectionHead"]),
-        Paragraph(
-            "Current NexusIQ Returns Policy (v2.0, effective Q3 2024): Customers may "
-            "return any item within <b>30 days</b> of the original purchase date for a "
-            "full refund to the original payment method. Items must be in original "
-            "condition with all packaging. Electronics require original box and all "
-            "accessories. Food and perishable items are non-returnable. This policy "
-            "supersedes the previous 14-day window (v1.0, retired Q2 2024).", e["Body"]),
-        Paragraph(
-            "IMPORTANT: Any documentation referencing a 14-day return window is "
-            "OUTDATED. The 30-day window is the authoritative current policy.",
-            e["Alert"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Customer Return Patterns", e["SectionHead"]),
-        Paragraph(
-            "Cross-referencing return records (transaction_id → sales_transactions.id) "
-            "with the customer table (14,979 customers) reveals that 23.4% of returns "
-            "come from repeat returners (customers with 3+ returns in FY 2024). Customers "
-            "with support cases open concurrently with returns have a 38% higher refund "
-            "approval rate, suggesting that escalation via support (2,000 cases) "
-            "accelerates return processing.", e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Recommendations", e["SectionHead"]),
-        Paragraph("1. <b>Clothing Size Guidance:</b> Jeans and Jacket returns driven by "
-                  "fit — add size recommendation tool to reduce 618 combined returns.",
-                  e["Bullet"]),
-        Paragraph("2. <b>Electronics QA:</b> Tablet/Phone/Laptop returns (925 combined) "
-                  "suggest QA gaps. Recommend pre-ship inspection for high-value units.",
-                  e["Bullet"]),
-        Paragraph("3. <b>Refund Queue Clearance:</b> 1,173 approved returns awaiting "
-                  "refund represent ~$1.9M liability. Automate payout for approved cases.",
-                  e["Bullet"]),
-        Paragraph("4. <b>30-Day Policy Communication:</b> Rejected returns (1,242) often "
-                  "cite confusion over window length. Reinforce v2.0 30-day policy at POS.",
-                  e["Bullet"]),
-        _sp(0.2),
-        _hr(),
-        Paragraph("Report Sources: returns (6,000 rows), sales_transactions (100,000 rows), "
-                  "customers (14,979 rows), inventory (2,000 rows). Join: returns.transaction_id "
-                  "→ sales_transactions.id; returns.customer_id → customers.customer_id.",
+        Paragraph("NexusIQ Corporation — Operations", s["Heading1"]),
+        Paragraph("Returns Processing Register — FY 2024 (6,000 records)",
+                  e["Subtitle"]),
+        Paragraph("System: NexusIQ OMS Returns Module v3.1 | Export: 2025-01-04 | "
+                  "Total records: 6,000 | Avg refund: $1,618.61 | Classification: Internal",
                   e["Caption"]),
+        _hr(), _sp(),
     ]
 
-    doc.build(story)
-    print(f"  ✅ {out_path.name}")
-
-
-# ─── PDF 3: Inventory Operations Report ───────────────────────────────────────
-
-def build_inventory_report(out_path: Path) -> None:
-    from reportlab.platypus import Paragraph
-    doc = _make_doc(out_path, "Inventory Operations Report 2024")
-    s, e = _styles()
-    story = []
-
+    # ── Section 1: Return volume by month × product ──
     story += [
-        Paragraph("NexusIQ Corporation", s["Heading1"]),
-        Paragraph("Inventory Operations & Stock Intelligence Report — FY 2024",
-                  e["Subtitle"]),
-        Paragraph("Prepared by: Supply Chain & Operations Analytics | "
-                  "Classification: Internal | Date: January 2025", e["Caption"]),
-        _hr(), _sp(0.15),
+        Paragraph("1. Monthly Return Volume by Product — FY 2024", e["SectionHead"]),
+        Paragraph("Number of return cases initiated each month, by product SKU. "
+                  "Total FY 2024: 6,000 returns across 20 product lines.", e["Body"]),
     ]
+    monthly_returns = {}
+    for p, annual in TOP_RETURN_COUNTS.items():
+        base = [_rng.randint(int(annual*0.06), int(annual*0.11)) for _ in range(12)]
+        total = sum(base)
+        monthly_returns[p] = [int(v * annual / total) for v in base]
+        diff = annual - sum(monthly_returns[p])
+        monthly_returns[p][_rng.randint(0, 11)] += diff
 
+    hdr = ["Product"] + [m[:3] for m in MONTH_NAMES] + ["Total"]
+    ret_rows = [hdr]
+    for p in PRODUCTS:
+        m = monthly_returns[p]
+        ret_rows.append([p] + [str(v) for v in m] + [str(sum(m))])
+    tot_by_month = [sum(monthly_returns[p][i] for p in PRODUCTS) for i in range(12)]
+    ret_rows.append(["Total"] + [str(v) for v in tot_by_month] + [str(sum(tot_by_month))])
+    story.append(_table(ret_rows,
+                         col_widths=[75, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 35, 45],
+                         small=True))
+    story.append(_sp())
+
+    # ── Section 2: Return rates by product vs sales volume ──
     story += [
-        Paragraph("Executive Summary", e["SectionHead"]),
-        Paragraph(
-            "NexusIQ maintains <b>2,000 inventory records</b> spanning 20 product SKUs "
-            "across 100 store locations (20 stores per region × 5 regions). As of the "
-            "FY 2024 year-end snapshot, <b>72 store-product combinations</b> (3.6%) are "
-            "below their reorder point, creating potential stockout risk entering Q1 2025. "
-            "Electronics items — responsible for $91,010,125.61 (51.8%) of total FY 2024 "
-            "revenue — show the highest inventory turnover and the greatest reorder urgency.",
-            e["Body"]),
-        _sp(),
+        Paragraph("2. Return Rate Analysis by Product — FY 2024", e["SectionHead"]),
+        Paragraph("Return rate calculated as: returns / estimated unit sales. "
+                  "Unit sales estimated from revenue and average unit price.", e["Body"]),
     ]
+    avg_prices = {
+        "Laptop": 1249, "Phone": 849, "Tablet": 589, "Headphones": 178,
+        "Jacket": 118, "Jeans": 89, "Shoes": 94, "T-Shirt": 32,
+        "Bedding": 124, "Decor": 98, "Furniture": 389, "Kitchen": 112,
+        "Accessories": 64, "Apparel": 72, "Equipment": 148, "Footwear": 94,
+        "Drinks": 12, "Frozen": 18, "Produce": 9, "Snacks": 14,
+    }
+    rr_rows = [["Product", "Category", "Annual Returns", "Est. Units Sold",
+                "Return Rate", "Avg Refund", "Total Refund"]]
+    for p in PRODUCTS:
+        cat = CATEGORIES_MAP[p]
+        cat_rev = CATEGORY_REVENUE[cat]
+        est_units = int(cat_rev / avg_prices[p] / 5)  # 5 products per cat
+        ret_count = TOP_RETURN_COUNTS[p]
+        rate = ret_count / max(est_units, 1) * 100
+        avg_refund = avg_prices[p] * _rng.uniform(0.85, 0.98)
+        total_refund = avg_refund * ret_count
+        rr_rows.append([
+            p, cat, str(ret_count),
+            f"{est_units:,}", f"{rate:.1f}%",
+            _fmt(avg_refund), _fmt(total_refund),
+        ])
+    story.append(_table(rr_rows,
+                         col_widths=[80, 85, 80, 90, 75, 80, 90], small=True))
+    story.append(_sp())
 
+    # ── Section 3: Return status pipeline ──
     story += [
-        Paragraph("Inventory Overview KPIs", e["SectionHead"]),
-        _table([
-            ["Metric", "Value"],
-            ["Total Inventory Records",    "2,000"],
-            ["Store Locations",            "100 (20 per region)"],
-            ["Product SKUs Tracked",       "20"],
-            ["Below Reorder Point",        "72 (3.6%)"],
-            ["Avg Stock Level (all SKUs)", "487 units"],
-            ["Avg Reorder Point",         "120 units"],
-            ["Stockout Risk (< 50 units)", "18 records"],
-        ], col_widths=[250, 200]),
-        _sp(0.2),
+        Paragraph("3. Return Status Distribution — FY 2024", e["SectionHead"]),
+        Paragraph("Pipeline status for all 6,000 returns. Liability outstanding = "
+                  "approved + pending cases not yet refunded.", e["Body"]),
     ]
+    status_rows = [["Status", "Count", "% of Total", "Action", "Est. Liability"]]
+    liabilities = {
+        "rejected": 0, "refunded": 1953661, "pending": 1936453,
+        "received": 1910563, "approved": 1897429,
+    }
+    for status, count in RETURN_STATUS_COUNTS.items():
+        liab = liabilities[status]
+        status_rows.append([
+            status.upper(), str(count),
+            f"{count/6000*100:.1f}%",
+            "Closed — no refund" if status == "rejected" else
+            "Settled" if status == "refunded" else "Action required",
+            _fmt(liab) if liab > 0 else "$0",
+        ])
+    status_rows.append(["TOTAL", "6,000", "100%", "—",
+                          _fmt(sum(v for k,v in liabilities.items() if k != "refunded"))])
+    story.append(_table(status_rows, col_widths=[80, 70, 80, 160, 100]))
+    story.append(_sp())
 
+    # ── Section 4: Return reasons analysis ──
     story += [
-        Paragraph("Low-Stock Alerts by Category", e["SectionHead"]),
-        Paragraph(
-            "Of the 72 records below reorder point, Electronics accounts for 31 (43.1%), "
-            "driven by high sell-through rates for Laptop, Phone, and Tablet. Home category "
-            "contributes 19 low-stock records (26.4%), primarily Bedding and Furniture. "
-            "This pattern aligns with return data: high-volume Electronics returns do not "
-            "materially replenish stock because returned units require refurbishment before "
-            "restocking — typically a 7–14 day cycle.", e["Body"]),
-        _table([
-            ["Category", "Low-Stock Records", "% of 72 Alerts",
-             "Highest Urgency SKU", "FY Revenue Impact"],
-            ["Electronics", "31", "43.1%", "Laptop",    "$91,010,125.61"],
-            ["Home",        "19", "26.4%", "Bedding",   "$40,877,008.66"],
-            ["Clothing",    "11", "15.3%", "Jeans",     "$11,731,765.10"],
-            ["Sports",      "7",  "9.7%",  "Equipment", "$27,478,085.87"],
-            ["Food",        "4",  "5.6%",  "Frozen",    "$4,498,192.92"],
-        ], col_widths=[90, 110, 110, 120, 120]),
-        _sp(0.2),
+        Paragraph("4. Return Reason Code Analysis — FY 2024", e["SectionHead"]),
+        Paragraph("Standardized reason codes applied at return initiation. "
+                  "One reason per return record.", e["Body"]),
     ]
+    reason_counts = {
+        "Defective":             1248,
+        "Size/Fit":              1127,
+        "Not as Described":       842,
+        "Quality Issue":          684,
+        "Damaged in Shipping":    578,
+        "Changed Mind":           541,
+        "Wrong Item":             498,
+        "Duplicate Order":        482,
+    }
+    reason_rows = [["Reason Code", "Count", "% of Returns", "Top Product",
+                     "Avg Resolution Days"]]
+    top_by_reason = {
+        "Defective": "Tablet", "Size/Fit": "Jeans", "Not as Described": "Decor",
+        "Quality Issue": "Bedding", "Damaged in Shipping": "Kitchen",
+        "Changed Mind": "Jacket", "Wrong Item": "Phone", "Duplicate Order": "Laptop",
+    }
+    for reason, cnt in reason_counts.items():
+        reason_rows.append([
+            reason, str(cnt), f"{cnt/6000*100:.1f}%",
+            top_by_reason.get(reason, "—"),
+            str(_rng.randint(2, 8)),
+        ])
+    story.append(_table(reason_rows, col_widths=[140, 65, 90, 100, 120]))
+    story.append(_sp())
 
+    # ── Section 5: Regional return rates ──
     story += [
-        Paragraph("Regional Inventory Distribution", e["SectionHead"]),
-        Paragraph(
-            "The West region — top revenue contributor at $37,880,499.39 — has the "
-            "highest concentration of Electronics inventory pressure. Central region "
-            "stores (4,599 customers, largest customer base) face Home and Food "
-            "category shortfalls consistent with that region's category affinity. "
-            "North region stores, despite the smallest customer base (2,023), have "
-            "the highest per-store average stock levels due to lower turnover velocity.",
-            e["Body"]),
-        _table([
-            ["Region",  "Stores", "Low-Stock Records", "Top Urgency Category",
-             "Regional Revenue"],
-            ["West",    "20", "22", "Electronics",  "$37,880,499.39"],
-            ["Central", "20", "18", "Home",          "$35,679,253.01"],
-            ["East",    "20", "15", "Electronics",  "$36,314,020.57"],
-            ["South",   "20", "11", "Clothing",      "$35,470,111.47"],
-            ["North",   "20", "6",  "Sports",        "$30,251,293.72"],
-        ], col_widths=[70, 60, 110, 150, 130]),
-        _sp(0.2),
+        Paragraph("5. Return Rate by Region — FY 2024", e["SectionHead"]),
+        Paragraph("Regional breakdown of returns cross-referenced with regional revenue "
+                  "and customer counts.", e["Body"]),
     ]
-
-    story += [
-        Paragraph("Inventory vs. Sales Velocity Correlation", e["SectionHead"]),
-        Paragraph(
-            "Products with the highest FY 2024 sales volumes (Laptop, Phone, Tablet) "
-            "also have the fastest inventory depletion rates. Cross-referencing sales_transactions "
-            "(100,000 records, $175,595,178.16 revenue) with inventory snapshots reveals "
-            "that the top 3 Electronics SKUs turn over every 18–22 days on average. "
-            "By contrast, Food items (Drinks, Snacks, Produce, Frozen) turn over in "
-            "3–5 days but carry low per-unit margins ($4,498,192.92 total revenue). "
-            "Sports equipment (Equipment, Footwear) turns over every 35–45 days "
-            "with $27,478,085.87 annual revenue.", e["Body"]),
-        _table([
-            ["Product",   "Category",    "Est. Turnover", "FY Sales Rank", "Reorder Urgency"],
-            ["Laptop",    "Electronics", "20 days", "1", "HIGH"],
-            ["Phone",     "Electronics", "18 days", "2", "HIGH"],
-            ["Tablet",    "Electronics", "22 days", "3", "HIGH"],
-            ["Bedding",   "Home",        "28 days", "4", "MEDIUM"],
-            ["Furniture", "Home",        "45 days", "5", "LOW"],
-            ["Jeans",     "Clothing",    "32 days", "6", "MEDIUM"],
-            ["Equipment", "Sports",      "38 days", "7", "LOW"],
-            ["Produce",   "Food",        "3 days",  "8", "HIGH (perishable)"],
-        ], col_widths=[90, 90, 90, 90, 100]),
-        _sp(0.2),
+    reg_ret = [
+        ("West",    1080, 37880499.39, 2351),
+        ("Central", 1440, 35679253.01, 4599),
+        ("East",    1380, 36314020.57, 3676),
+        ("South",   1140, 35470111.47, 2330),
+        ("North",    960, 30251293.72, 2023),
     ]
+    reg_rows = [["Region", "Returns", "Return Rate", "Revenue", "Returns/$M Rev",
+                  "Returns/Customer"]]
+    for reg, ret, rev, cust in reg_ret:
+        txns = int(100000 * rev / 175595178.16)
+        reg_rows.append([
+            reg, str(ret), f"{ret/txns*100:.1f}%",
+            _fmt(rev), f"{ret/(rev/1e6):.1f}",
+            f"{ret/cust:.2f}",
+        ])
+    story.append(_table(reg_rows, col_widths=[75, 70, 85, 120, 100, 110]))
+    story.append(_sp())
 
+    # ── Section 6: Individual return records sample (500 records) ──
     story += [
-        Paragraph("Returns Impact on Inventory", e["SectionHead"]),
-        Paragraph(
-            "FY 2024 recorded 6,000 returns with an average refund of $1,618.61. "
-            "Electronics returns (Tablet: 314, Phone: 309, Laptop: 302) total 925 units "
-            "with high per-unit refund values (~$574 average for Electronics category). "
-            "These returns require QA processing (7–14 days) before restocking, creating "
-            "a de facto delay in inventory replenishment for the highest-urgency SKUs. "
-            "Recommendation: parallel-path Electronics returns through dedicated QA to "
-            "compress refurbishment cycle to < 5 days.", e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Q1 2025 Restocking Plan", e["SectionHead"]),
-        Paragraph("Priority 1 — Immediate (Week 1–2):", e["SubHead"]),
-        Paragraph("18 inventory records at critical stockout risk (< 50 units). "
-                  "Emergency POs recommended for Laptop, Phone, and Bedding SKUs "
-                  "in West and East regions to protect $37.9M and $36.3M revenue bases.",
+        Paragraph("6. Returns Register — Individual Records (Sample: 500 of 6,000)",
+                  e["SectionHead"]),
+        Paragraph("Chronological log of return cases. Full register available via "
+                  "OMS API endpoint /returns?page=N. Fields: return_id, transaction_id, "
+                  "customer_id, product, reason, status, return_date, refund_amount.",
                   e["Body"]),
-        Paragraph("Priority 2 — Short-term (Week 3–6):", e["SubHead"]),
-        Paragraph("54 additional below-reorder-point records across all categories. "
-                  "Standard reorder cycle sufficient. Coordinate with suppliers on "
-                  "Jeans and Decor lead times given high return volumes (331 and 322 "
-                  "returns respectively) — net demand may be lower than gross orders suggest.",
-                  e["Body"]),
-        _sp(0.2),
+    ]
+    rec_rows = [["Return ID", "Txn ID", "Customer", "Product", "Reason",
+                  "Status", "Date", "Refund"]]
+    _rng2 = random.Random(77)
+    products_weighted = []
+    for p, cnt in TOP_RETURN_COUNTS.items():
+        products_weighted.extend([p] * cnt)
+    for i in range(500):
+        ret_id = f"RTN-2024-{i+1:05d}"
+        txn_id = f"TXN-{_rng2.randint(1, 100000):06d}"
+        cust_id = f"CUST{_rng2.randint(1, 14979):05d}"
+        product = _rng2.choice(products_weighted)
+        reason = _rng2.choice(RETURN_REASONS)
+        status = _rng2.choice(RETURN_STATUSES)
+        offset = _rng2.randint(0, 365)
+        ret_date = _date_in_2024(offset)
+        refund = _fmt(_rng2.uniform(15, 1800)) if status in ("refunded", "approved") else "$0.00"
+        rec_rows.append([ret_id, txn_id, cust_id, product, reason, status, ret_date, refund])
+    story.append(_table(rec_rows,
+                         col_widths=[80, 75, 70, 80, 110, 70, 75, 65], small=True))
+    story.append(_sp())
+
+    # ── Section 7: Return policy reference ──
+    story += [
+        Paragraph("7. Current Return Policy Reference — Policy v2.0", e["SectionHead"]),
+        Paragraph("Effective: Q3 2024. Return window: <b>30 days</b> from purchase date. "
+                  "Full refund to original payment method. Electronics require original packaging. "
+                  "Food/perishables non-returnable. This supersedes Policy v1.0 (14-day window, "
+                  "retired Q2 2024). IMPORTANT: any system or document referencing 14-day window "
+                  "is outdated.", e["Body"]),
+        Paragraph("The 1,242 rejected returns (20.7%) include cases outside the 30-day window "
+                  "and items returned without original packaging.", e["Body"]),
+    ]
+
+    story += [
         _hr(),
-        Paragraph("Report Sources: inventory (2,000 rows), sales_transactions (100,000 rows), "
-                  "returns (6,000 rows). Join: inventory.product_name → products.product_name; "
-                  "inventory.store_id → store dimension. Data as of FY 2024 year-end.",
-                  e["Caption"]),
+        Paragraph("OMS Export | Returns module v3.1 | Tables: returns (6,000), "
+                  "sales_transactions (100,000), customers (14,979). "
+                  "Join: returns.transaction_id → sales_transactions.id.", e["Caption"]),
     ]
 
     doc.build(story)
     print(f"  ✅ {out_path.name}")
 
 
-# ─── PDF 4: Customer Support Intelligence ─────────────────────────────────────
+# ─── PDF 3: Inventory Full Store Register ─────────────────────────────────────
+# Real format: all 2,000 inventory records (100 stores × 20 products),
+# low-stock alerts with store IDs, restocking queue, turnover velocity.
 
-def build_support_intelligence(out_path: Path) -> None:
+def build_inventory_register(out_path: Path) -> None:
     from reportlab.platypus import Paragraph
-    doc = _make_doc(out_path, "Customer Support Intelligence 2024")
+    doc = _make_doc(out_path, "Inventory Operations Register 2024")
     s, e = _styles()
+
+    avg_prices = {
+        "Laptop": 1249, "Phone": 849, "Tablet": 589, "Headphones": 178,
+        "Jacket": 118, "Jeans": 89, "Shoes": 94, "T-Shirt": 32,
+        "Bedding": 124, "Decor": 98, "Furniture": 389, "Kitchen": 112,
+        "Accessories": 64, "Apparel": 72, "Equipment": 148, "Footwear": 94,
+        "Drinks": 12, "Frozen": 18, "Produce": 9, "Snacks": 14,
+    }
+    reorder_pts = {
+        "Laptop": 15, "Phone": 18, "Tablet": 14, "Headphones": 30,
+        "Jacket": 25, "Jeans": 35, "Shoes": 30, "T-Shirt": 50,
+        "Bedding": 20, "Decor": 25, "Furniture": 8, "Kitchen": 20,
+        "Accessories": 40, "Apparel": 45, "Equipment": 15, "Footwear": 30,
+        "Drinks": 80, "Frozen": 60, "Produce": 70, "Snacks": 90,
+    }
+    _rng3 = random.Random(55)
+
+    # Generate the full 2,000-row inventory table
+    inventory = []
+    low_stock = []
+    for region in REGIONS:
+        for store in STORES[region]:
+            for product in PRODUCTS:
+                rp = reorder_pts[product]
+                # 3.6% chance of being below reorder — adjusted to hit exactly 72
+                stock = _rng3.randint(int(rp * 0.3), int(rp * 6))
+                restocked = _date_in_2024(_rng3.randint(0, 350))
+                inventory.append({
+                    "store_id": store, "region": region, "product": product,
+                    "category": CATEGORIES_MAP[product],
+                    "stock_level": stock, "reorder_point": rp,
+                    "below_reorder": stock < rp,
+                    "last_restocked": restocked,
+                    "unit_cost": avg_prices[product],
+                    "inventory_value": stock * avg_prices[product],
+                })
+                if stock < rp:
+                    low_stock.append((store, region, product, stock, rp))
+
+    # Adjust to exactly 72 low-stock records
+    current_low = sum(1 for rec in inventory if rec["below_reorder"])
+    if current_low < 72:
+        above = [i for i, rec in enumerate(inventory) if not rec["below_reorder"]]
+        _rng3.shuffle(above)
+        for idx in above[:72 - current_low]:
+            rp = inventory[idx]["reorder_point"]
+            inventory[idx]["stock_level"] = _rng3.randint(int(rp * 0.3), rp - 1)
+            inventory[idx]["below_reorder"] = True
+            inventory[idx]["inventory_value"] = (
+                inventory[idx]["stock_level"] * inventory[idx]["unit_cost"]
+            )
+    elif current_low > 72:
+        below = [i for i, rec in enumerate(inventory) if rec["below_reorder"]]
+        _rng3.shuffle(below)
+        for idx in below[:current_low - 72]:
+            rp = inventory[idx]["reorder_point"]
+            inventory[idx]["stock_level"] = _rng3.randint(rp, rp * 4)
+            inventory[idx]["below_reorder"] = False
+            inventory[idx]["inventory_value"] = (
+                inventory[idx]["stock_level"] * inventory[idx]["unit_cost"]
+            )
+
+    low_stock = [(r["store_id"], r["region"], r["product"],
+                  r["stock_level"], r["reorder_point"])
+                 for r in inventory if r["below_reorder"]]
+
     story = []
-
     story += [
-        Paragraph("NexusIQ Corporation", s["Heading1"]),
-        Paragraph("Customer Support Intelligence Report — FY 2024", e["Subtitle"]),
-        Paragraph("Prepared by: Customer Experience & Support Analytics | "
-                  "Classification: Internal | Date: January 2025", e["Caption"]),
-        _hr(), _sp(0.15),
-    ]
-
-    story += [
-        Paragraph("Executive Summary", e["SectionHead"]),
-        Paragraph(
-            "NexusIQ's support team handled <b>2,000 cases</b> in FY 2024, with a "
-            "balanced distribution across four priority levels. The support caseload "
-            "represents 13.4% of the active customer base (14,979 customers), indicating "
-            "that roughly 1 in 7 customers required direct support intervention during "
-            "the year. <b>530 cases are closed</b>, 506 in progress, 489 open, and "
-            "475 resolved — a 50.3% fully resolved rate (closed + resolved = 1,005). "
-            "Cases correlate strongly with Electronics purchase volume and product "
-            "return events.", e["Body"]),
-        _sp(),
-    ]
-
-    story += [
-        Paragraph("Support Volume KPIs", e["SectionHead"]),
-        _table([
-            ["Metric", "Value"],
-            ["Total Cases FY 2024",        "2,000"],
-            ["Cases per 1,000 Customers",  "133.5"],
-            ["Fully Resolved Rate",        "50.3% (1,005 of 2,000)"],
-            ["Avg Resolution Time",        "3.8 days"],
-            ["Urgent SLA Compliance",      "87.2%"],
-            ["Customer Satisfaction (CSAT)","82.4%"],
-            ["First-Contact Resolution",   "61.7%"],
-        ], col_widths=[250, 200]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Priority Distribution", e["SectionHead"]),
-        Paragraph(
-            "Cases are nearly evenly distributed across priority levels — a pattern "
-            "that may indicate over-categorization by customers rather than genuine "
-            "urgency differentiation. Low-priority cases (520) slightly outnumber "
-            "urgent (497), suggesting self-service improvements could deflect a "
-            "meaningful volume of low-complexity inquiries.", e["Body"]),
-        _table([
-            ["Priority", "Case Count", "% of Total", "Avg Resolution Days",
-             "SLA Target"],
-            ["Low",    "520", "26.0%", "6.2 days", "7 days"],
-            ["High",   "502", "25.1%", "2.8 days", "3 days"],
-            ["Urgent", "497", "24.9%", "0.9 days", "1 day"],
-            ["Medium", "481", "24.1%", "4.1 days", "5 days"],
-            ["Total",  "2,000", "100%","3.8 days", "—"],
-        ], col_widths=[70, 90, 90, 130, 90]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Case Status Breakdown", e["SectionHead"]),
-        _table([
-            ["Status",       "Count", "% of Total", "Action Required"],
-            ["Closed",       "530", "26.5%", "None — archived"],
-            ["In Progress",  "506", "25.3%", "Agent assigned, awaiting resolution"],
-            ["Open",         "489", "24.5%", "Unassigned — immediate triage needed"],
-            ["Resolved",     "475", "23.8%", "Pending customer confirmation"],
-        ], col_widths=[100, 70, 100, 230]),
-        Paragraph(
-            "489 open unassigned cases is the primary operational risk entering Q1 2025. "
-            "At current resolution velocity (avg 3.8 days), the open backlog will clear "
-            "in approximately 12 business days without new volume.", e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Case Topics by Product Category", e["SectionHead"]),
-        Paragraph(
-            "Electronics dominates support volume at an estimated 42% of all cases, "
-            "consistent with Electronics being the top revenue category ($91,010,125.61) "
-            "and having significant return volume (Tablet: 314, Phone: 309, Laptop: 302 "
-            "returns). Common Electronics case types include defective unit claims, "
-            "warranty inquiries, and setup assistance. Home category cases (est. 28%) "
-            "often overlap with return requests for Bedding (325 returns) and Decor "
-            "(322 returns) products.", e["Body"]),
-        _table([
-            ["Category",    "Est. Cases", "% of Total", "Top Subject",         "Avg Resolution"],
-            ["Electronics", "~840",  "42.0%", "Defective device",     "2.1 days"],
-            ["Home",        "~560",  "28.0%", "Return/refund request", "4.8 days"],
-            ["Clothing",    "~280",  "14.0%", "Size exchange",         "3.2 days"],
-            ["Sports",      "~200",  "10.0%", "Product inquiry",       "5.6 days"],
-            ["Food",        "~120",  "6.0%",  "Delivery issue",        "1.8 days"],
-        ], col_widths=[90, 80, 80, 150, 100]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("High-Value Customer Support Analysis", e["SectionHead"]),
-        Paragraph(
-            "Cross-referencing support_cases (customer_id) with the customers table "
-            "(14,979 customers, avg spend $11,722.76) reveals that customers with "
-            "lifetime spend > $30,000 (Platinum tier, ~224 customers) generate 11.2% "
-            "of all urgent cases despite being 1.5% of the customer base. Response time "
-            "for Platinum-tier urgent cases averages 0.4 hours — well within SLA. "
-            "However, Gold-tier customers (spend $15,000–$30,000) have the highest "
-            "unresolved case rate at 31.4%, representing a churn risk for the second "
-            "most valuable customer segment.", e["Body"]),
-        _table([
-            ["Customer Tier", "Cases", "% Urgent", "Avg Spend",      "Unresolved Rate"],
-            ["Platinum",      "~224",  "31.7%",    "> $30,000",      "8.5%"],
-            ["Gold",          "~748",  "28.2%",    "$15k–$30k",      "31.4%"],
-            ["Silver",        "~700",  "23.1%",    "$5k–$15k",       "22.8%"],
-            ["Bronze",        "~328",  "17.0%",    "< $5,000",       "19.2%"],
-        ], col_widths=[110, 70, 80, 130, 110]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Support ↔ Returns Correlation", e["SectionHead"]),
-        Paragraph(
-            "38% of returns (2,280 of 6,000) have an associated support case opened "
-            "within 72 hours. This co-occurrence rate is highest for Electronics "
-            "($1,618.61 average refund) and lowest for Food ($28 average refund). "
-            "Customers who open support cases alongside returns have their returns "
-            "approved at a 62% rate vs 43% for non-support-assisted returns — a "
-            "19 percentage-point advantage that suggests the support channel acts "
-            "as a returns escalation path.", e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Q1 2025 Recommendations", e["SectionHead"]),
-        Paragraph("1. <b>Triage 489 Open Cases:</b> Current backlog represents "
-                  "$5.8M in revenue at risk (if customer churns). Assign all by week 1.",
-                  e["Bullet"]),
-        Paragraph("2. <b>Gold-Tier Focus:</b> 31.4% unresolved rate for $15k–$30k "
-                  "customers. Dedicated CSM assignment recommended.", e["Bullet"]),
-        Paragraph("3. <b>Electronics Self-Service:</b> 840 Electronics cases — "
-                  "FAQ + diagnostic wizard could deflect 30–40% of low/medium cases.",
-                  e["Bullet"]),
-        Paragraph("4. <b>Returns-Support Integration:</b> 38% return-case overlap — "
-                  "merge support and returns workflow to reduce double-handling.",
-                  e["Bullet"]),
-        _sp(0.2),
-        _hr(),
-        Paragraph("Report Sources: support_cases (2,000 rows), customers (14,979 rows), "
-                  "returns (6,000 rows), sales_transactions (100,000 rows). "
-                  "Join: support_cases.customer_id → customers.customer_id.",
-                  e["Caption"]),
-    ]
-
-    doc.build(story)
-    print(f"  ✅ {out_path.name}")
-
-
-# ─── PDF 5: Cross-Business Intelligence Summary ───────────────────────────────
-
-def build_cross_bi_summary(out_path: Path) -> None:
-    from reportlab.platypus import Paragraph
-    doc = _make_doc(out_path, "Cross-Business Intelligence Summary 2024")
-    s, e = _styles()
-    story = []
-
-    story += [
-        Paragraph("NexusIQ Corporation", s["Heading1"]),
-        Paragraph("Cross-Business Intelligence Executive Summary — FY 2024",
+        Paragraph("NexusIQ Corporation — Supply Chain & Operations", s["Heading1"]),
+        Paragraph("Inventory Operations Register — Year-End Snapshot FY 2024 (2,000 records)",
                   e["Subtitle"]),
-        Paragraph("Prepared by: Chief Analytics Office | "
-                  "Classification: Executive | Date: January 2025", e["Caption"]),
-        _hr(), _sp(0.15),
+        Paragraph("System: NexusIQ WMS v2.8 | Snapshot: 2024-12-31 23:59 UTC | "
+                  "Records: 2,000 (100 stores × 20 SKUs) | Low-stock alerts: 72 | "
+                  "Classification: Internal — Operations", e["Caption"]),
+        _hr(), _sp(),
+    ]
+
+    # ── Section 1: Summary by region ──
+    story += [
+        Paragraph("1. Inventory Summary by Region — FY 2024 Year-End", e["SectionHead"]),
+        Paragraph("Aggregated inventory position across 20 stores per region, 20 SKUs each.", e["Body"]),
+    ]
+    reg_sum_rows = [["Region", "Stores", "SKUs", "Total Records",
+                      "Below Reorder", "Alert Rate", "Total Inv. Value"]]
+    for region in REGIONS:
+        region_inv = [r for r in inventory if r["region"] == region]
+        below = sum(1 for r in region_inv if r["below_reorder"])
+        total_val = sum(r["inventory_value"] for r in region_inv)
+        reg_sum_rows.append([
+            region, "20", "20", "400",
+            str(below), f"{below/400*100:.1f}%",
+            _fmt(total_val),
+        ])
+    story.append(_table(reg_sum_rows, col_widths=[75, 55, 50, 90, 90, 80, 110]))
+    story.append(_sp())
+
+    # ── Section 2: Summary by product category ──
+    story += [
+        Paragraph("2. Inventory Summary by Product Category", e["SectionHead"]),
+        Paragraph("Category-level view: 4 SKUs × 100 stores = 400 records per category.", e["Body"]),
+    ]
+    cat_sum_rows = [["Category", "SKUs", "Records", "Below Reorder",
+                      "Alert Rate", "Avg Stock Level", "Total Value"]]
+    for cat in ["Electronics", "Home", "Clothing", "Sports", "Food"]:
+        cat_inv = [r for r in inventory if r["category"] == cat]
+        below = sum(1 for r in cat_inv if r["below_reorder"])
+        avg_stock = sum(r["stock_level"] for r in cat_inv) / len(cat_inv)
+        total_val = sum(r["inventory_value"] for r in cat_inv)
+        cat_sum_rows.append([
+            cat, "4", str(len(cat_inv)), str(below),
+            f"{below/len(cat_inv)*100:.1f}%",
+            f"{avg_stock:.0f}", _fmt(total_val),
+        ])
+    story.append(_table(cat_sum_rows, col_widths=[85, 45, 70, 90, 80, 100, 90]))
+    story.append(_sp())
+
+    # ── Section 3: All 72 low-stock alerts ──
+    story += [
+        Paragraph("3. Full Low-Stock Alert Register — 72 Records", e["SectionHead"]),
+        Paragraph("All store-product combinations below reorder point as of 2024-12-31. "
+                  "Emergency restock required for records marked CRITICAL (stock < 25% of reorder point).",
+                  e["Body"]),
+    ]
+    alert_rows = [["Store ID", "Region", "Product", "Category",
+                    "Current Stock", "Reorder Pt", "Gap", "Urgency"]]
+    for store_id, region, product, stock, rp in sorted(low_stock,
+                                                         key=lambda x: x[3] / x[4]):
+        gap = rp - stock
+        urgency = "CRITICAL" if stock < rp * 0.25 else "HIGH" if stock < rp * 0.5 else "MEDIUM"
+        alert_rows.append([
+            store_id, region, product, CATEGORIES_MAP[product],
+            str(stock), str(rp), str(gap), urgency,
+        ])
+    story.append(_table(alert_rows,
+                         col_widths=[65, 65, 80, 85, 80, 75, 50, 70], small=True))
+    story.append(_sp())
+
+    # ── Section 4: Full inventory register (2,000 rows — split across pages) ──
+    story += [
+        Paragraph("4. Complete Inventory Register — All 2,000 Records", e["SectionHead"]),
+        Paragraph("Full store × SKU inventory snapshot at FY 2024 year-end. Sorted by region, "
+                  "store, then product. Records with stock_level < reorder_point are flagged.",
+                  e["Body"]),
+    ]
+    inv_rows = [["Store", "Region", "Product", "Cat", "Stock", "Reorder", "Value", "Status"]]
+    for rec in inventory:
+        status = "LOW" if rec["below_reorder"] else "OK"
+        inv_rows.append([
+            rec["store_id"], rec["region"], rec["product"],
+            rec["category"][:4],
+            str(rec["stock_level"]),
+            str(rec["reorder_point"]),
+            _fmt(rec["inventory_value"]),
+            status,
+        ])
+    story.append(_table(inv_rows,
+                         col_widths=[48, 58, 75, 42, 45, 55, 80, 45], small=True))
+    story.append(_sp())
+
+    # ── Section 5: Inventory vs revenue velocity ──
+    story += [
+        Paragraph("5. Inventory Turnover Velocity by SKU", e["SectionHead"]),
+        Paragraph("Estimated turnover days based on FY 2024 sales velocity and "
+                  "average inventory levels. Cross-references sales_transactions revenue "
+                  "($175,595,178.16 total, 100,000 transactions).", e["Body"]),
+    ]
+    vel_rows = [["Product", "Category", "FY Returns", "Avg Stock",
+                  "Est. Turnover", "Revenue Rank", "Restock Priority"]]
+    rev_rank = {
+        "Laptop": 1, "Phone": 2, "Tablet": 3, "Headphones": 4,
+        "Bedding": 5, "Furniture": 6, "Decor": 7, "Kitchen": 8,
+        "Equipment": 9, "Jeans": 10, "Shoes": 11, "Jacket": 12,
+        "Accessories": 13, "Footwear": 14, "Apparel": 15, "T-Shirt": 16,
+        "Frozen": 17, "Drinks": 18, "Produce": 19, "Snacks": 20,
+    }
+    turnover_days = {
+        "Laptop": 20, "Phone": 18, "Tablet": 22, "Headphones": 28,
+        "Jacket": 32, "Jeans": 29, "Shoes": 30, "T-Shirt": 15,
+        "Bedding": 28, "Decor": 35, "Furniture": 48, "Kitchen": 31,
+        "Accessories": 33, "Apparel": 27, "Equipment": 40, "Footwear": 38,
+        "Drinks": 4, "Frozen": 3, "Produce": 3, "Snacks": 5,
+    }
+    for p in PRODUCTS:
+        avg_stock = sum(r["stock_level"] for r in inventory if r["product"] == p) / 100
+        vel_rows.append([
+            p, CATEGORIES_MAP[p], str(TOP_RETURN_COUNTS[p]),
+            f"{avg_stock:.0f}",
+            f"{turnover_days[p]} days",
+            f"#{rev_rank[p]}",
+            "URGENT" if rev_rank[p] <= 4 else "HIGH" if rev_rank[p] <= 8 else "NORMAL",
+        ])
+    story.append(_table(vel_rows,
+                         col_widths=[80, 85, 75, 75, 85, 80, 90], small=True))
+
+    story += [
+        _sp(), _hr(),
+        Paragraph("WMS Export | Tables: inventory (2,000 rows), products (20 rows), "
+                  "sales_transactions (100,000 rows). Snapshot: 2024-12-31.", e["Caption"]),
+    ]
+
+    doc.build(story)
+    print(f"  ✅ {out_path.name}")
+
+
+# ─── PDF 4: Support Case Log ───────────────────────────────────────────────────
+# Real format: individual case records with ticket IDs, weekly volume tables,
+# agent metrics, SLA compliance logs.
+
+def build_support_case_log(out_path: Path) -> None:
+    from reportlab.platypus import Paragraph
+    doc = _make_doc(out_path, "Support Case Log 2024")
+    s, e = _styles()
+    MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
+                   "Jul","Aug","Sep","Oct","Nov","Dec"]
+
+    _rng4 = random.Random(33)
+
+    story = []
+    story += [
+        Paragraph("NexusIQ Corporation — Customer Experience", s["Heading1"]),
+        Paragraph("Support Case Log — FY 2024 (2,000 cases)", e["Subtitle"]),
+        Paragraph("System: NexusIQ CX Platform v5.0 | Export: 2025-01-05 | "
+                  "Total cases: 2,000 | Resolved+Closed: 1,005 (50.3%) | "
+                  "Classification: Internal", e["Caption"]),
+        _hr(), _sp(),
+    ]
+
+    # ── Section 1: Monthly case volume ──
+    story += [
+        Paragraph("1. Monthly Case Volume by Priority — FY 2024", e["SectionHead"]),
+        Paragraph("New cases opened each month. Total FY 2024: 2,000 cases.", e["Body"]),
+    ]
+    monthly_cases = {p: [_rng4.randint(30, 55) for _ in range(12)]
+                     for p in SUPPORT_PRIORITIES}
+    targets = {"low": 520, "high": 502, "urgent": 497, "medium": 481}
+    for p in SUPPORT_PRIORITIES:
+        raw = sum(monthly_cases[p])
+        monthly_cases[p] = [int(v * targets[p] / raw) for v in monthly_cases[p]]
+        diff = targets[p] - sum(monthly_cases[p])
+        monthly_cases[p][_rng4.randint(0, 11)] += diff
+
+    mc_hdr = ["Month"] + [p.title() for p in SUPPORT_PRIORITIES] + ["Monthly Total"]
+    mc_rows = [mc_hdr]
+    for mi, mn in enumerate(MONTH_NAMES):
+        vals = [monthly_cases[p][mi] for p in SUPPORT_PRIORITIES]
+        mc_rows.append([mn] + [str(v) for v in vals] + [str(sum(vals))])
+    mc_rows.append(["YTD"] + [str(targets[p]) for p in SUPPORT_PRIORITIES] + ["2,000"])
+    story.append(_table(mc_rows, col_widths=[55, 80, 75, 80, 85, 100]))
+    story.append(_sp())
+
+    # ── Section 2: Case status × priority matrix ──
+    story += [
+        Paragraph("2. Case Status × Priority Matrix — FY 2024", e["SectionHead"]),
+        Paragraph("Distribution of case statuses broken down by priority level.", e["Body"]),
+    ]
+    status_prio_data = {
+        "closed":      {"low": 138, "high": 131, "urgent": 130, "medium": 131},
+        "in_progress": {"low": 132, "high": 128, "urgent": 124, "medium": 122},
+        "open":        {"low": 126, "high": 122, "urgent": 120, "medium": 121},
+        "resolved":    {"low": 124, "high": 121, "urgent": 123, "medium": 107},
+    }
+    sp_rows = [["Status"] + [p.title() for p in SUPPORT_PRIORITIES] + ["Row Total"]]
+    for st, pdata in status_prio_data.items():
+        row = [st.upper()] + [str(pdata[p]) for p in SUPPORT_PRIORITIES]
+        row.append(str(sum(pdata.values())))
+        sp_rows.append(row)
+    sp_rows.append(["Col Total"] + [str(targets[p]) for p in SUPPORT_PRIORITIES] + ["2,000"])
+    story.append(_table(sp_rows, col_widths=[90, 85, 75, 85, 90, 90]))
+    story.append(_sp())
+
+    # ── Section 3: Case volume by product category ──
+    story += [
+        Paragraph("3. Support Cases by Product Category — FY 2024", e["SectionHead"]),
+        Paragraph("Cases categorized by the product involved in the inquiry. "
+                  "Electronics dominates consistent with $91,010,125.61 revenue base.", e["Body"]),
+    ]
+    cat_case_rows = [["Category", "Cases", "% of Total", "Top Subject",
+                       "Avg Priority Score", "Avg Resolution (days)"]]
+    cat_cases = [
+        ("Electronics", 840, "42.0%", "Defective device",    3.1, 2.1),
+        ("Home",        560, "28.0%", "Return/refund",        2.4, 4.8),
+        ("Clothing",    280, "14.0%", "Size exchange",        2.1, 3.2),
+        ("Sports",      200, "10.0%", "Product inquiry",      1.9, 5.6),
+        ("Food",        120, "6.0%",  "Delivery issue",       2.7, 1.8),
+    ]
+    for row in cat_cases:
+        cat_case_rows.append([row[0], str(row[1]), row[2], row[3],
+                               f"{row[4]:.1f}", f"{row[5]:.1f}"])
+    story.append(_table(cat_case_rows, col_widths=[85, 60, 80, 150, 110, 115]))
+    story.append(_sp())
+
+    # ── Section 4: SLA compliance weekly log ──
+    story += [
+        Paragraph("4. SLA Compliance Weekly Log — FY 2024 (52 weeks)", e["SectionHead"]),
+        Paragraph("Weekly SLA compliance rate per priority. Urgent SLA = 1 day; "
+                  "High = 3 days; Medium = 5 days; Low = 7 days.", e["Body"]),
+    ]
+    sla_rows = [["Week", "Urgent %", "High %", "Medium %", "Low %", "Overall %"]]
+    for wk in range(1, 53):
+        u = _rng4.uniform(81, 96)
+        h = _rng4.uniform(83, 97)
+        m = _rng4.uniform(86, 98)
+        lo = _rng4.uniform(89, 99)
+        overall = (u + h + m + lo) / 4
+        sla_rows.append([f"W{wk:02d}", f"{u:.1f}%", f"{h:.1f}%",
+                          f"{m:.1f}%", f"{lo:.1f}%", f"{overall:.1f}%"])
+    story.append(_table(sla_rows, col_widths=[50, 75, 65, 75, 65, 80], small=True))
+    story.append(_sp())
+
+    # ── Section 5: All 2,000 case records ──
+    story += [
+        Paragraph("5. Complete Case Register — All 2,000 Records", e["SectionHead"]),
+        Paragraph("Full case log for FY 2024. Fields: case_id, customer_id, subject, "
+                  "priority, status, created_at, resolved_at, product_category.", e["Body"]),
+    ]
+    case_rows = [["Case ID", "Customer", "Subject", "Priority", "Status",
+                   "Created", "Resolved", "Category"]]
+    subjects_pool = SUPPORT_SUBJECTS
+    for i in range(2000):
+        case_id = f"CASE-2024-{i+1:05d}"
+        cust_id = f"CUST{_rng4.randint(1, 14979):05d}"
+        subject = _rng4.choice(subjects_pool)
+        priority = _rng4.choice(SUPPORT_PRIORITIES)
+        status = _rng4.choice(SUPPORT_STATUSES)
+        created = _date_in_2024(_rng4.randint(0, 360))
+        resolved = _date_in_2024(_rng4.randint(0, 365)) if status in ("closed", "resolved") else "—"
+        cat = _rng4.choice(list(CATEGORY_REVENUE.keys()))
+        case_rows.append([case_id, cust_id, subject, priority, status,
+                           created, resolved, cat])
+    story.append(_table(case_rows,
+                         col_widths=[80, 68, 110, 55, 72, 70, 70, 75], small=True))
+
+    story += [
+        _sp(), _hr(),
+        Paragraph("CX Platform Export | Tables: support_cases (2,000 rows), customers (14,979 rows). "
+                  "Join: support_cases.customer_id → customers.customer_id.", e["Caption"]),
+    ]
+
+    doc.build(story)
+    print(f"  ✅ {out_path.name}")
+
+
+# ─── PDF 5: Cross-Business Intelligence Register ───────────────────────────────
+# Real format: joined views across all tables, product scorecards (all 20),
+# store performance (all 100), quarterly P&L with all dimensions.
+
+def build_cross_bi_register(out_path: Path) -> None:
+    from reportlab.platypus import Paragraph
+    doc = _make_doc(out_path, "Cross-Business Intelligence Register 2024")
+    s, e = _styles()
+    MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun",
+                   "Jul","Aug","Sep","Oct","Nov","Dec"]
+    _rng5 = random.Random(88)
+
+    avg_prices = {
+        "Laptop": 1249, "Phone": 849, "Tablet": 589, "Headphones": 178,
+        "Jacket": 118, "Jeans": 89, "Shoes": 94, "T-Shirt": 32,
+        "Bedding": 124, "Decor": 98, "Furniture": 389, "Kitchen": 112,
+        "Accessories": 64, "Apparel": 72, "Equipment": 148, "Footwear": 94,
+        "Drinks": 12, "Frozen": 18, "Produce": 9, "Snacks": 14,
+    }
+
+    story = []
+    story += [
+        Paragraph("NexusIQ Corporation — Chief Analytics Office", s["Heading1"]),
+        Paragraph("Cross-Business Intelligence Register — FY 2024 Full Data Extract",
+                  e["Subtitle"]),
+        Paragraph("Generated: 2025-01-06 | Source tables: sales_transactions (100,000), "
+                  "customers (14,979), returns (6,000), inventory (2,000), "
+                  "support_cases (2,000), products (20) | Classification: Executive",
+                  e["Caption"]),
+        _hr(), _sp(),
+    ]
+
+    # ── Section 1: Monthly revenue across all dimensions ──
+    story += [
+        Paragraph("1. Monthly Revenue & Operational KPIs — FY 2024", e["SectionHead"]),
+        Paragraph("All KPIs tracked monthly. Revenue from sales_transactions; "
+                  "returns/support from operations tables.", e["Body"]),
+    ]
+    monthly_rev = [
+        ("Jan", 12.8, 421, 148, 182),
+        ("Feb", 13.1, 438, 152, 168),
+        ("Mar", 14.2, 492, 167, 173),
+        ("Apr", 13.9, 467, 158, 165),
+        ("May", 14.6, 501, 163, 171),
+        ("Jun", 14.3, 489, 159, 168),
+        ("Jul", 14.8, 511, 165, 174),
+        ("Aug", 15.2, 524, 171, 180),
+        ("Sep", 14.9, 509, 164, 172),
+        ("Oct", 15.8, 537, 178, 188),
+        ("Nov", 17.6, 612, 206, 219),
+        ("Dec", 14.4, 499, 169, 180),
+    ]
+    rev_rows = [["Month", "Revenue", "Transactions", "Returns", "Support Cases",
+                  "Return Rate", "Support Rate"]]
+    for mn, rev, txns, rets, sups in monthly_rev:
+        rev_rows.append([
+            mn, f"${rev:.1f}M", f"{txns*200:,}", str(rets*12), str(sups*11),
+            f"{rets*12/(txns*200)*100:.2f}%",
+            f"{sups*11/(txns*200)*100:.2f}%",
+        ])
+    rev_rows.append([
+        "FY 2024", "$175.6M", "100,000", "6,000", "2,000",
+        "6.00%", "2.00%",
+    ])
+    story.append(_table(rev_rows, col_widths=[50, 75, 90, 70, 100, 80, 85]))
+    story.append(_sp())
+
+    # ── Section 2: Full product scorecard (all 20 SKUs) ──
+    story += [
+        Paragraph("2. Product Scorecard — All 20 SKUs, FY 2024", e["SectionHead"]),
+        Paragraph("Multi-dimensional product view: revenue, returns, inventory health, "
+                  "support cases. Cross-joins: sales_transactions + returns + inventory + "
+                  "support_cases on product_name.", e["Body"]),
+    ]
+    ps_rows = [["Product", "Category", "Est. Revenue", "Units Sold",
+                 "Returns", "Ret Rate", "Inv Alerts", "Support Cases"]]
+    for p in PRODUCTS:
+        cat = CATEGORIES_MAP[p]
+        cat_rev = CATEGORY_REVENUE[cat]
+        est_rev = cat_rev / 4 + _rng5.uniform(-cat_rev*0.1, cat_rev*0.1)
+        est_units = int(est_rev / avg_prices[p])
+        ret_cnt = TOP_RETURN_COUNTS[p]
+        ret_rate = ret_cnt / max(est_units, 1) * 100
+        inv_alerts = sum(1 for store in ALL_STORES
+                         if _rng5.random() < 0.036)  # 3.6% rate
+        sup_cnt = int(2000 * (ret_cnt / sum(TOP_RETURN_COUNTS.values())))
+        ps_rows.append([
+            p, cat, _fmt(est_rev), f"{est_units:,}",
+            str(ret_cnt), f"{min(ret_rate, 25):.1f}%",
+            str(min(inv_alerts, 8)), str(sup_cnt),
+        ])
+    story.append(_table(ps_rows,
+                         col_widths=[80, 85, 95, 75, 60, 65, 70, 80], small=True))
+    story.append(_sp())
+
+    # ── Section 3: All 100 store performance ──
+    story += [
+        Paragraph("3. Store Performance Register — All 100 Stores, FY 2024",
+                  e["SectionHead"]),
+        Paragraph("Per-store sales performance cross-referenced with inventory health "
+                  "and regional benchmarks. Revenue estimated from regional totals / 20 stores.",
+                  e["Body"]),
+    ]
+    store_rows = [["Store ID", "Region", "Est. Revenue", "Transactions",
+                    "Customers", "Returns", "Low-Stock SKUs", "Support Cases"]]
+    for region in REGIONS:
+        region_rev = REGION_REVENUE[region]
+        region_cust = REGION_CUSTOMERS[region]
+        for store in STORES[region]:
+            store_rev = region_rev / 20 + _rng5.uniform(-region_rev*0.03, region_rev*0.03)
+            store_txns = int(100000 * store_rev / 175595178.16)
+            store_cust = int(region_cust / 20 + _rng5.randint(-30, 30))
+            store_rets = int(6000 * store_rev / 175595178.16)
+            low_skus = _rng5.randint(0, 4)
+            sup_cases = int(2000 * store_rev / 175595178.16)
+            store_rows.append([
+                store, region, _fmt(store_rev), f"{store_txns:,}",
+                str(store_cust), str(store_rets), str(low_skus), str(sup_cases),
+            ])
+    story.append(_table(store_rows,
+                         col_widths=[60, 65, 90, 80, 70, 65, 90, 90], small=True))
+    story.append(_sp())
+
+    # ── Section 4: Quarterly P&L breakdown ──
+    story += [
+        Paragraph("4. Quarterly Business Performance — FY 2024", e["SectionHead"]),
+        Paragraph("Full-year revenue broken into quarters with returns exposure, "
+                  "support costs, and inventory adjustments.", e["Body"]),
+    ]
+    qtr_rows = [["Quarter", "Revenue", "Transactions", "Customers (New)",
+                  "Returns", "Avg Refund", "Support Cases", "Net Revenue Est."]]
+    qtrs = [
+        ("Q1 2024", 40100000, 22900, 3780, 1260, 1618.61, 468, 38100000),
+        ("Q2 2024", 42600000, 24300, 3841, 1440, 1618.61, 502, 40200000),
+        ("Q3 2024", 44900000, 25600, 3822, 1560, 1618.61, 521, 42400000),
+        ("Q4 2024", 47995178, 27200, 3536, 1740, 1618.61, 509, 45100000),
+    ]
+    for qname, rev, txns, new_cust, rets, avg_ref, sups, net in qtrs:
+        qtr_rows.append([
+            qname, _fmt(rev), f"{txns:,}", f"{new_cust:,}",
+            str(rets), _fmt(avg_ref), str(sups), _fmt(net),
+        ])
+    qtr_rows.append([
+        "FY 2024", "$175,595,178.16", "100,000", "14,979",
+        "6,000", "$1,618.61", "2,000", "~$165,800,000",
+    ])
+    story.append(_table(qtr_rows,
+                         col_widths=[65, 95, 80, 90, 65, 80, 80, 95]))
+    story.append(_sp())
+
+    # ── Section 5: Customer × returns × support joined view (200 records) ──
+    story += [
+        Paragraph("5. Customer 360 View — Joined Records (Sample: 200 Customers)",
+                  e["SectionHead"]),
+        Paragraph("Three-way join: customers LEFT JOIN returns USING (customer_id) "
+                  "LEFT JOIN support_cases USING (customer_id). Shows combined customer "
+                  "interaction profile.", e["Body"]),
+    ]
+    c360_rows = [["Customer ID", "Region", "FY Spend", "Transactions",
+                   "Returns", "Open Cases", "Status"]]
+    _rng5b = random.Random(21)
+    for _ in range(200):
+        cid = f"CUST{_rng5b.randint(1, 14979):05d}"
+        region = _rng5b.choice(REGIONS)
+        spend = _rng5b.uniform(500, 45000)
+        txns = int(spend / _rng5b.uniform(800, 2500))
+        rets = _rng5b.randint(0, 5)
+        open_cases = _rng5b.randint(0, 3)
+        if open_cases >= 2 or rets >= 4:
+            status = "AT-RISK"
+        elif spend > 15000:
+            status = "LOYAL"
+        else:
+            status = "ACTIVE"
+        c360_rows.append([cid, region, _fmt(spend), str(txns),
+                           str(rets), str(open_cases), status])
+    story.append(_table(c360_rows,
+                         col_widths=[80, 65, 85, 80, 65, 80, 80], small=True))
+    story.append(_sp())
+
+    # ── Section 6: Policy and data integrity notes ──
+    story += [
+        Paragraph("6. Data Integrity & Policy Reference Notes", e["SectionHead"]),
+        Paragraph("Return policy: 30-day window (v2.0, effective Q3 2024). "
+                  "Previous 14-day policy (v1.0) retired Q2 2024 and must not be used "
+                  "in operational calculations.", e["Alert"]),
+        Paragraph("Revenue figures: $175,595,178.16 FY 2024 from sales_transactions (100,000 rows). "
+                  "Quarterly split: Q1 $40.1M / Q2 $42.6M / Q3 $44.9M / Q4 $48.0M.", e["Body"]),
+        Paragraph("Customer count: 14,979 unique customer_ids in sales_transactions, "
+                  "avg spend $11,722.76, max $59,521.80. Regional: Central 4,599 / East 3,676 / "
+                  "West 2,351 / South 2,330 / North 2,023.", e["Body"]),
+        Paragraph("Returns: 6,000 records at $1,618.61 avg refund. Status: rejected 1,242 / "
+                  "refunded 1,207 / pending 1,197 / received 1,181 / approved 1,173.", e["Body"]),
+        Paragraph("Support: 2,000 cases. Priority: low 520 / high 502 / urgent 497 / medium 481. "
+                  "Status: closed 530 / in_progress 506 / open 489 / resolved 475.", e["Body"]),
+        Paragraph("Inventory: 2,000 records (100 stores × 20 SKUs). 72 below reorder point (3.6%).",
+                  e["Body"]),
     ]
 
     story += [
-        Paragraph("Overview", e["SectionHead"]),
-        Paragraph(
-            "This report synthesizes FY 2024 performance across all NexusIQ business "
-            "dimensions: sales transactions, customer relationships, product returns, "
-            "inventory operations, and customer support. Total revenue reached "
-            "<b>$175,595,178.16</b> from 100,000 transactions across 14,979 unique "
-            "customers. The integrated view reveals four cross-cutting themes: "
-            "Electronics dominance, West region leadership, return-support correlation, "
-            "and inventory pressure in high-velocity SKUs.", e["Body"]),
-        _sp(),
-    ]
-
-    story += [
-        Paragraph("FY 2024 Master KPI Dashboard", e["SectionHead"]),
-        _table([
-            ["Dimension", "Key Metric", "Value", "Status"],
-            ["Sales",     "Total Revenue",        "$175,595,178.16", "✓ On Target"],
-            ["Sales",     "Total Transactions",   "100,000",          "✓ On Target"],
-            ["Sales",     "Avg Transaction Value","$1,755.95",        "✓ On Target"],
-            ["Customers", "Unique Customers",     "14,979",           "✓ Growth"],
-            ["Customers", "Avg Lifetime Value",   "$11,722.76",       "✓ Growth"],
-            ["Customers", "Max Customer Spend",   "$59,521.80",       "— Outlier"],
-            ["Returns",   "Total Returns",        "6,000 (6.0%)",     "⚠ Monitor"],
-            ["Returns",   "Avg Refund",           "$1,618.61",        "⚠ Monitor"],
-            ["Returns",   "Refund Exposure",      "~$9.7M",           "⚠ Monitor"],
-            ["Inventory", "Records Tracked",      "2,000",            "✓ OK"],
-            ["Inventory", "Below Reorder Point",  "72 (3.6%)",        "⚠ Action"],
-            ["Support",   "Total Cases",          "2,000",            "✓ Managed"],
-            ["Support",   "Open / Unresolved",    "489 open",         "⚠ Action"],
-            ["Support",   "Resolution Rate",      "50.3%",            "— Improve"],
-        ], col_widths=[90, 160, 130, 100]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Revenue by Region — All Dimensions", e["SectionHead"]),
-        Paragraph(
-            "West leads in total revenue ($37,880,499.39) despite ranking third in "
-            "customer count (2,351). This revenue concentration is driven by high "
-            "Electronics spend. West also has the highest inventory pressure (22 "
-            "low-stock records) and the second-highest Electronics return rate. "
-            "Central region, with the most customers (4,599), trails in per-customer "
-            "revenue — a segmentation opportunity for Q1 2025 upsell campaigns.",
-            e["Body"]),
-        _table([
-            ["Region",  "Revenue",             "Customers", "Returns\n(est.)", "Support Cases\n(est.)", "Low Stock"],
-            ["West",    "$37,880,499.39", "2,351", "~1,080", "~420", "22"],
-            ["East",    "$36,314,020.57", "3,676", "~1,440", "~520", "15"],
-            ["Central", "$35,679,253.01", "4,599", "~1,380", "~560", "18"],
-            ["South",   "$35,470,111.47", "2,330", "~1,140", "~290", "11"],
-            ["North",   "$30,251,293.72", "2,023", "~960",   "~210", "6"],
-        ], col_widths=[70, 140, 80, 80, 110, 70]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Electronics: The Cross-Cutting Dimension", e["SectionHead"]),
-        Paragraph(
-            "Electronics is the central theme across all five business dimensions in FY 2024:",
-            e["Body"]),
-        Paragraph("<b>Revenue:</b> $91,010,125.61 — 51.8% of total $175.6M revenue.",
-                  e["Bullet"]),
-        Paragraph("<b>Returns:</b> Tablet (314), Phone (309), Laptop (302) = 925 of 6,000 "
-                  "returns. Average Electronics refund ~$574 vs overall average $1,618.61 "
-                  "(note: overall avg pulled up by multi-item returns).", e["Bullet"]),
-        Paragraph("<b>Inventory:</b> 31 of 72 low-stock alerts are Electronics SKUs. "
-                  "Laptop/Phone/Tablet turn over in 18–22 days.", e["Bullet"]),
-        Paragraph("<b>Support:</b> ~840 of 2,000 support cases (42%) are Electronics "
-                  "category. Primary subjects: defective units, warranty, setup.", e["Bullet"]),
-        Paragraph("<b>Customers:</b> West-region customers (top Electronics buyers) "
-                  "drive the highest regional revenue despite third-place customer count.",
-                  e["Bullet"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Return & Support Co-occurrence Analysis", e["SectionHead"]),
-        Paragraph(
-            "38% of returns (2,280 of 6,000) have an associated support case. This "
-            "co-occurrence is critical for two reasons: (1) customers with support cases "
-            "get returns approved at 62% vs 43% without — suggesting support acts as "
-            "a proxy for return approval escalation; (2) the 1,242 rejected returns "
-            "($0 refund) represent a customer dissatisfaction risk, especially for "
-            "the 489 open support cases awaiting resolution.", e["Body"]),
-        _table([
-            ["Scenario", "Returns", "Approval Rate", "Avg Refund", "Revenue Risk"],
-            ["With support case",    "2,280", "62%", "$1,812", "$4.1M exposure"],
-            ["Without support case", "3,720", "43%", "$1,511", "$5.6M exposure"],
-            ["Overall",              "6,000", "51%", "$1,618.61", "$9.7M total"],
-        ], col_widths=[160, 70, 100, 90, 130]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Customer Lifetime Value vs Operational Cost", e["SectionHead"]),
-        Paragraph(
-            "Average customer lifetime value of $11,722.76 must be weighed against "
-            "per-customer operational costs. Each return costs an estimated $42–$68 "
-            "in processing (admin + refund + potential restocking). Each support case "
-            "costs approximately $28–$45 (agent time + tooling). With 14,979 customers, "
-            "6,000 returns, and 2,000 support cases, total operational cost for "
-            "post-purchase services is estimated at $380,000–$550,000 — approximately "
-            "0.22–0.31% of total revenue. Industry benchmark is 0.8–1.2%, suggesting "
-            "NexusIQ is operating efficiently but may be under-investing in proactive "
-            "support to prevent the Gold-tier churn risk (31.4% unresolved rate).",
-            e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Inventory × Revenue Alignment", e["SectionHead"]),
-        Paragraph(
-            "72 low-stock inventory records represent a stockout risk. If the 22 West-region "
-            "Electronics low-stock records result in stockouts, the potential lost revenue "
-            "is estimated at $2.1M–$3.8M in Q1 2025 (based on West Electronics velocity: "
-            "$37.9M annual → ~$9.5M quarterly, and 22/100 store-product combos at risk). "
-            "Emergency restocking investment of ~$180,000 in expedited POs would protect "
-            "an estimated 12–20× revenue. Priority: West Laptop, West Phone, East Tablet.",
-            e["Body"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Policy Compliance Note", e["SectionHead"]),
-        Paragraph(
-            "All return calculations in this report use the current 30-day return window "
-            "(Policy v2.0, effective Q3 2024). The 1,242 rejected returns include cases "
-            "where customers attempted returns after 30 days. Any reference to a "
-            "14-day return window reflects the superseded Policy v1.0 (retired Q2 2024) "
-            "and should not be used for operational decisions.", e["Alert"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("Cross-Table Query Reference", e["SectionHead"]),
-        Paragraph("Key SQL joins enabling this cross-dimensional analysis:", e["Body"]),
-        Paragraph("• <b>Sales ↔ Customers:</b> sales_transactions.customer_id = customers.customer_id",
-                  e["Bullet"]),
-        Paragraph("• <b>Sales ↔ Returns:</b> returns.transaction_id = sales_transactions.id",
-                  e["Bullet"]),
-        Paragraph("• <b>Returns ↔ Customers:</b> returns.customer_id = customers.customer_id",
-                  e["Bullet"]),
-        Paragraph("• <b>Support ↔ Customers:</b> support_cases.customer_id = customers.customer_id",
-                  e["Bullet"]),
-        Paragraph("• <b>Inventory ↔ Products:</b> inventory.product_name = products.product_name",
-                  e["Bullet"]),
-        _sp(0.2),
-    ]
-
-    story += [
-        Paragraph("FY 2025 Strategic Imperatives", e["SectionHead"]),
-        Paragraph("1. <b>Electronics Supply Chain:</b> Protect $91M revenue stream — "
-                  "emergency restock 22 West/East Electronics low-stock records.", e["Bullet"]),
-        Paragraph("2. <b>Gold-Tier Churn Prevention:</b> 31.4% unresolved support "
-                  "rate in $15k–$30k spend tier. Assign dedicated CSMs immediately.",
-                  e["Bullet"]),
-        Paragraph("3. <b>Return Rate Reduction:</b> 6.0% overall (vs 4.5% industry "
-                  "benchmark). Clothing size tools + Electronics QA = primary levers.",
-                  e["Bullet"]),
-        Paragraph("4. <b>Central Region Revenue Uplift:</b> 4,599 customers (largest "
-                  "base) but $35.7M revenue (3rd). Upsell Electronics to Central "
-                  "customers currently over-indexed on Home and Food.", e["Bullet"]),
-        Paragraph("5. <b>Support Backlog:</b> 489 open cases by Q1 week 1. "
-                  "Agent surge or triage automation required.", e["Bullet"]),
-        _sp(0.2),
-        _hr(),
-        Paragraph("Report Sources: sales_transactions (100,000 rows), customers (14,979), "
-                  "returns (6,000), inventory (2,000), support_cases (2,000), products (20). "
-                  "FY 2024. All monetary values in USD.", e["Caption"]),
+        _sp(), _hr(),
+        Paragraph("Executive Analytics Export | All source tables joined via customer_id, "
+                  "transaction_id, product_name. FY 2024 data. USD.", e["Caption"]),
     ]
 
     doc.build(story)
@@ -1027,17 +1198,17 @@ def build_cross_bi_summary(out_path: Path) -> None:
 # ─── Generation + ingestion orchestration ─────────────────────────────────────
 
 PDFS = [
-    ("01_Customer_Segmentation_Report_2024.pdf",   build_customer_segmentation),
-    ("02_Product_Returns_Analysis_2024.pdf",        build_returns_analysis),
-    ("03_Inventory_Operations_Report_2024.pdf",     build_inventory_report),
-    ("04_Customer_Support_Intelligence_2024.pdf",   build_support_intelligence),
-    ("05_Cross_Business_Intelligence_Summary_2024.pdf", build_cross_bi_summary),
+    ("01_Customer_CRM_Export_2024.pdf",               build_customer_crm_export),
+    ("02_Returns_Processing_Register_2024.pdf",        build_returns_register),
+    ("03_Inventory_Operations_Register_2024.pdf",      build_inventory_register),
+    ("04_Support_Case_Log_2024.pdf",                   build_support_case_log),
+    ("05_Cross_Business_Intelligence_Register_2024.pdf", build_cross_bi_register),
 ]
 
 
 def generate_all() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"\n📊 Generating {len(PDFS)} analytics PDFs → {OUTPUT_DIR}\n")
+    print(f"\n📊 Generating {len(PDFS)} data-dense analytics PDFs → {OUTPUT_DIR}\n")
     for filename, builder in PDFS:
         out = OUTPUT_DIR / filename
         print(f"  Building {filename}...")
@@ -1064,7 +1235,7 @@ def ingest_all() -> None:
             print(f"    ❌ No text extracted")
             continue
 
-        # Delete stale chunks for this file before re-ingesting
+        # Delete stale chunks before re-ingesting
         try:
             existing = pipeline.collection.get(
                 where={"filename": {"$eq": filename}}
@@ -1085,11 +1256,11 @@ def ingest_all() -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate/ingest NexusIQ analytics PDFs")
-    parser.add_argument("action", choices=["generate", "ingest", "generate-and-ingest"],
-                        help="What to do")
+    parser = argparse.ArgumentParser(
+        description="Generate/ingest NexusIQ data-dense analytics PDFs")
+    parser.add_argument("action",
+                        choices=["generate", "ingest", "generate-and-ingest"])
     args = parser.parse_args()
-
     if args.action in ("generate", "generate-and-ingest"):
         generate_all()
     if args.action in ("ingest", "generate-and-ingest"):

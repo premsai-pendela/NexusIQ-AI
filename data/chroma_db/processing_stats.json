@@ -1,30 +1,30 @@
 {
   "pdfs_processed": 25,
-  "chunks_created": 112,
+  "chunks_created": 180,
   "categories": {
     "01_financial": {
       "pdfs": 7,
-      "chunks": 15
+      "chunks": 24
     },
     "02_market_intelligence": {
       "pdfs": 5,
-      "chunks": 27
+      "chunks": 38
     },
     "03_contracts_legal": {
       "pdfs": 4,
-      "chunks": 17
+      "chunks": 28
     },
     "04_products_operations": {
       "pdfs": 4,
-      "chunks": 19
+      "chunks": 30
     },
     "05_strategic_planning": {
       "pdfs": 3,
-      "chunks": 14
+      "chunks": 27
     },
     "06_hr_compliance": {
       "pdfs": 2,
-      "chunks": 20
+      "chunks": 33
     }
   },
   "distance_metric": "cosine"

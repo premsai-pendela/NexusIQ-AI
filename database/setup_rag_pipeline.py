@@ -38,6 +38,7 @@ CATEGORIES = [
     "05_strategic_planning",
     "06_hr_compliance",
     "07_communications",
+    "08_analytics",
 ]
 
 

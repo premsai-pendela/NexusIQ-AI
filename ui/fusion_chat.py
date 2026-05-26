@@ -128,77 +128,6 @@ RECRUITER_DEMO_PROMPTS = [
     },
 ]
 
-PILOT_DEMO_PROMPTS = [
-    {
-        "title": "Validate FY 2025 revenue",
-        "question": "Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.",
-        "route": "Pilot SQL + RAG",
-        "proof": "Shows staged SQL-to-PDF-to-index agreement for a new reporting year.",
-    },
-    {
-        "title": "Validate H1 2026 revenue",
-        "question": "Validate H1 2026 total revenue and transaction count across SQL and PDF evidence.",
-        "route": "Pilot SQL + RAG",
-        "proof": "Shows new-period evidence without altering the live 2024 baseline.",
-    },
-    {
-        "title": "Show expanded data scale",
-        "question": "What is the total revenue and transaction count in the Enterprise Pilot combined view?",
-        "route": "Pilot SQL",
-        "proof": "Queries the combined 250,000-row read-only staging view.",
-    },
-    {
-        "title": "Validate FY 2021 evidence",
-        "question": "Validate FY 2021 total revenue and transaction count across SQL and PDF evidence.",
-        "route": "Pilot SQL + RAG",
-        "proof": "Demonstrates historical expansion with verified evidence.",
-    },
-    {
-        "title": "Validate FY 2022 evidence",
-        "question": "Validate FY 2022 total revenue and transaction count across SQL and PDF evidence.",
-        "route": "Pilot SQL + RAG",
-        "proof": "Reads the isolated staged index rather than production documents.",
-    },
-    {
-        "title": "Validate FY 2023 evidence",
-        "question": "Validate FY 2023 total revenue and transaction count across SQL and PDF evidence.",
-        "route": "Pilot SQL + RAG",
-        "proof": "Completes the validated multi-year pilot timeline.",
-    },
-]
-
-PILOT_EVIDENCE_TIMELINE = [
-    {
-        "period": "FY 2021",
-        "revenue": "$38.90M",
-        "transactions": "33,337 transactions",
-        "status": "SQL = PDF",
-    },
-    {
-        "period": "FY 2022",
-        "revenue": "$36.73M",
-        "transactions": "33,580 transactions",
-        "status": "SQL = PDF",
-    },
-    {
-        "period": "FY 2023",
-        "revenue": "$35.53M",
-        "transactions": "33,295 transactions",
-        "status": "SQL = PDF",
-    },
-    {
-        "period": "FY 2025",
-        "revenue": "$36.81M",
-        "transactions": "33,324 transactions",
-        "status": "SQL = PDF",
-    },
-    {
-        "period": "H1 2026",
-        "revenue": "$17.52M",
-        "transactions": "16,464 transactions",
-        "status": "SQL = PDF",
-    },
-]
 
 # ═══════════════════════════════════════════════════════
 #  LAZY LOADERS — heavy modules loaded only when needed
@@ -609,18 +538,6 @@ def render_chart_builder(msg_id: str, df):
 
 def render_command_center_welcome(data_context_key: str = "live"):
     """Render the guided question center without auto-running on entry."""
-    is_pilot = data_context_key == "enterprise_pilot"
-    pilot_timeline_cards = "".join(
-        f"""
-        <div class="pilot-period">
-            <span class="pilot-period-label">{item["period"]}</span>
-            <strong>{item["revenue"]}</strong>
-            <small>{item["transactions"]}</small>
-            <em>{item["status"]}</em>
-        </div>
-        """
-        for item in PILOT_EVIDENCE_TIMELINE
-    )
     st.markdown(
         """
         <style>
@@ -662,128 +579,6 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 background: rgba(8, 47, 73, 0.42);
                 font-size: 0.78rem;
                 font-weight: 700;
-            }
-            .pilot-story {
-                margin: 18px 0 8px;
-                padding: 18px;
-                border-radius: 10px;
-                border: 1px solid rgba(14, 116, 144, 0.2);
-                background: #f8fafc;
-            }
-            .pilot-story-head {
-                display: flex;
-                justify-content: space-between;
-                align-items: flex-end;
-                flex-wrap: wrap;
-                gap: 8px;
-                margin-bottom: 14px;
-            }
-            .pilot-story-head h3 {
-                margin: 0;
-                color: #0f172a;
-                font-size: 1.08rem;
-            }
-            .pilot-story-head p {
-                margin: 0;
-                color: #64748b;
-                font-size: 0.82rem;
-            }
-            .pilot-timeline {
-                display: grid;
-                grid-template-columns: repeat(5, minmax(110px, 1fr));
-                gap: 8px;
-            }
-            .pilot-period {
-                position: relative;
-                padding: 12px 10px 11px;
-                border-radius: 8px;
-                background: white;
-                border: 1px solid #e2e8f0;
-                min-height: 108px;
-            }
-            .pilot-period::before {
-                content: "";
-                display: block;
-                width: 100%;
-                height: 3px;
-                margin-bottom: 10px;
-                border-radius: 999px;
-                background: #0ea5e9;
-            }
-            .pilot-period-label {
-                color: #0369a1;
-                font-size: 0.73rem;
-                font-weight: 700;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-            }
-            .pilot-period strong {
-                display: block;
-                margin: 5px 0 2px;
-                color: #0f172a;
-                font-size: 1rem;
-            }
-            .pilot-period small {
-                display: block;
-                color: #475569;
-                font-size: 0.73rem;
-            }
-            .pilot-period em {
-                display: inline-block;
-                margin-top: 9px;
-                padding: 3px 7px;
-                border-radius: 99px;
-                color: #047857;
-                background: #ecfdf5;
-                font-size: 0.69rem;
-                font-style: normal;
-                font-weight: 700;
-            }
-            .pilot-protected {
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                margin-top: 10px;
-                padding: 10px 12px;
-                border-radius: 8px;
-                color: #334155;
-                background: #eff6ff;
-                border: 1px dashed #93c5fd;
-                font-size: 0.83rem;
-            }
-            .pilot-protected b {
-                color: #1d4ed8;
-                white-space: nowrap;
-            }
-            .pilot-proofline {
-                display: grid;
-                grid-template-columns: repeat(4, 1fr);
-                gap: 8px;
-                margin: 12px 0 4px;
-            }
-            .pilot-proofstep {
-                padding: 12px;
-                border-radius: 8px;
-                background: #0f172a;
-                color: #f8fafc;
-            }
-            .pilot-proofstep span {
-                display: block;
-                margin-bottom: 6px;
-                color: #38bdf8;
-                font-size: 0.68rem;
-                font-weight: 700;
-                letter-spacing: 0.08em;
-            }
-            .pilot-proofstep b {
-                display: block;
-                margin-bottom: 4px;
-                font-size: 0.84rem;
-            }
-            .pilot-proofstep small {
-                color: #cbd5e1;
-                font-size: 0.73rem;
-                line-height: 1.35;
             }
             .fusion-agent-flow {
                 display: grid;
@@ -846,9 +641,6 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 .fusion-command {
                     padding: 20px;
                 }
-                .pilot-timeline, .pilot-proofline {
-                    grid-template-columns: repeat(2, minmax(140px, 1fr));
-                }
                 .fusion-agent-flow {
                     grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
                 }
@@ -859,24 +651,7 @@ def render_command_center_welcome(data_context_key: str = "live"):
     )
 
     st.markdown(
-        (
-            """
-        <div class="fusion-command">
-            <h2>Enterprise Pilot Evidence Lab</h2>
-            <p>
-                Demonstrate expanded data scale without replacing production truth.
-                Every pilot document fact is traced to staged SQL and an isolated RAG index.
-            </p>
-            <div class="fusion-chip-row">
-                <div class="fusion-chip">250,000 combined transactions</div>
-                <div class="fusion-chip">$340.66M combined revenue</div>
-                <div class="fusion-chip">5 validated new-period PDFs</div>
-                <div class="fusion-chip">Isolated staging index</div>
-            </div>
-        </div>
         """
-            if is_pilot
-            else """
         <div class="fusion-command">
             <h2>Intelligence Command Center</h2>
             <p>
@@ -892,40 +667,12 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 <div class="fusion-chip">Live web pricing</div>
             </div>
         </div>
-        """
-        ),
+        """,
         unsafe_allow_html=True,
     )
 
     st.markdown(
-        (
-            f"""
-        <div class="pilot-story">
-            <div class="pilot-story-head">
-                <h3>Audited evidence timeline</h3>
-                <p>Five generated-period PDFs independently match staged SQL totals.</p>
-            </div>
-            <div class="pilot-timeline">{pilot_timeline_cards}</div>
-            <div class="pilot-protected">
-                <b>FY 2024 protected baseline</b>
-                <span>100,000 live Supabase transactions are carried into the combined view; no pilot PDF is claimed for this year.</span>
-            </div>
-        </div>
-        <div class="pilot-proofline">
-            <div class="pilot-proofstep"><span>01 / DATA</span><b>Read-only staging view</b><small>250,000 combined transactions; production remains untouched.</small></div>
-            <div class="pilot-proofstep"><span>02 / DOCUMENTS</span><b>PDF alignment gate</b><small>Five reports publish only after SQL totals match.</small></div>
-            <div class="pilot-proofstep"><span>03 / RETRIEVAL</span><b>Isolated RAG index</b><small>Pilot documents are separated from production evidence.</small></div>
-            <div class="pilot-proofstep"><span>04 / ANSWER</span><b>Cross-source proof</b><small>Answers expose route, values, and confidence.</small></div>
-        </div>
-        <div class="fusion-preview">
-            <h4>Try the strongest interview demo</h4>
-            <p><b>Question:</b> Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.</p>
-            <p><b>Expected result:</b> SQL and indexed PDF evidence match at <b>$36,813,023.66</b> across <b>33,324</b> transactions.</p>
-            <p><b>Boundary:</b> Enterprise pilot staging SQL + validated_v2 isolated index only.</p>
-        </div>
         """
-            if is_pilot
-            else """
         <div class="fusion-agent-flow">
             <div class="fusion-agent-step"><b>SQL Agent</b><small>Queries exact transaction facts.</small></div>
             <div class="fusion-agent-step"><b>RAG Agent</b><small>Retrieves from indexed business docs.</small></div>
@@ -939,14 +686,13 @@ def render_command_center_welcome(data_context_key: str = "live"):
             <p><b>Expected result:</b> SQL and RAG validate about <b>$31.7M</b>, then show source difference and confidence.</p>
             <p><b>Evidence:</b> sales_transactions + Q4 2024 Financial Report.</p>
         </div>
-        """
-        ),
+        """,
         unsafe_allow_html=True,
     )
 
     st.markdown("### Starter Questions")
     prompt_cols = st.columns(3)
-    prompts = PILOT_DEMO_PROMPTS if is_pilot else RECRUITER_DEMO_PROMPTS
+    prompts = RECRUITER_DEMO_PROMPTS
     for idx, prompt in enumerate(prompts):
         with prompt_cols[idx % 3]:
             st.markdown(
@@ -1745,40 +1491,12 @@ def _scroll_to_top():
 
 def _select_data_context():
     """Render the live/pilot switch and clear conversational state on a boundary change."""
-    from config.data_contexts import LIVE_CONTEXT_KEY, PILOT_CONTEXT_KEY, get_data_context
+    from config.data_contexts import LIVE_CONTEXT_KEY, get_data_context
 
     if "data_context_key" not in st.session_state:
         st.session_state.data_context_key = LIVE_CONTEXT_KEY
-    if "data_context_selector" not in st.session_state:
-        st.session_state.data_context_selector = st.session_state.data_context_key
 
-    with st.sidebar:
-        st.subheader("Data Workspace")
-        selected = st.radio(
-            "Choose evidence boundary:",
-            [LIVE_CONTEXT_KEY, PILOT_CONTEXT_KEY],
-            format_func=lambda key: get_data_context(key).label,
-            key="data_context_selector",
-            help="Enterprise Pilot uses staged SQL and its isolated validated PDF index only.",
-        )
-
-    if selected != st.session_state.data_context_key:
-        st.session_state.data_context_key = selected
-        for key in (
-            "nexusiq_agent",
-            "_agent_loader",
-            "query_history",
-            "chat_messages",
-            "pending_suggestion",
-            "pending_query_to_process",
-            "pending_repeat_decision",
-            "source_filter_radio",
-        ):
-            st.session_state.pop(key, None)
-        st.session_state.source_filter = "Auto"
-        st.rerun()
-
-    return get_data_context(st.session_state.data_context_key)
+    return get_data_context(LIVE_CONTEXT_KEY)
 
 
 def run_fusion_chat():
@@ -1883,14 +1601,7 @@ def run_fusion_chat():
         st.session_state.bypass_cache_once_question = None
     
     st.title("🔗 Fusion Agent — Multi-Source Intelligence")
-    if data_context.is_pilot:
-        st.markdown("*Validated staged evidence demo: expanded SQL scale plus isolated pilot PDFs*")
-        st.success(
-            "Enterprise Pilot is isolated from production PDFs and live web: "
-            "250,000 combined transactions, $340.66M combined revenue, 5 validated new-period reports."
-        )
-    else:
-        st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
+    st.markdown("*Cross-validates answers across SQL database, business PDFs, and live competitor pricing*")
     st.markdown(
         "<p style='font-size:13px; color:#6b7280; margin-top:-8px;'>"
         "<code>Gemini 2.5</code> &nbsp;·&nbsp; <code>Groq LLaMA 3.3</code> &nbsp;·&nbsp; "
@@ -1929,7 +1640,7 @@ def run_fusion_chat():
         
         # ✨ NEW: Source Filter
         st.subheader("🎯 Routing Mode")
-        routing_options = ["Auto", "SQL Only", "RAG Only"] if data_context.is_pilot else ["Auto", "SQL Only", "RAG Only", "Web Only"]
+        routing_options = ["Auto", "SQL Only", "RAG Only", "Web Only"]
         source_filter = st.radio(
             "Choose how to route queries:",
             routing_options,

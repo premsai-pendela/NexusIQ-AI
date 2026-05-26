@@ -19,7 +19,6 @@ from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
 from typing import Dict, Any, List, Optional
 import logging
-import re
 import time
 from functools import wraps
 
@@ -145,36 +144,6 @@ class SQLAgent:
     
     def _get_schema_info(self) -> str:
         """Get database schema for LLM context"""
-
-        if self.data_context.is_pilot:
-            return f"""
-    I am using PostgreSQL 15. This session is locked to the isolated Enterprise Pilot evidence boundary.
-
-    TABLE: {self.data_context.sql_table}
-    SCOPE: {self.data_context.sql_scope}
-    Columns:
-    - data_source (TEXT): 'live' for preserved 2024 baseline rows, 'generated' for staged expansion rows
-    - dataset_id (TEXT): enterprise_pilot_v1 for generated rows, NULL for preserved live rows
-    - transaction_id (TEXT)
-    - transaction_date (TIMESTAMP)
-    - region (VARCHAR)
-    - store_id (VARCHAR)
-    - product_category (VARCHAR)
-    - product_name (VARCHAR)
-    - quantity (INTEGER)
-    - unit_price (NUMERIC)
-    - total_amount (NUMERIC)
-    - customer_id (VARCHAR)
-    - payment_method (VARCHAR)
-
-    CRITICAL EVIDENCE RULES:
-    - {self.data_context.date_guidance}
-    - Use ONLY the exact qualified table name {self.data_context.sql_table}.
-    - Do not read public.sales_transactions or any other table in this pilot session.
-    - Total revenue = ROUND(SUM(total_amount)::numeric, 2).
-    - For generated-only pilot totals, filter data_source = 'generated'.
-    """
-
         schema = """
     I am using PostgreSQL 15. Here is my database schema:
 
@@ -365,44 +334,6 @@ SQL QUERY:"""
             table_name=self.data_context.sql_table,
         )
 
-    def _deterministic_pilot_row_query(self, question: str) -> Optional[str]:
-        """Build safe pilot sample-row SQL without relying on LLM aggregate choices."""
-        if not self.data_context.is_pilot:
-            return None
-
-        lowered = question.lower()
-        requests_rows = (
-            any(term in lowered for term in ("display", "show", "list", "sample"))
-            and "transaction" in lowered
-            and any(term in lowered for term in ("row", "record", "up to", "upto", "limit"))
-        )
-        if not requests_rows:
-            return None
-
-        years = [int(year) for year in re.findall(r"\b20\d{2}\b", question)]
-        if not years or any(year not in self.data_context.available_years for year in years):
-            return None
-
-        limit_match = re.search(r"(?:up\s*to|upto|limit)\s+(\d+)", lowered)
-        limit = min(int(limit_match.group(1)), 100) if limit_match else 10
-        year = years[0]
-
-        return f"""SELECT
-    p.transaction_id,
-    p.transaction_date,
-    p.region,
-    p.store_id,
-    p.product_category,
-    p.product_name,
-    p.quantity,
-    p.unit_price,
-    p.total_amount,
-    p.customer_id,
-    p.payment_method
-FROM {self.data_context.sql_table} p
-WHERE EXTRACT(YEAR FROM p.transaction_date) = {year}
-ORDER BY p.transaction_date, p.transaction_id
-LIMIT {limit};"""
     
     
     def _validate_query(self, sql_query: str) -> tuple[bool, str]:
@@ -419,45 +350,6 @@ LIMIT {limit};"""
         if not query_upper.startswith('SELECT') and not query_upper.startswith('WITH'):
             return False, "Only SELECT queries allowed"
 
-        if self.data_context.is_pilot:
-            normalize_relation = lambda relation: re.sub(r"\s+", "", relation).lower()
-            allowed_table = normalize_relation(self.data_context.sql_table)
-            # EXTRACT(YEAR FROM column) contains FROM as expression syntax, not
-            # a relational read. Remove it before inspecting actual relations.
-            relation_sql = re.sub(
-                r"\bEXTRACT\s*\(\s*[a-z_]+\s+FROM\s+[^)]*\)",
-                "EXTRACT_VALUE",
-                sql_query,
-                flags=re.IGNORECASE,
-            )
-            cte_names = {
-                name.lower()
-                for name in re.findall(r"(?:\bWITH|,)\s+([a-z_][a-z0-9_]*)\s+AS\s*\(", relation_sql, re.IGNORECASE)
-            }
-            relations = [
-                normalize_relation(relation)
-                for relation in re.findall(
-                    r"\b(?:FROM|JOIN)\s+([a-z_\"][a-z0-9_\"]*(?:\s*\.\s*[a-z_\"][a-z0-9_\"]*)?)",
-                    relation_sql,
-                    re.IGNORECASE,
-                )
-            ]
-            if allowed_table not in relations:
-                return False, "Enterprise Pilot SQL must read only its validated staging view"
-            from_clauses = re.findall(
-                r"\bFROM\s+(.*?)(?=\bWHERE\b|\bGROUP\b|\bORDER\b|\bLIMIT\b|\bHAVING\b|\bUNION\b|\bJOIN\b|\)|;|$)",
-                relation_sql,
-                re.IGNORECASE | re.DOTALL,
-            )
-            if any("," in clause for clause in from_clauses):
-                return False, "Enterprise Pilot SQL cannot use implicit multi-table reads"
-            unapproved_relations = [
-                relation for relation in relations
-                if relation != allowed_table and relation not in cte_names
-            ]
-            if unapproved_relations:
-                return False, "Enterprise Pilot SQL cannot mix staging evidence with other relational tables"
-        
         return True, ""
     
     
@@ -465,17 +357,6 @@ LIMIT {limit};"""
         """Generate SQL from natural language"""
         
         complexity = self._detect_query_complexity(question)
-        deterministic_query = self._deterministic_pilot_row_query(question)
-        if deterministic_query:
-            return {
-                "success": True,
-                "query": deterministic_query,
-                "question": question,
-                "complexity": complexity,
-                "model_used": "Deterministic pilot row retrieval",
-                "models_tried": [],
-            }
-
         prompt = self._create_sql_prompt(question)
         
         logger.info(f"🤔 Generating SQL for: {question} (Complexity: {complexity})")

@@ -263,22 +263,6 @@ if page == "🏠 Home":
 
     st.divider()
 
-    st.markdown("### Enterprise Pilot Evidence Lab")
-    pilot_left, pilot_right = st.columns([2, 1])
-    with pilot_left:
-        st.markdown(
-            """
-            A protected staging demo expands the story to **250,000 transactions** and
-            **$340.66M combined revenue** while keeping the validated 2024 live baseline unchanged.
-            Five new-period PDFs are independently checked against staged SQL and an isolated RAG index.
-            """
-        )
-    with pilot_right:
-        if st.button("Open Enterprise Pilot", type="primary", use_container_width=True):
-            launch_fusion(show_command_center=True, data_context_key="enterprise_pilot")
-
-    st.divider()
-
     # ── Metrics strip ────────────────────────────────────────────────────────
     m1, m2, m3, m4 = st.columns(4)
     with m1:

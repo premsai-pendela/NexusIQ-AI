@@ -713,11 +713,7 @@ def render_command_center_welcome(data_context_key: str = "live"):
                 st.session_state.show_fusion_command_center = False
                 st.rerun()
 
-    st.info(
-        "Pilot mode intentionally exposes staged SQL and five validated PDFs only; live web and production PDFs are excluded."
-        if is_pilot
-        else "Choose a starter question above, or type your own below. Auto routing selects the most relevant source path."
-    )
+    st.info("Choose a starter question above, or type your own below. Auto routing selects the most relevant source path.")
 
 def render_routing_badge(source_type: str):
     """
@@ -1677,12 +1673,6 @@ def run_fusion_chat():
         
         example_questions = (
             [
-                ("Validate FY 2025 total revenue and transaction count across SQL and PDF evidence.", "Pilot SQL + RAG"),
-                ("Validate H1 2026 total revenue and transaction count across SQL and PDF evidence.", "Pilot SQL + RAG"),
-                ("What is the total revenue and transaction count in the Enterprise Pilot combined view?", "Pilot SQL"),
-            ]
-            if data_context.is_pilot
-            else [
                 ("What was Q4 2024 revenue?", "Fusion (SQL+RAG)"),
                 ("Compare Q3 and Q4 performance", "RAG Comparison"),
                 ("What are competitor prices for electronics?", "Web Scraping"),

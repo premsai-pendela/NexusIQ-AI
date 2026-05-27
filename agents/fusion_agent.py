@@ -622,13 +622,15 @@ Reply with ONLY this JSON (no extra text):
 
         # Also extract plain counts near count-context words (returns, transactions,
         # orders, refunds, units, items, customers, records).
+        # Strip markdown bold/italic first so "**331** returns" → "331 returns".
         # Threshold >= 10 to avoid noise from small ordinals.
+        count_text = re.sub(r'\*+', ' ', text)  # strip markdown stars
         count_pattern = re.compile(
             r'(?<![\d.])([\d,]+)\s*(?=(?:returns?|refunds?|transactions?|orders?|units?'
             r'|items?|customers?|records?|products?|accounts?|entries|rows))',
             re.IGNORECASE
         )
-        for match in count_pattern.finditer(text):
+        for match in count_pattern.finditer(count_text):
             cleaned = match.group(1).replace(',', '').strip()
             try:
                 value = float(cleaned)

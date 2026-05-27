@@ -157,6 +157,7 @@ class RAGAgent:
         self.llm_gateway = get_llm_gateway()
         self._init_bm25_index()
         self._ingestion_version = self._read_ingestion_version()
+        self.cross_encoder = None  # lazy-loaded on first rerank call
 
         logger.info("RAG Agent initialized successfully!")
 
@@ -1451,12 +1452,14 @@ ANSWER:"""
         }
     
     def hybrid_search(
-        self, 
-        query: str, 
+        self,
+        query: str,
         n_results: int = 5,
         similarity_threshold: float = None,
         bm25_weight: float = 0.4,
-        vector_weight: float = 0.6
+        vector_weight: float = 0.6,
+        rerank: bool = True,
+        rerank_top_k: int = 20,
     ) -> List[Dict]:
         """
         ✅ Hybrid Search: BM25 (keyword) + Vector (semantic)
@@ -1559,17 +1562,70 @@ ANSWER:"""
         
         # Sort by hybrid score (highest first)
         hybrid_results.sort(key=lambda x: x['similarity'], reverse=True)
-        
-        # Take top n_results
-        results = hybrid_results[:n_results]
-        
+
+        if rerank:
+            # Expand candidate pool for reranker, then let cross-encoder pick the best
+            candidates = hybrid_results[:rerank_top_k]
+            results = self._rerank_chunks(query, candidates, top_n=n_results)
+        else:
+            results = hybrid_results[:n_results]
+
         # Log top results for debugging
         logger.info(f"Hybrid search results ({len(results)} chunks):")
         for i, r in enumerate(results[:3], 1):
             logger.info(f"  #{i}: {r['filename']} (Page {r['page']}) "
                         f"hybrid={r['similarity']:.3f} bm25={r['bm25_score']:.3f} vector={r['vector_score']:.3f}")
-        
+
         return results
+
+    def _get_cross_encoder(self):
+        """Lazy-load cross-encoder model on first call. CPU-friendly, ~22MB."""
+        if self.cross_encoder is None:
+            try:
+                from sentence_transformers import CrossEncoder
+                logger.info("Loading cross-encoder model (cross-encoder/ms-marco-MiniLM-L-6-v2)...")
+                self.cross_encoder = CrossEncoder(
+                    "cross-encoder/ms-marco-MiniLM-L-6-v2",
+                    device="cpu",
+                    max_length=512,
+                )
+                logger.info("Cross-encoder loaded.")
+            except Exception as e:
+                logger.warning(f"Cross-encoder unavailable: {e}. Skipping rerank.")
+        return self.cross_encoder
+
+    def _rerank_chunks(self, query: str, chunks: List[Dict], top_n: int) -> List[Dict]:
+        """
+        Re-score chunks using cross-encoder and return top_n.
+
+        Cross-encoder reads (query, passage) together and produces a relevance
+        logit that is more accurate than the bi-encoder cosine score, at the
+        cost of needing a forward pass per candidate.
+        """
+        model = self._get_cross_encoder()
+        if model is None or not chunks:
+            return chunks[:top_n]
+
+        pairs = [(query, c["text"]) for c in chunks]
+        try:
+            scores = model.predict(pairs, show_progress_bar=False)
+        except Exception as e:
+            logger.warning(f"Cross-encoder scoring failed: {e}. Returning un-reranked.")
+            return chunks[:top_n]
+
+        for chunk, score in zip(chunks, scores):
+            chunk["rerank_score"] = float(score)
+
+        reranked = sorted(chunks, key=lambda x: x.get("rerank_score", 0), reverse=True)
+        logger.info(
+            f"Reranker top-3: "
+            + " | ".join(
+                f"{r['filename']} (r={r['rerank_score']:.2f})"
+                for r in reranked[:3]
+            )
+        )
+        return reranked[:top_n]
+
 
 # Singleton instances are isolated by data context so live and pilot evidence never share state.
 _rag_agent_instances = {}

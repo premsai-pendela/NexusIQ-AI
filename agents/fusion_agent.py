@@ -768,32 +768,50 @@ Reply with ONLY this JSON (no extra text):
         # SQL answer text is fallback evidence because it can repeat/round values.
         sql_numbers = []
         if sql_result.get('success'):
-            # Primary: row-level numeric values (single-row results only —
-            # multi-row results contain per-item amounts that don't match RAG totals).
             rows = sql_result.get('results', [])
+            # COUNT-type columns (return_count, quantity, num_*, total_*)
+            # are valid for cross-validation regardless of row count.
+            COUNT_KEYS = re.compile(
+                r'count|quantity|num_|total_|n_',
+                re.IGNORECASE
+            )
             if len(rows) == 1:
+                # Single-row: extract all numeric columns > threshold
                 for key, value in rows[0].items():
                     if self._is_validation_metadata(key):
                         continue
-                    if isinstance(value, (int, float)) and value > 1000:
+                    try:
+                        num = float(value)
+                    except (TypeError, ValueError):
+                        continue
+                    threshold = 10 if COUNT_KEYS.search(key) else 1000
+                    if num > threshold:
                         sql_numbers.append({
-                            'value': float(value),
+                            'value': num,
                             'label': key,
                             'context': self._infer_number_context(key, fallback=key),
                             'source': 'SQL'
                         })
-                    elif hasattr(value, "__float__"):
+            else:
+                # Multi-row: extract count/quantity columns from ALL rows
+                for row in rows:
+                    for key, value in row.items():
+                        if not COUNT_KEYS.search(key):
+                            continue
+                        if self._is_validation_metadata(key):
+                            continue
                         try:
                             num = float(value)
-                            if num > 1000:
-                                sql_numbers.append({
-                                    'value': num,
-                                    'label': key,
-                                    'context': self._infer_number_context(key, fallback=key),
-                                    'source': 'SQL'
-                                })
                         except (TypeError, ValueError):
-                            pass
+                            continue
+                        if num < 10:
+                            continue
+                        sql_numbers.append({
+                            'value': num,
+                            'label': key,
+                            'context': self._infer_number_context(key, fallback=key),
+                            'source': 'SQL'
+                        })
 
             if not sql_numbers:
                 sql_numbers.extend(self._extract_number_facts(sql_result.get('answer', ''), source="SQL"))

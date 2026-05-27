@@ -321,7 +321,13 @@ RULES:
 4. Add ORDER BY and LIMIT for rankings
 5. NEVER use DELETE, DROP, UPDATE, INSERT
 6. Return ONLY the SQL query, no explanations
-7. Always wrap SUM() and AVG() with ROUND(...::numeric, 2) to avoid floating point noise
+7. PostgreSQL ROUND rules (CRITICAL — wrong form causes "function not exist" error):
+   - Simple aggregate: ROUND(SUM(col)::numeric, 2) ✓
+   - Percentage/ratio: ROUND((numerator * 100.0 / denominator)::numeric, 2) ✓
+   - Cast the ENTIRE expression to ::numeric BEFORE ROUND, not inside SUM
+   - WRONG: ROUND(SUM(col) * 100.0 / SUM(other), 2) — double precision ÷ returns double
+   - RIGHT:  ROUND((SUM(col) * 100.0 / NULLIF(SUM(other), 0))::numeric, 2)
+   - Always use NULLIF(denominator, 0) to avoid division by zero
 8. For single aggregate questions over {table_name}, include COUNT(*) AS transactions_analyzed unless the user asks only for a count
 9. For display, list, sample, or "show rows" requests (not validation queries), return detail columns with LIMIT only; never add aggregate columns such as COUNT(*)
 10. For questions using "validate", "verify", "confirm", or "compare" with a single category or time period, generate a single-row aggregate query using SUM/COUNT WITHOUT GROUP BY on detail columns (region, store, product) — one total number is required for cross-source comparison

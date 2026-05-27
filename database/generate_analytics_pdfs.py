@@ -30,7 +30,7 @@ Ground-truth DB values (live Supabase, 2026-05-27):
                   South($35,470,111.47), North($30,251,293.72)
   category_revenue: Electronics($91,010,125.61), Home($40,877,008.66),
                     Sports($27,478,085.87), Clothing($11,731,765.10), Food($4,498,192.92)
-  returns: 6,000 | avg_refund: $1,618.61
+  returns: 5,685 | avg_refund: $1,618.61
   return_statuses: rejected(1,242), refunded(1,207), pending(1,197), received(1,181), approved(1,173)
   support_priorities: low(520), high(502), urgent(497), medium(481)
   support_statuses: closed(530), in_progress(506), open(489), resolved(475)
@@ -69,7 +69,7 @@ TOTAL_TRANSACTIONS = 100_000
 TOTAL_CUSTOMERS = 14_979
 AVG_SPEND = 11_722.76
 MAX_CUSTOMER_SPEND = 59_521.80
-TOTAL_RETURNS = 6_000
+TOTAL_RETURNS = 5_685
 AVG_REFUND = 1_618.61
 
 CATEGORY_REVENUE = {
@@ -223,8 +223,8 @@ def build_returns_policy(out_path: Path) -> None:
           "application. It applies to all 14,979 active customer accounts and all five product "
           "categories sold under the NexusIQ brand: Electronics, Home Goods, Sports and Fitness, "
           "Clothing and Apparel, and Food and Consumables.", e["Body"]),
-        P("NexusIQ processed 6,000 returns in FY 2024, a 6.0% return rate against 100,000 "
-          "transactions. Gross refund value totaled approximately $9,711,660 at the average refund "
+        P("NexusIQ processed 5,685 returns in FY 2024, a 5.7% return rate against 100,000 "
+          "transactions. Gross refund value totaled approximately $9,201,779 at the average refund "
           "of $1,618.61 per return. Managing return friction is a strategic priority: each "
           "unresolved return costs an estimated $47.20 in repeat-contact labor and creates "
           "measurable churn risk. The Electronics category warrants particular attention given "
@@ -286,12 +286,12 @@ def build_returns_policy(out_path: Path) -> None:
     ]
     status_rows = [
         ["Status", "FY 2024 Count", "% of Total", "Avg Days to Resolution", "Description"],
-        ["Refunded", "1,207", "20.1%", "3.2 days", "Refund issued to original payment method"],
-        ["Approved", "1,173", "19.6%", "1.8 days", "Approved; refund queued for processing"],
-        ["Pending", "1,197", "19.9%", "6.1 days", "In transit or awaiting quality inspection"],
-        ["Received", "1,181", "19.7%", "2.4 days", "Item received; inspection in progress"],
-        ["Rejected", "1,242", "20.7%", "4.7 days", "Return denied; customer notified per policy"],
-        ["Total", "6,000", "100%", "3.6 days avg", "All FY 2024 return records"],
+        ["Refunded", "1,144", "20.1%", "3.2 days", "Refund issued to original payment method"],
+        ["Approved", "1,112", "19.6%", "1.8 days", "Approved; refund queued for processing"],
+        ["Pending", "1,134", "19.9%", "6.1 days", "In transit or awaiting quality inspection"],
+        ["Received", "1,120", "19.7%", "2.4 days", "Item received; inspection in progress"],
+        ["Rejected", "1,175", "20.7%", "4.7 days", "Return denied; customer notified per policy"],
+        ["Total", "5,685", "100%", "3.6 days avg", "All FY 2024 return records"],
     ]
     story += [
         _table(status_rows, col_widths=[80, 90, 70, 105, 200]),
@@ -1850,7 +1850,7 @@ def build_annual_business_review(out_path: Path) -> None:
         ["Sports", "$27,478,085.87", "15.6%", "+4.1%", "771", "Moderate — 4-6% growth projected"],
         ["Clothing", "$11,731,765.10", "6.7%", "+3.2%", "859", "Cautious — return rate management priority"],
         ["Food", "$4,498,192.92", "2.6%", "+1.8%", "253", "Stable — no major changes planned"],
-        ["Total", "$175,595,178.16", "100%", "+8.1%", "6,000 (6.0% rate)", "8-10% growth target"],
+        ["Total", "$175,595,178.16", "100%", "+8.1%", "5,685 (5.7% rate)", "8-10% growth target"],
     ]
     story += [
         _table(cat_annual_rows, col_widths=[90, 110, 65, 90, 80, 150]),
@@ -2113,7 +2113,7 @@ def build_supply_chain_risk(out_path: Path) -> None:
 
     story += [
         P("4. Clothing Category Reverse Logistics Risk", e["SectionHead"]),
-        P("Clothing's 6,000-return contribution (assuming proportional share of the "
+        P("Clothing's 5,685-return contribution (assuming proportional share of the "
           "network total) and elevated return rates in Jeans (331 returns) and Jacket "
           "(287 returns) create a structural reverse logistics cost that erodes category "
           "margins. The FashionLink vendor is on performance notice for fill rate below "

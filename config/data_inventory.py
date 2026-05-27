@@ -68,91 +68,86 @@ SQL_INVENTORY = {
 # ═══════════════════════════════════════════════════════
 
 RAG_INVENTORY = {
-    "total_documents": 25,
+    "total_documents": 15,
     "categories": {
-        "financial": {
-            "count": 7,
-            "files": [
-                "01_Q4_2024_Financial_Report.pdf",
-                "02_Q3_2024_Financial_Report.pdf",
-                "03_Annual_Report_2023.pdf",
-                "04_Budget_Forecast_2025.pdf",
-                "05_Investor_Presentation_Dec2024.pdf",
-                "06_Q1_2024_Financial_Report.pdf",
-                "07_Q2_2024_Financial_Report.pdf"
-            ],
-            "can_answer": [
-                "quarterly revenue (reported numbers)",
-                "strategic initiatives", "performance metrics",
-                "growth rates", "Digital Wallet adoption",
-                "regional performance summaries"
-            ],
-            "date_coverage": "Q1-Q4 2024"
-        },
-        
         "products_operations": {
-            "count": 4,
-            "files": [
-                "Inventory_Management_Policy.pdf",
-                "Product_Catalog_Electronics_2024.pdf",
-                "Returns_Refunds_Policy.pdf",
-                "Store_Operations_Manual.pdf"
-            ],
-            "can_answer": [
-                "return policies", "inventory policy", "product catalog",
-                "store operations"
-            ]
-        },
-
-        "market_intelligence": {
-            "count": 5,
-            "files": [
-                "Brand_Perception_Study.pdf",
-                "Competitor_Pricing_Strategy.pdf",
-                "Customer_Satisfaction_Survey_2024.pdf",
-                "Industry_Trends_Retail_2024.pdf",
-                "Market_Analysis_Electronics_2024.pdf"
-            ],
-            "can_answer": [
-                "market studies", "competitor pricing strategy",
-                "customer satisfaction", "industry trends"
-            ]
-        },
-        
-        "strategic_plans": {
             "count": 3,
             "files": [
-                "Digital_Transformation_Roadmap.pdf",
-                "Expansion_Feasibility_Study.pdf",
-                "Strategic_Plan_2025.pdf"
+                "01_Returns_Refunds_Policy.pdf",
+                "02_Inventory_Reorder_SOP.pdf",
+                "03_Customer_Escalation_Policy.pdf",
             ],
             "can_answer": [
-                "expansion plans", "budget allocations",
-                "strategic initiatives", "roadmaps",
-                "competitive analysis", "future plans"
+                "return policies", "refund timelines", "return windows by category",
+                "inventory reorder points", "reorder thresholds", "stock level SOPs",
+                "stores below reorder point", "restocking procedures",
+                "customer escalation", "complaint handling",
             ]
         },
-        
-        "contracts": {
-            "count": 4,
-            "can_answer": ["vendor agreements", "partnerships", "contracts"]
+        "financial": {
+            "count": 6,
+            "files": [
+                "04_Q4_2024_Revenue_Performance_Memo.pdf",
+                "05_Q3_2024_Revenue_Performance_Memo.pdf",
+                "06_Electronics_Category_Deep_Dive.pdf",
+                "07_Regional_Performance_Analysis.pdf",
+                "08_Payment_Method_Adoption_Report.pdf",
+                "13_2024_Annual_Business_Review.pdf",
+            ],
+            "can_answer": [
+                "quarterly revenue (reported numbers)", "Q3 Q4 performance",
+                "electronics category revenue", "regional performance",
+                "payment method adoption", "digital wallet trends",
+                "annual business review", "CLV", "customer lifetime value",
+            ],
+            "date_coverage": "FY 2024"
         },
-
-        "hr_compliance": {
+        "inventory_operations": {
+            "count": 1,
+            "files": ["02_Inventory_Reorder_SOP.pdf"],
+            "can_answer": [
+                "reorder points", "reorder thresholds", "stores below reorder point",
+                "stock shortage policy", "inventory SOP", "restocking guidelines",
+            ]
+        },
+        "operational_digests": {
             "count": 2,
             "files": [
-                "Compliance_Training_Materials.pdf",
-                "Employee_Handbook_2024.pdf"
+                "09_Weekly_Operations_Digest_Week48.pdf",
+                "10_Weekly_Operations_Digest_Week12.pdf",
             ],
-            "can_answer": ["employee guidelines", "compliance requirements"]
-        }
+            "can_answer": [
+                "black friday", "holiday week sales", "week 48", "week 12",
+                "weekly operations", "seasonal demand"
+            ]
+        },
+        "risk_supply_chain": {
+            "count": 3,
+            "files": [
+                "11_Seasonal_Demand_Incident_Report.pdf",
+                "12_Inventory_Shortage_Root_Cause_Analysis.pdf",
+                "15_Supply_Chain_Risk_Assessment.pdf",
+            ],
+            "can_answer": [
+                "vendor risk", "supply chain", "TechSource", "inventory shortage",
+                "seasonal demand incident", "root cause analysis", "supplier disruption",
+            ]
+        },
+        "customer_analytics": {
+            "count": 1,
+            "files": ["14_Customer_Lifetime_Value_Study.pdf"],
+            "can_answer": [
+                "customer lifetime value", "CLV", "customer value",
+                "customer retention", "customer segments",
+            ]
+        },
     },
-    
+
     "cannot_answer": [
         "Real-time transaction data",
         "Granular daily/store-level data",
         "Current competitor pricing (uses web scraping)",
-        "Data not in the 25 PDFs"
+        "Data not in the 15 PDFs"
     ]
 }
 
@@ -313,9 +308,20 @@ def can_rag_answer(question: str) -> dict:
     # Check for RAG-answerable patterns
     rag_patterns = {
         "products_operations": ["policy", "return", "refund", "conditions"],
+        "inventory_operations": [
+            "inventory", "reorder", "reorder point", "stock level", "stock",
+            "shortage", "sop", "threshold", "supply chain", "operational",
+            "restocking", "out of stock", "low stock",
+        ],
+        "vendor_supply": [
+            "vendor", "supplier", "supply", "techsource", "procurement",
+            "sourcing", "lead time", "disruption",
+        ],
         "strategic_plans": ["plan", "strategy", "initiative", "roadmap", "expansion"],
-        "financial": ["q1", "q2", "q3", "q4", "quarter", "performance", "report", "outperform"],
-        "hr_compliance": ["compliance", "regulation", "guideline", "legal"]
+        "financial": ["q1", "q2", "q3", "q4", "quarter", "performance", "report", "outperform",
+                      "revenue", "annual", "clv", "lifetime value", "customer value"],
+        "seasonal": ["black friday", "holiday", "seasonal", "week 48", "week 12", "week"],
+        "hr_compliance": ["compliance", "regulation", "guideline", "legal"],
     }
     
     for category, keywords in rag_patterns.items():

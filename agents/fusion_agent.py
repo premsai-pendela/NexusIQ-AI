@@ -579,18 +579,18 @@ Reply with ONLY this JSON (no extra text):
         return fallback
 
     def _extract_number_facts(self, text: str, source: str, label: str = "answer") -> List[Dict]:
-        """Extract monetary/large-number facts with lightweight context."""
+        """Extract monetary/large-number facts AND plain count facts with lightweight context."""
         facts = []
         if not text:
             return facts
 
         # Match patterns like $45.2M, $15,400,000, $38.7 million
-        pattern = re.compile(
+        dollar_pattern = re.compile(
             r'\$?([\d,]+(?:\.\d+)?)\s*(M|million|B|billion)?',
             re.IGNORECASE
         )
 
-        for match in pattern.finditer(text):
+        for match in dollar_pattern.finditer(text):
             raw_number, scale = match.groups()
             has_dollar = match.group(0).strip().startswith("$")
             has_scale = bool(scale)
@@ -617,6 +617,30 @@ Reply with ONLY this JSON (no extra text):
                 'value': value,
                 'label': label,
                 'context': self._infer_number_context(window, fallback=label),
+                'source': source,
+            })
+
+        # Also extract plain counts near count-context words (returns, transactions,
+        # orders, refunds, units, items, customers, records).
+        # Threshold >= 10 to avoid noise from small ordinals.
+        count_pattern = re.compile(
+            r'(?<![\d.])([\d,]+)\s*(?=(?:returns?|refunds?|transactions?|orders?|units?'
+            r'|items?|customers?|records?|products?|accounts?|entries|rows))',
+            re.IGNORECASE
+        )
+        for match in count_pattern.finditer(text):
+            cleaned = match.group(1).replace(',', '').strip()
+            try:
+                value = float(cleaned)
+            except ValueError:
+                continue
+            if value < 10:
+                continue
+            window = text[max(0, match.start() - 60):match.end() + 60]
+            facts.append({
+                'value': value,
+                'label': 'count',
+                'context': self._infer_number_context(window, fallback="count"),
                 'source': source,
             })
 
@@ -944,7 +968,7 @@ CROSS-VALIDATION RESULTS:
         
         # Build fusion prompt
         history_ctx = self._history_context()
-        fusion_prompt = f"""You are a business intelligence analyst. Combine information from MULTIPLE data sources into ONE comprehensive answer.
+        fusion_prompt = f"""You are a business intelligence analyst. Combine data from MULTIPLE sources into ONE clear, structured answer.
 {history_ctx}
 QUESTION: {question}
 
@@ -952,28 +976,38 @@ QUESTION: {question}
 
 {validation_text}
 
-RULES:
-1. Combine the BEST information from all available sources
-2. Use SQL for exact numbers (it queries actual transaction records)
-3. Use PDF reports for context, trends, and strategic explanations
-4. Use Web data for competitor comparisons and market context
-5. When data is VALIDATED across sources, mention it with confidence
-6. If sources disagree, mention both with explanation — a common reason is that PDF reports contain projected/forecast revenue while the SQL database contains actual transaction revenue. Always tell the user which is which
-7. Start with a direct answer, then supporting details
-8. End with confidence level (if validation available)
+CONTENT RULES:
+1. SQL = exact transaction records. Use for precise numbers.
+2. PDFs = reported/aggregated figures. Use for context, trends, policy.
+3. Web = live market/competitor data. Use for benchmarking.
+4. If sources have different numbers for the SAME thing, explicitly state both and explain why they differ.
+   Common reasons: (a) different time periods — SQL may be a specific day/date while PDF covers a full week or quarter;
+   (b) PDF figures may be projected/reported while SQL reflects actual transaction totals;
+   (c) different scopes — SQL is transaction-level, PDFs may include offline channels.
+   ALWAYS specify the time scope of each figure when they differ.
+5. When validated across sources with matching numbers, state confidence clearly.
+
+FORMATTING RULES (users must find this easy to read):
+• Start with a direct 1-2 sentence answer.
+• Use **bold** for key numbers and conclusions.
+• Use bullet points for supporting details — no walls of text.
+• If answer has multiple parts (e.g., SQL figure + PDF figure + explanation), use short labeled sections.
+• Put source references at the END in a clean block.
 
 FORMAT:
-📊 **Answer:** [Direct answer to the question]
+📊 **Answer:** [Direct 1-2 sentence answer]
 
-**Details:**
-- [Bullet points combining precision from SQL + context from PDFs + market data from Web]
+**Key Facts:**
+- [Bullet: SQL figure with its exact time scope]
+- [Bullet: PDF figure with its exact time scope/context — if different from SQL, explain why]
+- [Additional context bullets as needed]
 
 **Sources Used:**
 {f"- 🗄️ SQL Database: {sql_source_summary}" if sql_result and sql_result.get('success') else ""}
 {f"- 📄 Documents: {rag_result.get('chunks_retrieved', 0)} document excerpts" if rag_result and rag_result.get('success') else ""}
 {f"- 🌐 Web Scraping: {web_result.get('category', 'General')} data" if web_result and web_result.get('success') else ""}
 
-{f"**Confidence:** {validation['confidence']} - {validation['confidence_reason']}" if validation else ""}
+{f"**Confidence:** {validation['confidence']} — {validation['confidence_reason']}" if validation else ""}
 
 ANSWER:"""
 

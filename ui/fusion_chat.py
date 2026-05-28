@@ -62,7 +62,7 @@ INSIGHTS = [
     "⚡ **Did You Know?** Simple queries complete in under 5 seconds",
     "🔄 **Did You Know?** We auto-switch models if one hits quota limits",
     "🔒 **Did You Know?** All SQL queries are read-only — your data stays safe",
-    "📊 **Did You Know?** RAG Agent searches 25 business documents",
+    "📊 **Did You Know?** RAG Agent searches 43 business documents across 8 categories",
     "🎯 **Did You Know?** Web Agent scrapes live competitor pricing",
     "🚀 **Did You Know?** Circuit breaker skips failed models instantly",
     "💰 **Did You Know?** Supabase tracks $175.16M in 2024 revenue",
@@ -70,7 +70,7 @@ INSIGHTS = [
     "🛒 **Did You Know?** Web Agent supports 5 categories: Electronics, Home, Sports, Food, Clothing",
     "⏱️ **Did You Know?** First query may be slower due to model warm-up",
     "🔍 **Did You Know?** Fusion Agent detects comparison queries and uses multi-step reasoning",
-    "📄 **Did You Know?** RAG Agent uses hybrid BM25+Vector search for better accuracy",
+    "📄 **Did You Know?** RAG uses Hybrid BM25 + Vector search + Cross-Encoder reranker",
 ]
 
 CHART_TYPES = {
@@ -661,8 +661,8 @@ def render_command_center_welcome(data_context_key: str = "live"):
             </p>
             <div class="fusion-chip-row">
                 <div class="fusion-chip">100,000 Supabase transactions</div>
-                <div class="fusion-chip">25 business PDFs</div>
-                <div class="fusion-chip">Hybrid BM25 + vector RAG</div>
+                <div class="fusion-chip">43 business PDFs</div>
+                <div class="fusion-chip">Hybrid BM25 + vector + reranker</div>
                 <div class="fusion-chip">SQL + RAG validation</div>
                 <div class="fusion-chip">Live web pricing</div>
             </div>

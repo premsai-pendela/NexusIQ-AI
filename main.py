@@ -244,7 +244,7 @@ if page == "🏠 Home":
                 </p>
                 <div style="margin-top:16px;">
                     <div class="nexusiq-chip"><span></span>100,000 Supabase transactions</div>
-                    <div class="nexusiq-chip"><span></span>25 business documents indexed</div>
+                    <div class="nexusiq-chip"><span></span>43 business documents indexed</div>
                     <div class="nexusiq-chip"><span></span>SQL + RAG validation</div>
                     <div class="nexusiq-chip"><span></span>Live web intelligence</div>
                 </div>
@@ -268,7 +268,7 @@ if page == "🏠 Home":
     with m1:
         st.metric("Transactions Indexed", "100,000", "Supabase SQL")
     with m2:
-        st.metric("Business Docs", "25", "BM25 + vector RAG")
+        st.metric("Business Docs", "43", "BM25 + vector RAG + reranker")
     with m3:
         st.metric("Agents Active", "4", "SQL, RAG, Web, Fusion")
     with m4:
@@ -324,7 +324,7 @@ if page == "🏠 Home":
         st.markdown("""
 **System intelligence**
 - Fusion Agent orchestrates SQL, RAG, and Web agents.
-- Hybrid BM25 + vector search fixes keyword-vs-semantic retrieval misses.
+- Hybrid BM25 + vector search + cross-encoder reranker for precision retrieval.
 - Cross-validation compares exact database values with document-reported values.
 - Progressive status updates show which source finished and how long it took.
         """)

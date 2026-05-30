@@ -143,8 +143,50 @@ class SQLAgent:
     
     
     def _get_schema_info(self) -> str:
-        """Get database schema for LLM context"""
-        schema = """
+        """Dynamically discover schema from database, falling back to hardcoded string."""
+        try:
+            discovery_sql = """
+            SELECT
+                c.table_name,
+                c.column_name,
+                c.data_type,
+                c.is_nullable
+            FROM information_schema.columns c
+            WHERE c.table_schema = 'public'
+            ORDER BY c.table_name, c.ordinal_position;
+            """
+            result = self.session.execute(text(discovery_sql))
+            rows = [dict(zip(result.keys(), row)) for row in result.fetchall()]
+            if not rows:
+                return self._get_schema_fallback()
+
+            schema_lines = ["I am using PostgreSQL 15. Here are the available tables and columns:\n"]
+            current_table = None
+            for row in rows:
+                table = row.get("table_name", "")
+                col = row.get("column_name", "")
+                dtype = row.get("data_type", "")
+                nullable = row.get("is_nullable", "YES")
+                if table != current_table:
+                    current_table = table
+                    schema_lines.append(f"\nTABLE: {table}")
+                nullable_str = "" if nullable == "YES" else " NOT NULL"
+                schema_lines.append(f"  • {col} ({dtype}{nullable_str})")
+
+            schema_lines.append(
+                "\n⚠️ CRITICAL: ALL data is from year 2024 ONLY. "
+                "Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec. "
+                "Never use CURRENT_DATE."
+            )
+            return "\n".join(schema_lines)
+
+        except Exception as e:
+            print(f"Schema discovery failed: {e}, using fallback")
+            return self._get_schema_fallback()
+
+    def _get_schema_fallback(self) -> str:
+        """Hardcoded schema — used when INFORMATION_SCHEMA discovery fails."""
+        return """
     I am using PostgreSQL 15. Here is my database schema:
 
     TABLE: sales_transactions (100,000 rows in configured Supabase PostgreSQL source)
@@ -236,7 +278,6 @@ class SQLAgent:
     • Use DATE_TRUNC('month', column) for grouping by month
     • Total revenue = ROUND(SUM(total_amount)::numeric, 2)
     """
-        return schema
     
     
     def _detect_query_complexity(self, question: str) -> str:

@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy the mcpServers block into ~/Library/Application Support/Claude/claude_desktop_config.json on Mac",
+  "mcpServers": {
+    "nexusiq": {
+      "command": "python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/REPLACE/WITH/YOUR/PATH/TO/NexusIQ-AI",
+      "env": {
+        "PYTHONPATH": "/REPLACE/WITH/YOUR/PATH/TO/NexusIQ-AI",
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}

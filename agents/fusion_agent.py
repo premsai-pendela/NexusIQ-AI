@@ -1614,7 +1614,7 @@ ANSWER:"""
                 resolved_question,
                 run_sql=run_all_sources or 'sql' in source_type,
                 run_rag=run_all_sources or 'rag' in source_type,
-                run_web=run_all_sources or 'web' in source_type,
+                run_web=(run_all_sources or 'web' in source_type) and settings.ENABLE_WEB_AGENT,
                 progress_cb=progress_cb,
                 trace=trace,
             )

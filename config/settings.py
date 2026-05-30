@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     
     # ✨ NEW: Gemini Pro Feature Flags
     use_gemini_pro: bool = False  # Disabled by default (free tier exhausts fast)
+    ENABLE_WEB_AGENT: bool = os.getenv("ENABLE_WEB_AGENT", "true").lower() == "true"
     gemini_pro_max_retries: int = 0  # No retries when enabled
     gemini_pro_timeout: int = 8  # Fast fail (seconds)
     gemini_flash_max_retries: int = 1  # Flash can retry once

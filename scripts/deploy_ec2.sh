@@ -39,6 +39,7 @@ docker run -d \
   --restart unless-stopped \
   --memory=1800m \
   -p "${APP_PORT}:8080" \
+  -p 8000:8000 \
   -e PORT=8080 \
   -e ENVIRONMENT=production \
   -e AWS_REGION="${AWS_REGION}" \

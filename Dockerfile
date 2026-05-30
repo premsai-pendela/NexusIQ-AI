@@ -22,5 +22,10 @@ RUN pip install --upgrade pip \
 COPY . .
 
 EXPOSE 8080
+EXPOSE 8000
 
-CMD ["sh", "-c", "streamlit run main.py --server.port=${PORT} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false"]
+# Start both Streamlit (8080) and FastAPI (8000) in parallel
+CMD ["sh", "-c", "\
+  uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1 & \
+  streamlit run main.py --server.port=${PORT} --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false \
+"]

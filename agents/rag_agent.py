@@ -495,8 +495,10 @@ class RAGAgent:
         context_parts = []
         token_count = 0
         
-        # Sort by similarity (highest first)
-        sorted_chunks = sorted(chunks, key=lambda x: x['similarity'], reverse=True)
+        # Preserve retriever/reranker order. hybrid_search already returns the
+        # final relevance order; re-sorting here by the pre-rerank hybrid score
+        # can put a less relevant template ahead of the best evidence.
+        sorted_chunks = chunks
         
         for i, chunk in enumerate(sorted_chunks, 1):
             # Rough token estimate (1 token ≈ 4 characters for English)
@@ -656,6 +658,10 @@ ANSWER:"""
         
         sources = []
         seen_files = set()
+        chunk_lookup = {}
+        for chunk in chunks:
+            key = (str(chunk.get('filename', '')).strip(), str(chunk.get('page', '')).strip())
+            chunk_lookup.setdefault(key, chunk)
         
         # Extract from answer citations
         citation_pattern = r'\(Source:\s*([^,]+),\s*Page\s*(\d+)\)'
@@ -664,9 +670,13 @@ ANSWER:"""
         for filename, page in matches:
             filename = filename.strip()
             if filename not in seen_files:
+                chunk = chunk_lookup.get((filename, str(page).strip()), {})
                 sources.append({
                     'filename': filename,
                     'page': page,
+                    'similarity': chunk.get('similarity'),
+                    'rerank_score': chunk.get('rerank_score'),
+                    'relevance_score': chunk.get('rerank_score', chunk.get('similarity')),
                     'cited_in_answer': True
                 })
                 seen_files.add(filename)
@@ -678,6 +688,8 @@ ANSWER:"""
                     'filename': chunk['filename'],
                     'page': chunk['page'],
                     'similarity': chunk['similarity'],
+                    'rerank_score': chunk.get('rerank_score'),
+                    'relevance_score': chunk.get('rerank_score', chunk.get('similarity')),
                     'cited_in_answer': False
                 })
                 seen_files.add(chunk['filename'])

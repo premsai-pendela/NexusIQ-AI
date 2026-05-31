@@ -121,6 +121,51 @@ class RAGRetrievalTests(unittest.TestCase):
 
         self.assertIsNone(scope)
 
+    def test_context_preserves_reranked_chunk_order(self):
+        agent = RAGAgent.__new__(RAGAgent)
+
+        context = agent._build_context(
+            [
+                {
+                    "filename": "Best_Evidence.pdf",
+                    "page": 1,
+                    "text": "The reranker selected this as the best evidence.",
+                    "similarity": 0.42,
+                    "rerank_score": 9.1,
+                },
+                {
+                    "filename": "Template_Match.pdf",
+                    "page": 1,
+                    "text": "This has a higher hybrid score but lower rerank relevance.",
+                    "similarity": 0.91,
+                    "rerank_score": 5.2,
+                },
+            ],
+            max_tokens=500,
+        )
+
+        self.assertLess(context.find("Best_Evidence.pdf"), context.find("Template_Match.pdf"))
+
+    def test_cited_sources_include_retrieval_scores(self):
+        agent = RAGAgent.__new__(RAGAgent)
+
+        sources = agent._extract_sources(
+            "Answer text. (Source: Best_Evidence.pdf, Page 1)",
+            [
+                {
+                    "filename": "Best_Evidence.pdf",
+                    "page": 1,
+                    "text": "Evidence text",
+                    "similarity": 0.42,
+                    "rerank_score": 9.1,
+                }
+            ],
+        )
+
+        self.assertEqual(sources[0]["similarity"], 0.42)
+        self.assertEqual(sources[0]["rerank_score"], 9.1)
+        self.assertEqual(sources[0]["relevance_score"], 9.1)
+
 
 class FusionValidationTests(unittest.TestCase):
     def setUp(self):

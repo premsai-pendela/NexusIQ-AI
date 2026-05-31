@@ -957,8 +957,14 @@ def render_rag_section(msg_id: str, rag_result: dict):
             
             for i, source in enumerate(rag_result['sources'], 1):
                 cited = "✅" if source.get('cited_in_answer') else "📎"
-                similarity = source.get('similarity', '')
-                sim_text = f" (Score: {similarity})" if similarity else ""
+                rerank_score = source.get('rerank_score')
+                similarity = source.get('similarity')
+                if rerank_score is not None:
+                    sim_text = f" (Rerank: {float(rerank_score):.2f}, Hybrid: {similarity})"
+                elif similarity is not None:
+                    sim_text = f" (Hybrid: {similarity})"
+                else:
+                    sim_text = ""
                 
                 st.markdown(
                     f"{cited} **{source['filename']}** (Page {source['page']}){sim_text}"

@@ -20,6 +20,7 @@ from utils.validators import validate_question
 from typing import Dict, Any, List, Optional
 import logging
 import time
+import re
 from functools import wraps
 
 # Setup logging
@@ -391,7 +392,7 @@ SQL QUERY:"""
         forbidden = ['DELETE', 'DROP', 'TRUNCATE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE']
         
         for keyword in forbidden:
-            if keyword in query_upper:
+            if re.search(rf"\b{keyword}\b", query_upper):
                 return False, f"Forbidden keyword: {keyword}"
         
         if not query_upper.startswith('SELECT') and not query_upper.startswith('WITH'):

@@ -42,6 +42,7 @@ docker run -d \
   -p 8000:8000 \
   -e PORT=8080 \
   -e ENVIRONMENT=production \
+  -e NEXUSIQ_USE_LANGGRAPH=true \
   -e AWS_REGION="${AWS_REGION}" \
   -e GOOGLE_API_KEY="${GOOGLE_API_KEY}" \
   -e GROQ_API_KEY="${GROQ_API_KEY}" \

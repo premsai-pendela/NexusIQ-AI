@@ -508,6 +508,28 @@ Reply with ONLY this JSON (no extra text):
         return None
 
     @classmethod
+    def _should_compare_all_web_categories(cls, question: str) -> bool:
+        """Return True when the user asks for broad competitor pricing coverage."""
+        q = str(question or "").lower()
+        has_pricing_intent = (
+            "competitor pricing" in q
+            or ("competitor" in q and any(term in q for term in ("price", "pricing", "prices")))
+            or ("market" in q and any(term in q for term in ("price", "pricing", "prices")))
+        )
+        broad_terms = (
+            "all categories",
+            "all product",
+            "across categories",
+            "across product",
+            "company-wide",
+            "overall",
+            "complete",
+            "comprehensive",
+            "full analysis",
+        )
+        return has_pricing_intent and any(term in q for term in broad_terms)
+
+    @classmethod
     def _infer_web_competitor(cls, question: str) -> Optional[str]:
         """Return the canonical competitor named in the question, if configured."""
         q = str(question or "").lower()
@@ -515,6 +537,70 @@ Reply with ONLY this JSON (no extra text):
             if competitor in q:
                 return competitor.title()
         return None
+
+    @staticmethod
+    def _format_web_price_range(products: list) -> str:
+        prices = []
+        for product in products or []:
+            raw_price = str(product.get("price", "")).replace("$", "").replace(",", "").strip()
+            try:
+                prices.append(float(raw_price))
+            except ValueError:
+                continue
+        if not prices:
+            return "price range unavailable"
+        return f"${min(prices):,.2f} - ${max(prices):,.2f}"
+
+    def _run_all_web_categories_query(self, question: str) -> Dict:
+        """Collect competitor pricing across every supported category without guessing one."""
+        category_payloads = {}
+        all_competitors = []
+        answer_lines = [
+            "Compared competitor pricing across all supported product categories:",
+        ]
+
+        for category in self.WEB_CATEGORIES:
+            if hasattr(self.web_agent, "scrape_competitor_pricing"):
+                pricing_data = self.web_agent.scrape_competitor_pricing(category)
+                category_answer = ""
+            else:
+                result = self.web_agent.query(question, category=category, competitor=None)
+                pricing_data = result.get("raw_data", {})
+                category_answer = result.get("answer", "")
+
+            competitors = pricing_data.get("competitors", []) or []
+            category_payloads[category] = pricing_data
+            all_competitors.extend(competitors)
+
+            if competitors:
+                summaries = []
+                for competitor_data in competitors:
+                    products = competitor_data.get("products", []) or []
+                    summaries.append(
+                        f"{competitor_data.get('competitor', 'Unknown')}: "
+                        f"{self._format_web_price_range(products)}"
+                    )
+                answer_lines.append(f"- {category.title()}: " + "; ".join(summaries))
+            elif category_answer:
+                answer_lines.append(f"- {category.title()}: {category_answer}")
+            else:
+                answer_lines.append(f"- {category.title()}: no live competitor pricing data available")
+
+        answer_lines.append(
+            "If you want a deeper Web-only comparison, ask for one category such as electronics, home, clothing, food, or sports."
+        )
+
+        return {
+            "answer": "\n".join(answer_lines),
+            "answer_mode": "deterministic_all_categories",
+            "model_used": "Deterministic all-category aggregation",
+            "raw_data": {
+                "category": "all",
+                "categories": category_payloads,
+                "competitors": all_competitors,
+            },
+            "category": "all",
+        }
 
     def _run_web_query(self, question: str, selected_category: Optional[str] = None) -> Dict:
         """✅ NEW: Run Web Agent and capture results"""
@@ -527,7 +613,10 @@ Reply with ONLY this JSON (no extra text):
             if category is None and selected_category in self.WEB_CATEGORIES:
                 category = selected_category
             competitor = self._infer_web_competitor(question)
-            result = self.web_agent.query(question, category=category, competitor=competitor)
+            if category is None and competitor is None and self._should_compare_all_web_categories(question):
+                result = self._run_all_web_categories_query(question)
+            else:
+                result = self.web_agent.query(question, category=category, competitor=competitor)
             elapsed = time.time() - start
             
             has_answer = bool(result.get('answer'))

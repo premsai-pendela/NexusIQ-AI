@@ -1293,6 +1293,50 @@ class RoutingAndInputTests(unittest.TestCase):
         self.assertEqual(result["category"], "clothing")
         self.assertEqual(calls, [("clothing", None)])
 
+    def test_broad_complete_competitor_pricing_runs_all_categories(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        calls = []
+        agent.web_agent = type("WebRecorder", (), {
+            "query": lambda self, question, category=None, competitor=None: calls.append(
+                (category, competitor)
+            ) or {
+                "answer": f"{category} competitor pricing found.",
+                "answer_mode": "deterministic",
+                "model_used": "Deterministic calculation",
+                "raw_data": {"competitors": [{"competitor": f"{category} source", "products": [{"price": "$199"}]}]},
+                "category": category,
+            }
+        })()
+
+        result = agent._run_web_query(
+            "Complete Q4 2024 analysis: validate revenue, compare competitor pricing, assess strategic execution."
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["category"], "all")
+        self.assertEqual(calls, [(category, None) for category in FusionAgent.WEB_CATEGORIES])
+        self.assertIn("all supported product categories", result["answer"])
+
+    def test_vague_competitor_pricing_asks_for_category_instead_of_guessing(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        calls = []
+        agent.web_agent = type("WebRecorder", (), {
+            "query": lambda self, question, category=None, competitor=None: calls.append(
+                (category, competitor)
+            ) or {
+                "answer": "Please specify a product category (electronics, home, clothing, food, or sports) for competitor pricing data.",
+                "raw_data": {},
+                "category": category,
+            }
+        })()
+
+        result = agent._run_web_query("Compare competitor pricing.")
+
+        self.assertFalse(result["success"])
+        self.assertIsNone(result["category"])
+        self.assertEqual(calls, [(None, None)])
+        self.assertIn("Please specify a product category", result["answer"])
+
     def test_prompt_category_or_named_brand_takes_priority_over_selected_category(self):
         agent = FusionAgent.__new__(FusionAgent)
         calls = []

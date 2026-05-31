@@ -47,6 +47,44 @@ from utils.llm_gateway import LLMGateway
 from utils.validators import validate_question
 
 
+class MCPServerTests(unittest.TestCase):
+    def test_mcp_document_search_reads_current_rag_chunk_text_key(self):
+        from mcp_server.server import _format_document_chunks
+
+        report = _format_document_chunks([
+            {
+                "filename": "Returns_Refunds_Policy.pdf",
+                "text": "Customers have a 30-day return window for eligible products.",
+                "rerank_score": 6.003,
+            }
+        ])
+
+        self.assertIn("Returns_Refunds_Policy.pdf", report)
+        self.assertIn("30-day return window", report)
+
+    def test_mcp_status_reports_current_public_inventory(self):
+        from mcp_server.server import _build_status_payload
+
+        payload = _build_status_payload(chunk_count=508)
+
+        self.assertEqual(payload["sql_rows"], 100000)
+        self.assertEqual(payload["pdf_documents"], 43)
+        self.assertEqual(payload["chroma_chunks"], 508)
+
+
+class RAGRetrievalTests(unittest.TestCase):
+    def test_retrieval_query_removes_sql_pdf_validation_scaffolding(self):
+        agent = RAGAgent.__new__(RAGAgent)
+
+        normalized = agent._normalize_retrieval_query(
+            "Validate Q4 Electronics revenue across SQL and PDF reports."
+        )
+
+        self.assertEqual(normalized, "Q4 Electronics revenue financial report")
+        self.assertNotIn("SQL", normalized)
+        self.assertNotIn("PDF", normalized)
+
+
 class FusionValidationTests(unittest.TestCase):
     def setUp(self):
         self.agent = FusionAgent.__new__(FusionAgent)

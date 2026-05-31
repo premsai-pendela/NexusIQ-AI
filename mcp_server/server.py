@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 
 from fastmcp import FastMCP
@@ -11,11 +12,13 @@ from agents._singleton import (
     get_web_agent,
 )
 
+logger = logging.getLogger(__name__)
+
 mcp = FastMCP(
     "NexusIQ Business Intelligence",
     instructions=(
         "You have access to a production business intelligence system containing: "
-        "90,500 sales transactions (FY2024, $175M revenue), "
+        "100,000 sales transactions (FY2024, $175M revenue), "
         "43 business PDF documents (financial reports, contracts, strategy docs), "
         "and live competitor pricing data. "
         "Use query_business_intelligence for complex questions. "
@@ -27,14 +30,15 @@ mcp = FastMCP(
 
 @mcp.tool()
 async def query_business_intelligence(question: str, timeout_seconds: int = 25) -> str:
-    """Answer complex business questions by searching SQL transactions
-    (90,500 rows, FY2024 $175M revenue), 43 business PDF documents,
-    and live competitor pricing. Returns validated answer with
-    confidence level and source citations."""
+    """Use ONLY for questions that require BOTH database numbers AND document context together,
+    OR questions about strategy, trends, or explanations that need cross-source validation.
+    Examples: 'Why did East region underperform?', 'Validate Q4 revenue against financial reports'.
+    Do NOT use for simple ranking, totals, or comparisons — use query_database for those (it's 10x faster).
+    Returns validated answer with confidence level and source citations."""
     loop = asyncio.get_event_loop()
     try:
         result = await asyncio.wait_for(
-            loop.run_in_executor(None, get_fusion_agent().query, question),
+            loop.run_in_executor(None, lambda: get_fusion_agent().query(question)),
             timeout=timeout_seconds,
         )
         confidence = (result.get("validation") or {}).get("confidence") or "UNKNOWN"
@@ -52,9 +56,11 @@ async def query_business_intelligence(question: str, timeout_seconds: int = 25) 
 
 @mcp.tool()
 async def query_database(question: str) -> str:
-    """Run a natural language query against 90,500 sales transactions.
-    FY2024 data: 5 regions (East/West/North/South/Central), 5 product
-    categories, $175M total revenue. Returns exact figures and the SQL used."""
+    """FASTEST tool — use this first for any question answerable from sales data alone.
+    Covers: revenue totals, regional rankings, top/bottom performers, category breakdowns,
+    monthly/quarterly trends, transaction counts, averages, comparisons between regions or products.
+    FY2024 data: 5 regions (East/West/North/South/Central), 5 product categories, $175M total revenue, 100K transactions.
+    Returns exact figures and the SQL used. Responds in 3-5 seconds."""
     loop = asyncio.get_event_loop()
     try:
         result = await asyncio.wait_for(
@@ -85,13 +91,7 @@ async def search_business_documents(query: str, n_results: int = 5) -> str:
         )
         if not chunks:
             return "No relevant documents found."
-        results = []
-        for i, chunk in enumerate(chunks, 1):
-            source = chunk.get("filename", "unknown")
-            content = str(chunk.get("content", chunk.get("document", "")))[:300]
-            score = chunk.get("rerank_score", chunk.get("similarity", 0))
-            results.append(f"{i}. [{source}] (score: {score:.3f})\n{content}")
-        return "\n\n".join(results)
+        return _format_document_chunks(chunks)
     except asyncio.TimeoutError:
         return "Document search timed out."
     except Exception as e:
@@ -141,16 +141,29 @@ async def get_status() -> str:
     except Exception:
         chunk_count = 425  # fallback
 
-    status = {
+    return json.dumps(_build_status_payload(chunk_count), indent=2)
+
+
+def _format_document_chunks(chunks: list) -> str:
+    results = []
+    for i, chunk in enumerate(chunks, 1):
+        source = chunk.get("filename", "unknown")
+        content = str(chunk.get("text", chunk.get("content", chunk.get("document", ""))))[:300]
+        score = chunk.get("rerank_score", chunk.get("similarity", 0))
+        results.append(f"{i}. [{source}] (score: {score:.3f})\n{content}")
+    return "\n\n".join(results)
+
+
+def _build_status_payload(chunk_count: int) -> dict:
+    return {
         "system": "NexusIQ Business Intelligence",
-        "sql_rows": 90500,
+        "sql_rows": 100000,
         "pdf_documents": 43,
         "chroma_chunks": chunk_count,
         "web_categories": ["electronics", "home", "clothing", "food", "sports"],
         "data_period": "FY2024",
         "total_revenue_analyzed": "$175,595,178.16",
     }
-    return json.dumps(status, indent=2)
 
 
 @mcp.prompt()
@@ -173,12 +186,13 @@ def business_analyst_query(
 def _warmup():
     try:
         get_fusion_agent()
-        print("MCP Server: agents pre-warmed")
+        logger.info("MCP Server: agents pre-warmed")
     except Exception as e:
-        print(f"MCP Server: warmup warning: {e}")
+        logger.warning("MCP Server: warmup warning: %s", e)
 
 
-_warmup()
+if os.getenv("NEXUSIQ_MCP_PREWARM", "0").lower() in {"1", "true", "yes"}:
+    _warmup()
 
 if __name__ == "__main__":
     transport = os.getenv("MCP_TRANSPORT", "stdio")

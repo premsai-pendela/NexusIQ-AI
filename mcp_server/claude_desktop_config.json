@@ -1,13 +1,15 @@
 {
-  "_comment": "Copy the mcpServers block into ~/Library/Application Support/Claude/claude_desktop_config.json on Mac",
+  "_comment": "Copy the mcpServers block into ~/Library/Application Support/Claude/claude_desktop_config.json on Mac. Use Python 3.11; Chroma/hnswlib is not reliable under Python 3.13.",
   "mcpServers": {
     "nexusiq": {
-      "command": "python",
+      "command": "/REPLACE/WITH/YOUR/PATH/TO/NexusIQ-AI/.venv311/bin/python",
       "args": ["-m", "mcp_server.server"],
       "cwd": "/REPLACE/WITH/YOUR/PATH/TO/NexusIQ-AI",
       "env": {
         "PYTHONPATH": "/REPLACE/WITH/YOUR/PATH/TO/NexusIQ-AI",
-        "MCP_TRANSPORT": "stdio"
+        "MCP_TRANSPORT": "stdio",
+        "TRANSFORMERS_OFFLINE": "1",
+        "HF_DATASETS_OFFLINE": "1"
       }
     }
   }

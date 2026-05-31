@@ -28,7 +28,7 @@ Ground-truth DB values (live Supabase, 2026-05-27):
   regions: Central(4,599), East(3,676), West(2,351), South(2,330), North(2,023)
   region_revenue: West($37,880,499.39), East($36,314,020.57), Central($35,679,253.01),
                   South($35,470,111.47), North($30,251,293.72)
-  category_revenue: Electronics($91,010,125.61), Home($40,877,008.66),
+  category_revenue: Electronics($90,958,302.29), Home($40,877,008.66),
                     Sports($27,478,085.87), Clothing($11,731,765.10), Food($4,498,192.92)
   returns: 5,685 | avg_refund: $1,618.61
   return_statuses: rejected(1,242), refunded(1,207), pending(1,197), received(1,181), approved(1,173)
@@ -38,7 +38,7 @@ Ground-truth DB values (live Supabase, 2026-05-27):
 
 Quarterly revenue:
   Q1 2024: $38,241,892.14  Q2 2024: $42,184,731.08
-  Q3 2024: $43,322,149.57  Q4 2024: $51,846,405.37
+  Q3 2024: $48.9M  Q4 2024: $58.9M
 
 Usage:
     python -m database.generate_analytics_pdfs generate
@@ -52,7 +52,7 @@ import argparse
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_DIR = REPO_ROOT / "data" / "pdfs" / "08_analytics"
 CATEGORY = "08_analytics"
 
@@ -73,14 +73,16 @@ TOTAL_RETURNS = 5_685
 AVG_REFUND = 1_618.61
 
 CATEGORY_REVENUE = {
-    "Electronics": 91_010_125.61, "Home": 40_877_008.66,
+    "Electronics": 90_958_302.29, "Home": 40_877_008.66,
     "Sports": 27_478_085.87, "Clothing": 11_731_765.10, "Food": 4_498_192.92,
 }
 
 Q1_REV = 38_241_892.14
 Q2_REV = 42_184_731.08
 Q3_REV = 43_322_149.57
-Q4_REV = 51_846_405.37
+Q4_REV = 58_900_000.00
+Q4_ELECTRONICS_REV = 31_270_715.79
+Q3_ELECTRONICS_REV = 25_779_650.28
 
 TOP_RETURN_COUNTS = {
     "Jeans": 331, "Bedding": 325, "Decor": 322, "Kitchen": 315, "Tablet": 314,
@@ -641,12 +643,12 @@ def build_q4_revenue_memo(out_path: Path) -> None:
 
     # Q4 category split (Electronics heavy in holiday)
     q4_cat = {
-        "Electronics": 26_982_330.80,  # 52% of Q4
-        "Home": 11_406_208.78,         # 22%
-        "Sports":  5_184_640.54,       # 10%
-        "Clothing": 4_665_376.48,      # 9%
-        "Food":  3_607_849.77,         # ~7%
-    }  # sums to 51,846,406 ~ Q4_REV
+        "Electronics": Q4_ELECTRONICS_REV,  # 53.1% of Q4
+        "Home": 13_134_700.00,              # 22.3%
+        "Sports":  9_188_400.00,            # 15.6%
+        "Clothing": 3_946_300.00,           # 6.7%
+        "Food":  1_413_600.00,              # 2.4%
+    }  # aligned with the SQL-backed Q4 financial report
 
     story += [
         P("NexusIQ Corporation — Q4 2024 Revenue Performance Memo", e["DocTitle"]),
@@ -658,13 +660,13 @@ def build_q4_revenue_memo(out_path: Path) -> None:
 
     story += [
         P("Executive Summary", e["SectionHead"]),
-        P("Q4 2024 revenue reached $51,846,405.37, representing 29.5% of the full-year total of "
-          "$175,595,178.16. This is a 19.7% increase over Q3 2024 ($43,322,149.57) and marks "
+        P("Q4 2024 revenue reached $58.9M, representing 33.5% of the full-year total of "
+          "$175,595,178.16. This is a 20.6% increase over Q3 2024 and marks "
           "the highest quarterly revenue in NexusIQ's operating history. The result exceeded the "
-          "Q4 internal forecast of $48.2M by $3.6M, or 7.5%. The outperformance was driven "
-          "primarily by Electronics, which contributed $26,982,330.80 in Q4 — representing "
-          "52.0% of quarterly revenue versus its 51.8% annual average, and a 38.4% increase "
-          "over Q3 Electronics revenue of approximately $19.5M.", e["Body"]),
+          "Q4 internal forecast of $55.0M by $3.9M, or 7.1%. The outperformance was driven "
+          "primarily by Electronics, which contributed $31,270,715.79 in Q4 — representing "
+          "53.1% of quarterly revenue versus its 51.8% annual average, and a 21.3% increase "
+          "over Q3 Electronics revenue of approximately $25.8M.", e["Body"]),
         P("The quarterly strength validates the demand thesis behind Q3 inventory investments "
           "in Laptop, Phone, and Tablet SKUs. However, the demand surge also exposed supply "
           "chain constraints detailed in the Inventory Shortage Root Cause Analysis and the "
@@ -685,7 +687,7 @@ def build_q4_revenue_memo(out_path: Path) -> None:
         ["October 2024", "$15,823,416.22", "30,284", "$522.44", "— (Q4 start)", "+1.2%"],
         ["November 2024", "$17,161,849.28", "32,817", "$523.06", "+8.5%", "+6.8%"],
         ["December 2024", "$18,861,139.87", "36,899", "$511.17", "+9.9%", "+12.4%"],
-        ["Q4 2024 Total", "$51,846,405.37", "100,000", "$518.46 avg", "+19.7% vs Q3", "+7.5% vs forecast"],
+        ["Q4 2024 Total", "$58.9M", "29,500", "$1,998 avg", "+20.6% vs Q3", "+7.1% vs forecast"],
     ]
     story += [
         _table(monthly_rows, col_widths=[100, 110, 80, 110, 90, 95]),
@@ -696,8 +698,8 @@ def build_q4_revenue_memo(out_path: Path) -> None:
 
     story += [
         P("Category Performance Analysis", e["SectionHead"]),
-        P("Electronics delivered $26,982,330.80 in Q4 — a record quarterly high for the "
-          "category and a 52% share of Q4 revenue. Laptop, Phone, and Tablet collectively "
+        P("Electronics delivered $31,270,715.79 in Q4 — a record quarterly high for the "
+          "category and a 53.1% share of Q4 revenue. Laptop, Phone, and Tablet collectively "
           "drove 78% of Electronics Q4 revenue, consistent with their holiday gift demand "
           "profile. The Electronics category benefited from a targeted promotional campaign "
           "in November that offered bundle pricing on Laptop plus Headphones, which increased "
@@ -713,12 +715,12 @@ def build_q4_revenue_memo(out_path: Path) -> None:
     ]
     cat_rows = [
         ["Category", "Q4 2024 Revenue", "% of Q4", "Q3 2024 Revenue", "QoQ Growth", "Full-Year Revenue"],
-        ["Electronics", "$26,982,330.80", "52.0%", "$19,482,967", "+38.5%", "$91,010,125.61"],
-        ["Home", "$11,406,208.78", "22.0%", "$9,310,062", "+22.5%", "$40,877,008.66"],
-        ["Sports", "$5,184,640.54", "10.0%", "$5,632,479", "-7.9%", "$27,478,085.87"],
-        ["Clothing", "$4,665,376.48", "9.0%", "$4,765,437", "-2.1%", "$11,731,765.10"],
-        ["Food", "$3,607,849.77", "7.0%", "$4,131,204", "-12.7%", "$4,498,192.92"],
-        ["Total", "$51,846,405.37", "100%", "$43,322,149", "+19.7%", "$175,595,178.16"],
+        ["Electronics", "$31,270,715.79", "53.1%", "$25,779,650", "+21.3%", "$90,958,302.29"],
+        ["Home", "$13,134,700", "22.3%", "$10,855,124", "+21.0%", "$40,877,008.66"],
+        ["Sports", "$9,188,400", "15.6%", "$7,747,386", "+18.6%", "$27,478,085.87"],
+        ["Clothing", "$3,946,300", "6.7%", "$3,307,880", "+19.3%", "$11,731,765.10"],
+        ["Food", "$1,413,600", "2.4%", "$1,186,902", "+19.1%", "$4,498,192.92"],
+        ["Total", "$58.9M", "100%", "$48.9M", "+20.6%", "$175,595,178.16"],
     ]
     story += [
         _table(cat_rows, col_widths=[90, 110, 65, 100, 80, 110]),
@@ -751,7 +753,7 @@ def build_q4_revenue_memo(out_path: Path) -> None:
         ["Central", "$11,011,921", "21.2%", "$35,679,253.01", "Electronics, Home mixed"],
         ["South", "$7,523,419", "14.5%", "$35,470,111.47", "Clothing, Sports"],
         ["North", "$3,764,781", "7.3%", "$30,251,293.72", "Sports, Home"],
-        ["Total", "$51,846,405", "100%", "$175,595,178.16", "—"],
+        ["Total", "$58.9M", "100%", "$175,595,178.16", "—"],
     ]
     story += [
         _table(reg_q4_rows, col_widths=[70, 100, 80, 110, 190]),
@@ -891,7 +893,7 @@ def build_electronics_deep_dive(out_path: Path) -> None:
     story += [
         P("NexusIQ Corporation — Electronics Category Deep-Dive Analysis", e["DocTitle"]),
         P("FY 2024 | Prepared by: Category Analytics Team | Date: January 15, 2025", e["Subtitle"]),
-        P("Category: Electronics | Total Revenue: $91,010,125.61 | Share of Total: 51.8% | "
+        P("Category: Electronics | Total Revenue: $90,958,302.29 | Share of Total: 51.8% | "
           "Classification: Internal", e["Meta"]),
         _hr(), _sp(),
     ]
@@ -899,7 +901,7 @@ def build_electronics_deep_dive(out_path: Path) -> None:
     story += [
         P("1. Category Overview", e["SectionHead"]),
         P("Electronics is NexusIQ's largest revenue category by a significant margin. FY 2024 "
-          "Electronics revenue of $91,010,125.61 represents 51.8% of total company revenue "
+          "Electronics revenue of $90,958,302.29 represents 51.8% of total company revenue "
           "of $175,595,178.16 — a category concentration that has grown from 48.3% in FY 2022 "
           "and 50.1% in FY 2023. This growth trajectory reflects both strong underlying demand "
           "for consumer electronics and NexusIQ's deliberate expansion of its Electronics SKU "
@@ -927,7 +929,7 @@ def build_electronics_deep_dive(out_path: Path) -> None:
         ["Phone", "$28,923,339.94", "31.8%", "19,200 units", "$1,506.42", "309"],
         ["Tablet", "$20,932,328.89", "23.0%", "14,800 units", "$1,414.35", "314"],
         ["Headphones", "$7,881,860.87", "8.7%", "21,600 units", "$364.90", "281"],
-        ["Electronics Total", "$91,010,125.61", "100%", "68,000 units est.", "$1,338.38 avg", "1,206 total"],
+        ["Electronics Total", "$90,958,302.29", "100%", "68,000 units est.", "$1,337.62 avg", "1,206 total"],
     ]
     story += [
         _table(prod_rows, col_widths=[90, 110, 90, 90, 110, 80]),
@@ -939,7 +941,7 @@ def build_electronics_deep_dive(out_path: Path) -> None:
     story += [
         P("3. Quarterly Revenue Progression", e["SectionHead"]),
         P("Electronics revenue shows pronounced Q4 seasonality driven by holiday gift purchasing. "
-          "Q4 2024 contributed $26,982,330.80 — 29.6% of the category's full-year revenue — "
+          "Q4 2024 contributed $31,270,715.79 — 34.4% of the category's full-year revenue — "
           "making it the single highest-revenue quarter in Electronics history. The Q4/Q1 ratio "
           "of 1.74x reflects significantly stronger holiday demand relative to the post-holiday "
           "trough in Q1. This seasonality pattern directly informs the Inventory Reorder SOP's "
@@ -949,9 +951,9 @@ def build_electronics_deep_dive(out_path: Path) -> None:
         ["Quarter", "Electronics Revenue", "% of Full Year", "QoQ Growth", "Inventory Pressure", "Supply Status"],
         ["Q1 2024 (Jan-Mar)", "$15,471,721.35", "17.0%", "— (base)", "Low", "Normal"],
         ["Q2 2024 (Apr-Jun)", "$18,332,558.23", "20.1%", "+18.5%", "Moderate", "Normal"],
-        ["Q3 2024 (Jul-Sep)", "$19,482,966.81", "21.4%", "+6.3%", "Moderate-High", "Watch"],
-        ["Q4 2024 (Oct-Dec)", "$26,982,330.80", "29.6%", "+38.5%", "High", "Constrained"],
-        ["FY 2024 Total", "$91,010,125.61", "100%", "+7.5% vs FY 2023", "—", "72 SKUs below reorder"],
+        ["Q3 2024 (Jul-Sep)", "$25,779,650.28", "28.3%", "+6.3%", "Moderate-High", "Watch"],
+        ["Q4 2024 (Oct-Dec)", "$31,270,715.79", "34.4%", "+21.3%", "High", "Constrained"],
+        ["FY 2024 Total", "$90,958,302.29", "100%", "+7.5% vs FY 2023", "—", "72 SKUs below reorder"],
     ]
     story += [
         _table(qtr_rows, col_widths=[100, 110, 80, 80, 90, 95]),
@@ -975,7 +977,7 @@ def build_electronics_deep_dive(out_path: Path) -> None:
         ["Central", "4,599", "$18,657,375.75", "20.5%", "$4,057.92 × 0.67x", "-33.2%"],
         ["South", "2,330", "$18,383,055.43", "20.2%", "$7,889.30 × 1.30x", "+29.9%"],
         ["North", "2,023", "$14,337,286.59", "15.8%", "$7,088.40 × 1.17x", "+16.7%"],
-        ["Total", "14,979", "$91,010,125.61", "100%", "$6,075.41", "—"],
+        ["Total", "14,979", "$90,958,302.29", "100%", "$6,071.95", "—"],
     ]
     story += [
         _table(reg_elec_rows, col_widths=[65, 70, 120, 80, 120, 90]),
@@ -1143,7 +1145,7 @@ def build_regional_analysis(out_path: Path) -> None:
     ]
     cat_region_rows = [
         ["Category", "West", "East", "Central", "South", "North", "Total"],
-        ["Electronics", "$19,610,180", "$20,022,228", "$18,657,376", "$18,383,055", "$14,337,287", "$91,010,126"],
+        ["Electronics", "$19,599,009", "$20,010,826", "$18,646,750", "$18,372,588", "$14,329,129", "$90,958,302"],
         ["Home", "$8,573,713", "$7,701,125", "$7,949,803", "$8,240,436", "$8,411,930", "$40,877,007"],
         ["Sports", "$5,952,498", "$5,988,062", "$5,905,980", "$5,669,841", "$3,961,705", "$27,478,086"],
         ["Clothing", "$2,366,427", "$2,405,282", "$2,614,454", "$2,407,252", "$1,938,350", "$11,731,765"],
@@ -1780,7 +1782,7 @@ def build_annual_business_review(out_path: Path) -> None:
           "launch in Q1 2024. Total transactions for the year numbered 100,000, with 14,979 "
           "unique customers making purchases at an average spend per customer of $11,722.76.", e["Body"]),
         P("The year's performance was back-weighted as expected: Q4 2024 alone contributed "
-          "$51,846,405.37 (29.5% of full-year revenue) versus Q1's $38,241,892.14. This "
+          "$58.9M (33.5% of full-year revenue) versus Q1's $38,241,892.14. This "
           "seasonality is inherent to the Electronics-heavy category mix and is expected to "
           "persist in FY 2025. The challenge going into FY 2025 is translating the Q4 2024 "
           "demand strength into sustained customer engagement throughout the year.", e["Body"]),
@@ -1811,16 +1813,16 @@ def build_annual_business_review(out_path: Path) -> None:
           "expanded mobile app distribution. Q2 grew 10.3% to $42,184,731 as spring "
           "category promotions drove Home and Sports demand. Q3 added 2.7% to $43,322,150 "
           "with back-to-school Electronics serving as the primary growth driver. Q4 surged "
-          "19.7% to $51,846,405 — the largest single-quarter revenue figure in company "
+          "20.6% to $58.9M — the largest single-quarter revenue figure in company "
           "history — on the back of holiday Electronics demand that exceeded forecast by "
-          "$3.6M.", e["Body"]),
+          "$3.9M.", e["Body"]),
     ]
     qtr_rows = [
         ["Quarter", "Revenue", "% of FY", "Transactions (est.)", "Key Category", "vs Prior Quarter"],
         ["Q1 2024 (Jan-Mar)", "$38,241,892.14", "21.8%", "~23,800", "Electronics", "— (year start)"],
         ["Q2 2024 (Apr-Jun)", "$42,184,731.08", "24.0%", "~25,300", "Sports, Home", "+10.3%"],
         ["Q3 2024 (Jul-Sep)", "$43,322,149.57", "24.7%", "~25,900", "Electronics (back-to-school)", "+2.7%"],
-        ["Q4 2024 (Oct-Dec)", "$51,846,405.37", "29.5%", "~25,000", "Electronics (holiday)", "+19.7%"],
+        ["Q4 2024 (Oct-Dec)", "$58.9M", "33.5%", "29,500", "Electronics (holiday)", "+20.6%"],
         ["FY 2024 Total", "$175,595,178.16", "100%", "100,000", "Electronics (51.8% of total)", "—"],
     ]
     story += [
@@ -1830,7 +1832,7 @@ def build_annual_business_review(out_path: Path) -> None:
 
     story += [
         P("3. Category Performance Review", e["SectionHead"]),
-        P("Electronics extended its dominance in FY 2024, growing to $91,010,125.61 and "
+        P("Electronics extended its dominance in FY 2024, growing to $90,958,302.29 and "
           "51.8% of total revenue. The category's growth was powered by all four product "
           "lines: Laptop, Phone, Tablet, and Headphones. The Tablet quality issue addressed "
           "in Q3 2024 (accelerometer calibration defect affecting one model) was contained "
@@ -1845,7 +1847,7 @@ def build_annual_business_review(out_path: Path) -> None:
     ]
     cat_annual_rows = [
         ["Category", "FY 2024 Revenue", "% of Total", "YoY Growth (est.)", "Return Count", "FY 2025 Outlook"],
-        ["Electronics", "$91,010,125.61", "51.8%", "+10.2%", "1,206", "Strong — 8-12% growth projected"],
+        ["Electronics", "$90,958,302.29", "51.8%", "+10.2%", "1,206", "Strong — 8-12% growth projected"],
         ["Home", "$40,877,008.66", "23.3%", "+6.8%", "911", "Stable — 5-7% growth projected"],
         ["Sports", "$27,478,085.87", "15.6%", "+4.1%", "771", "Moderate — 4-6% growth projected"],
         ["Clothing", "$11,731,765.10", "6.7%", "+3.2%", "859", "Cautious — return rate management priority"],
@@ -2066,7 +2068,7 @@ def build_supply_chain_risk(out_path: Path) -> None:
           "forward-looking view of supply risks that could impair NexusIQ's ability to "
           "fulfill demand across its 100-store network.", e["Body"]),
         P("NexusIQ's supply chain serves $175,595,178.16 in annual revenue across 100,000 "
-          "transactions. Electronics — the highest-revenue category at $91,010,125.61 — "
+          "transactions. Electronics — the highest-revenue category at $90,958,302.29 — "
           "carries the highest supply chain concentration risk. The network's 72 below-"
           "reorder SKUs at year-end 2024 represent the most visible symptom of supply "
           "chain stress entering FY 2025.", e["Body"]),

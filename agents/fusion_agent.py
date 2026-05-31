@@ -815,7 +815,7 @@ Reply with ONLY this JSON (no extra text):
                             'source': 'SQL'
                         })
 
-            if not sql_numbers:
+            if not rows and not sql_numbers:
                 sql_numbers.extend(self._extract_number_facts(sql_result.get('answer', ''), source="SQL"))
 
         rag_number_dicts = self._extract_number_facts(

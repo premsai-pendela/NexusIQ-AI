@@ -1241,15 +1241,19 @@ ANSWER:"""
         complexity = self._classify_query_complexity(question)
         logger.info(f"Query complexity: {complexity}")
         
+        retrieval_query = self._normalize_retrieval_query(question)
+        if retrieval_query != question:
+            logger.info(f"Retrieval query normalized: '{retrieval_query}'")
+
         # Hybrid BM25+vector search — BM25 naturally prioritizes keyword matches (Q4, Electronics)
         # which makes metadata pre-filtering redundant; hybrid covers cross-document content too
-        chunks = self.hybrid_search(question, n_results=n_results)
+        chunks = self.hybrid_search(retrieval_query, n_results=n_results)
 
         # Adaptive HyDE: if top score too low, retrieval is struggling → generate hypothetical answer
         HYDE_THRESHOLD = 0.35
         if chunks and chunks[0].get("similarity", 1.0) < HYDE_THRESHOLD:
             logger.info(f"Low confidence ({chunks[0]['similarity']:.3f} < {HYDE_THRESHOLD}) → HyDE triggered")
-            hyde_chunks = self._hyde_search(question, n_results=n_results)
+            hyde_chunks = self._hyde_search(retrieval_query, n_results=n_results)
             if hyde_chunks and hyde_chunks[0].get("similarity", 0) > chunks[0].get("similarity", 0):
                 logger.info("HyDE improved retrieval — using HyDE results")
                 chunks = hyde_chunks
@@ -1313,6 +1317,44 @@ ANSWER:"""
             'models_tried': models_tried,
             'chunks': chunks
         }
+
+    def _normalize_retrieval_query(self, question: str) -> str:
+        """Remove orchestration wording that can overpower the actual evidence target."""
+        query = str(question or "").strip()
+        lowered = query.lower()
+        is_validation_revenue_query = (
+            "revenue" in lowered
+            and any(term in lowered for term in ("validate", "verify", "cross-reference", "cross reference"))
+            and "sql" in lowered
+            and any(term in lowered for term in ("pdf", "document", "report"))
+        )
+        if not is_validation_revenue_query:
+            return query
+
+        normalized = re.sub(
+            r"\b(validate|verify|confirm|cross-reference|cross reference)\b",
+            " ",
+            query,
+            flags=re.IGNORECASE,
+        )
+        normalized = re.sub(
+            r"\bacross\s+sql\s+and\s+pdf\s+reports?\b",
+            " ",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        normalized = re.sub(
+            r"\bagainst\s+(sql\s+and\s+)?pdf\s+reports?\b",
+            " ",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        normalized = re.sub(r"\bsql\b|\bdatabase\b|\bpdfs?\b", " ", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\s+", " ", normalized).strip(" .")
+
+        if "report" not in normalized.lower():
+            normalized = f"{normalized} financial report"
+        return normalized
     
     def _handle_comparison_query(
         self, 

@@ -1579,6 +1579,7 @@ ANSWER:"""
         # ═══════════════════════════════════════════════
         
         hybrid_results = []
+        quarter_scope = self._single_quarter_scope(query)
         
         for idx in range(len(self.bm25_documents)):
             doc_id = self.bm25_ids[idx]
@@ -1591,6 +1592,18 @@ ANSWER:"""
             
             if hybrid_score > similarity_threshold * 0.5:  # Looser threshold for hybrid
                 metadata = self.bm25_metadatas[idx]
+                quarter_match = self._quarter_match(
+                    query=query,
+                    text=self.bm25_documents[idx],
+                    filename=metadata.get('filename', 'Unknown'),
+                    quarter_scope=quarter_scope,
+                )
+                if quarter_match == "exclude":
+                    continue
+                if quarter_match == "strong":
+                    hybrid_score += 0.08
+                elif quarter_match == "weak":
+                    hybrid_score += 0.03
                 
                 page_info = metadata.get('page', 'Unknown')
                 if metadata.get('page_start') and metadata.get('page_end'):
@@ -1673,6 +1686,71 @@ ANSWER:"""
             )
         )
         return reranked[:top_n]
+
+    def _single_quarter_scope(self, query: str) -> Optional[str]:
+        """Return Q1-Q4 only when the query asks for one quarter, not a comparison."""
+        normalized = str(query or "").lower()
+        mentions = []
+        quarter_patterns = {
+            "Q1": (r"\bq1\b", r"\bfirst quarter\b"),
+            "Q2": (r"\bq2\b", r"\bsecond quarter\b"),
+            "Q3": (r"\bq3\b", r"\bthird quarter\b"),
+            "Q4": (r"\bq4\b", r"\bfourth quarter\b"),
+        }
+        for quarter, patterns in quarter_patterns.items():
+            if any(re.search(pattern, normalized) for pattern in patterns):
+                mentions.append(quarter)
+
+        if len(mentions) != 1:
+            return None
+        if any(term in normalized for term in ("compare", "versus", " vs ", "between", "trend", "growth")):
+            return None
+        return mentions[0]
+
+    def _quarter_match(
+        self,
+        query: str,
+        text: str,
+        filename: str,
+        quarter_scope: Optional[str] = None,
+    ) -> str:
+        """
+        Classify whether a chunk belongs to the single-quarter scope.
+
+        Quarterly report templates are nearly identical, so embeddings and a
+        generic cross-encoder often rank Q2/Q3 revenue passages highly for Q4
+        questions. This guard keeps those wrong-quarter templates out while
+        preserving annual summaries that mention the requested quarter.
+        """
+        quarter = quarter_scope or self._single_quarter_scope(query)
+        if not quarter:
+            return "neutral"
+
+        target = quarter.lower()
+        filename_lower = str(filename or "").lower()
+        text_lower = str(text or "").lower()
+        haystack = f"{filename_lower}\n{text_lower[:1200]}"
+        quarter_tokens = {"q1", "q2", "q3", "q4"}
+        filename_quarters = {
+            token.upper()
+            for token in quarter_tokens
+            if re.search(rf"(^|[^a-z0-9]){token}([^a-z0-9]|$)", filename_lower)
+        }
+        present = {
+            token.upper()
+            for token in quarter_tokens
+            if re.search(rf"(^|[^a-z0-9]){token}([^a-z0-9]|$)", haystack)
+        }
+
+        if target in filename_lower:
+            return "strong"
+        if filename_quarters and quarter not in filename_quarters:
+            return "exclude"
+        if quarter in present:
+            return "weak"
+        if present and quarter not in present:
+            return "exclude"
+        return "neutral"
 
 
 # Singleton instances are isolated by data context so live and pilot evidence never share state.

@@ -84,6 +84,43 @@ class RAGRetrievalTests(unittest.TestCase):
         self.assertNotIn("SQL", normalized)
         self.assertNotIn("PDF", normalized)
 
+    def test_single_quarter_retrieval_excludes_wrong_quarter_templates(self):
+        agent = RAGAgent.__new__(RAGAgent)
+        query = "What was Q4 2024 total revenue?"
+
+        q2_match = agent._quarter_match(
+            query=query,
+            filename="07_Q2_2024_Financial_Report.pdf",
+            text="Q2 2024 delivered total revenue of $40.4M across 24,500 transactions.",
+        )
+        q4_match = agent._quarter_match(
+            query=query,
+            filename="01_Q4_2024_Financial_Report.pdf",
+            text="Q4 2024 delivered total revenue of $58.9M across 29,500 transactions.",
+        )
+        annual_match = agent._quarter_match(
+            query=query,
+            filename="13_2024_Annual_Business_Review.pdf",
+            text="Q3 2024 revenue was $43.3M. Q4 2024 revenue was $58.9M.",
+        )
+        wrong_period_memo_match = agent._quarter_match(
+            query=query,
+            filename="05_Q3_2024_Revenue_Performance_Memo.pdf",
+            text="Q3 revenue was $43.3M. The team is preparing for Q4 holiday demand.",
+        )
+
+        self.assertEqual(q2_match, "exclude")
+        self.assertEqual(q4_match, "strong")
+        self.assertEqual(annual_match, "weak")
+        self.assertEqual(wrong_period_memo_match, "exclude")
+
+    def test_multi_quarter_retrieval_keeps_comparison_documents(self):
+        agent = RAGAgent.__new__(RAGAgent)
+
+        scope = agent._single_quarter_scope("Compare Q3 and Q4 2024 revenue")
+
+        self.assertIsNone(scope)
+
 
 class FusionValidationTests(unittest.TestCase):
     def setUp(self):

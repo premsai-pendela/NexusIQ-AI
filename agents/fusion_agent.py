@@ -1429,6 +1429,20 @@ ANSWER:"""
         Main fusion query method. Routes to source(s) and combines results.
         progress_cb(source_name, result_dict) called as each parallel agent finishes.
         """
+        use_langgraph = os.getenv("NEXUSIQ_USE_LANGGRAPH", "false").strip().lower() in {"1", "true", "yes"}
+        if use_langgraph:
+            from agents.fusion_graph import FusionGraph
+
+            if not hasattr(self, "_fusion_graph"):
+                self._fusion_graph = FusionGraph(self)
+            return self._fusion_graph.query(
+                question,
+                force_source=force_source,
+                progress_cb=progress_cb,
+                bypass_cache=bypass_cache,
+                web_category=web_category,
+            )
+
         trace = get_tracer().start_trace(
             question,
             {

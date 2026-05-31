@@ -61,6 +61,8 @@ class MCPServerTests(unittest.TestCase):
 
         self.assertIn("Returns_Refunds_Policy.pdf", report)
         self.assertIn("30-day return window", report)
+        self.assertIn("Document search results only", report)
+        self.assertIn("rerank: 6.003", report)
 
     def test_mcp_status_reports_current_public_inventory(self):
         from mcp_server.server import _build_status_payload

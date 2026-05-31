@@ -82,7 +82,8 @@ async def query_database(question: str) -> str:
 async def search_business_documents(query: str, n_results: int = 5) -> str:
     """Search 43 business PDFs: Q1-Q4 2024 financial reports, market
     analysis, supplier contracts, operations SOPs, HR policies,
-    strategic plans. Returns relevant excerpts with source citations."""
+    strategic plans. Returns document-only excerpts with source citations
+    and retrieval scores. Does not query SQL or validate database totals."""
     loop = asyncio.get_event_loop()
     try:
         chunks = await asyncio.wait_for(
@@ -145,12 +146,22 @@ async def get_status() -> str:
 
 
 def _format_document_chunks(chunks: list) -> str:
-    results = []
+    results = [
+        "Document search results only. These excerpts come from PDFs, not the SQL database. "
+        "Use query_database or query_business_intelligence for SQL validation.",
+        "Scores: rerank is the final cross-encoder relevance score when available; "
+        "hybrid is the first-pass BM25/vector score.",
+    ]
     for i, chunk in enumerate(chunks, 1):
         source = chunk.get("filename", "unknown")
         content = str(chunk.get("text", chunk.get("content", chunk.get("document", ""))))[:300]
-        score = chunk.get("rerank_score", chunk.get("similarity", 0))
-        results.append(f"{i}. [{source}] (score: {score:.3f})\n{content}")
+        rerank_score = chunk.get("rerank_score")
+        hybrid_score = chunk.get("similarity")
+        if rerank_score is not None:
+            score_text = f"rerank: {float(rerank_score):.3f}, hybrid: {float(hybrid_score or 0):.3f}"
+        else:
+            score_text = f"hybrid: {float(hybrid_score or 0):.3f}"
+        results.append(f"{i}. [{source}] ({score_text})\n{content}")
     return "\n\n".join(results)
 
 

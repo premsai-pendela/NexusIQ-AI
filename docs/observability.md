@@ -76,12 +76,24 @@ Trace metadata marks the outer orchestrator as `production_harness`. The default
 harness engine is LangGraph, so successful responses also include
 `harness_engine: langgraph` and `workflow_orchestrator: langgraph`.
 
-The primary/default span is:
+LangGraph does not create a second root trace when it runs inside the production
+harness. The harness owns the single query trace, and LangGraph contributes
+workflow spans inside that trace.
+
+The primary/default harness span is:
 
 - `harness.run_langgraph_workflow`
 
+Inside that span, the same trace includes LangGraph workflow spans such as:
+
+- `langgraph.route`
+- `langgraph.resolve_question`
+- `langgraph.run_multi_source`
+- `langgraph.validation`
+- `langgraph.answer_generation`
+
 If LangGraph fails or is disabled, the harness falls back to native controlled
-steps such as:
+steps in the same trace, such as:
 
 - `harness.cache_lookup`
 - `harness.route_question`

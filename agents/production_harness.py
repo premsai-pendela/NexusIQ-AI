@@ -206,6 +206,7 @@ class ProductionAgentHarness:
                     trace,
                     "run_langgraph_workflow",
                     lambda: self._run_langgraph_workflow(
+                        trace=trace,
                         question=question,
                         force_source=force_source,
                         progress_cb=progress_cb,
@@ -367,6 +368,7 @@ class ProductionAgentHarness:
     def _run_langgraph_workflow(
         self,
         *,
+        trace: TraceSession,
         question: str,
         force_source: Optional[str],
         progress_cb: Optional[Callable[[str, Dict], None]],
@@ -383,6 +385,7 @@ class ProductionAgentHarness:
             progress_cb=progress_cb,
             bypass_cache=bypass_cache,
             web_category=web_category,
+            trace=trace,
         )
 
     def _run_step(

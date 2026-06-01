@@ -41,6 +41,7 @@ class FakeFusionAgent:
         self._last_routing_fallback = False
         self._no_data_reason = None
         self._last_answer_generation = {}
+        self.finalize_calls = 0
 
     def _cache_get(self, question):
         self.calls.append(("cache_get", question))
@@ -111,6 +112,7 @@ class FakeFusionAgent:
         self.calls.append(("cache_set", question))
 
     def _finalize_trace(self, trace, result, cached=False):
+        self.finalize_calls += 1
         finalized = dict(result)
         finalized["trace_id"] = "fake-trace"
         finalized["_finalized_cached"] = cached
@@ -135,6 +137,7 @@ class FusionGraphTests(unittest.TestCase):
         self.assertNotIn(("rag", "What was revenue?"), agent.calls)
         self.assertNotIn(("web", "What was revenue?"), agent.calls)
         self.assertEqual(result["orchestrator"], "langgraph")
+        self.assertEqual(agent.finalize_calls, 1)
         self.assertTrue(any(span["name"] == "langgraph.route" for span in trace.spans))
 
     def test_sql_rag_route_runs_validation_and_fused_answer(self):
@@ -167,8 +170,20 @@ class FusionGraphTests(unittest.TestCase):
 
         self.assertEqual(result["answer"], "Cached answer")
         self.assertTrue(result["_finalized_cached"])
+        self.assertEqual(agent.finalize_calls, 1)
         self.assertNotIn(("route", "What was revenue?"), agent.calls)
         self.assertTrue(any(event["name"] == "cache.hit" for event in trace.events))
+
+    def test_external_trace_records_langgraph_spans_without_finalizing(self):
+        agent = FakeFusionAgent(route="sql_rag")
+        trace = FakeTrace()
+
+        result = FusionGraph(agent).query("What was revenue?", trace=trace)
+
+        self.assertEqual(result["orchestrator"], "langgraph")
+        self.assertNotIn("trace_id", result)
+        self.assertEqual(agent.finalize_calls, 0)
+        self.assertTrue(any(span["name"] == "langgraph.route" for span in trace.spans))
 
 
 if __name__ == "__main__":

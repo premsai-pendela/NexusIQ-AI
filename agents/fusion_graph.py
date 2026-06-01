@@ -36,6 +36,7 @@ class NexusIQGraphState(TypedDict, total=False):
     answer: Optional[str]
     result: Optional[Dict]
     cached: bool
+    finalize_trace: bool
 
 
 class FusionGraph:
@@ -104,16 +105,19 @@ class FusionGraph:
         progress_cb: Optional[Callable[[str, Dict], None]] = None,
         bypass_cache: bool = False,
         web_category: Optional[str] = None,
+        trace: Optional[TraceSession] = None,
     ) -> Dict:
-        trace = get_tracer().start_trace(
-            question,
-            {
-                "force_source": force_source,
-                "bypass_cache": bypass_cache,
-                "environment": getattr(settings, "environment", "unknown"),
-                "orchestrator": "langgraph",
-            },
-        )
+        owns_trace = trace is None
+        if owns_trace:
+            trace = get_tracer().start_trace(
+                question,
+                {
+                    "force_source": force_source,
+                    "bypass_cache": bypass_cache,
+                    "environment": getattr(settings, "environment", "unknown"),
+                    "orchestrator": "langgraph",
+                },
+            )
         initial_state: NexusIQGraphState = {
             "question": question,
             "force_source": force_source,
@@ -123,6 +127,7 @@ class FusionGraph:
             "trace": trace,
             "start_time": datetime.now(),
             "cached": False,
+            "finalize_trace": owns_trace,
         }
         final_state = self.graph.invoke(initial_state)
         result = final_state.get("result") or {
@@ -388,6 +393,8 @@ class FusionGraph:
     def _finalize(self, state: NexusIQGraphState) -> Dict:
         result = state.get("result") or {}
         result["orchestrator"] = "langgraph"
+        if not state.get("finalize_trace", True):
+            return {"result": result}
         finalized = self.fusion_agent._finalize_trace(
             state["trace"],
             result,

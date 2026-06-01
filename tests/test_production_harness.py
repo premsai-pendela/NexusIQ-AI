@@ -49,6 +49,7 @@ class FakeFusionAgent:
         self._last_routing_fallback = False
         self._no_data_reason = None
         self._last_answer_generation = {}
+        self.finalize_calls = 0
 
     def _cache_get(self, question):
         self.calls.append(("cache_get", question))
@@ -130,6 +131,7 @@ class FakeFusionAgent:
         return "n/a"
 
     def _finalize_trace(self, trace, result, cached=False):
+        self.finalize_calls += 1
         finalized = dict(result)
         finalized["trace_id"] = trace.trace_id
         finalized["_finalized_cached"] = cached
@@ -220,6 +222,8 @@ class ProductionHarnessTests(unittest.TestCase):
         self.assertEqual(result["harness_engine"], "langgraph")
         self.assertEqual(result["workflow_orchestrator"], "langgraph")
         self.assertIn("run_langgraph_workflow", result["harness_completed_steps"])
+        self.assertEqual(agent.finalize_calls, 1)
+        self.assertTrue(any(span["name"] == "langgraph.route" for span in tracer.trace.spans))
 
     def test_harness_falls_back_to_native_flow_when_langgraph_fails(self):
         agent = FakeFusionAgent(route="sql_rag")

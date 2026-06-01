@@ -352,6 +352,7 @@ Production safeguards:
 - Harness step tracking and bounded execution.
 - Parser-based SQL guardrails with `sqlglot`.
 - Cache-first behavior for repeated questions.
+- One root trace per user query, with LangGraph workflow spans nested inside the harness trace.
 - Local JSON traces in `traces/`.
 - LLM call ledger in `data/llm_task_ledger.jsonl`.
 - Langfuse tracing when keys are present.

@@ -2,18 +2,20 @@
 
 # NexusIQ AI
 
-### Multi-Agent Business Intelligence Platform
+### Production Multi-Agent Business Intelligence System
 
-*Ask a question in plain English. Get validated insights from SQL, documents, and live web data — in seconds.*
+*Ask a business question in plain English. Get validated, cited answers from SQL, documents, and live web data — in seconds.*
 
-[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.x-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration-4A90E2?style=flat-square)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-REST_API-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.51+-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-8E75B2?style=flat-square&logo=google&logoColor=white)](https://ai.google.dev)
 [![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=flat-square)](https://groq.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com)
-[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_DB-orange?style=flat-square)](https://trychroma.com)
+[![AWS](https://img.shields.io/badge/AWS-EC2_+_ECR-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com)
 
-**[🚀 Live Demo](https://nexusiq-ai.com)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
+**[🚀 Live Demo](https://nexusiq-ai.com)** · **[📡 REST API](https://nexusiq-ai.com/api/v1/docs)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
 
 </div>
 
@@ -21,15 +23,22 @@
 
 ## What is NexusIQ AI?
 
-NexusIQ AI is a **multi-agent business intelligence system** that answers complex business questions by intelligently combining three data sources:
+NexusIQ AI is a **production-deployed, multi-agent business intelligence system** that answers complex business questions by autonomously searching across three scattered data sources, cross-validating facts, and returning a single fused answer with a confidence score and citations.
 
 | Source | What it knows |
 |--------|--------------|
-| 🗄️ **SQL Database** | 100,000 Supabase sales transactions across 2024 — revenue, products, regions, payment methods |
-| 📄 **PDF Documents** | 25 internal documents — quarterly reports, strategic plans, compliance policies |
-| 🌐 **Live Web** | Competitor pricing from live retail sources with explicit cache freshness labels |
+| 🗄️ **SQL Database** | 100,000 transactions in Supabase PostgreSQL — revenue, products, regions, payment methods (FY 2024) |
+| 📄 **43 Business PDFs** | Quarterly reports, strategic plans, SOPs, incident reports, policy docs, analyst memos — 425 ChromaDB chunks |
+| 🌐 **Live Web** | Competitor pricing across 5 product categories via 9 live scrapers |
 
-The system routes each question to the right source(s), runs the agents in parallel, cross-validates numeric facts, and returns a single fused answer — with confidence badges showing how well the sources agree.
+The system routes each question to the right source(s), runs agents in parallel, cross-validates numeric facts between SQL answers and PDF text, and returns one answer — with confidence badges showing how well sources agree.
+
+**Key metrics:**
+- RAG retrieval: **97.7% Hit@5** · **0.919 Context Recall** · **0.778 MRR**
+- Cross-validation precision: **0.03% SQL↔PDF delta** on matching facts
+- Multi-source query latency: **5–12 seconds**
+- Repeat queries (cached): **< 100ms**
+- Test coverage: **125 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
 
 ---
 
@@ -39,60 +48,77 @@ The system routes each question to the right source(s), runs the agents in paral
 User Question (plain English)
          │
          ▼
-┌─────────────────────┐
-│    FUSION AGENT     │  ← Deterministic Web routes + LLM routing
-│                     │    Gemini 2.5 Flash → Groq fallback otherwise
-│  Classifies intent  │    Rate-limited to prevent quota exhaustion
-│  Routes to sources  │
-└──────┬──────┬───────┘
-       │      │
-  ┌────┘  ┌───┘  ┌──────────────────────┐
-  │       │      │                      │
-  ▼       ▼      ▼                      │
-🗄️ SQL  📄 RAG  🌐 WEB              [parallel]
-Agent   Agent   Agent
-  │       │      │
-  │   Hybrid  Shopify API
-  │  BM25 +   + httpx/BS4
-  │  Vector   + BeautifulSoup
-  │  Search
-  │       │      │
-  └───────┴──────┘
-         │
-         ▼
-┌─────────────────────┐
-│  Cross-Validation   │  ← Extracts + compares numbers
-│  HIGH / MED / LOW   │    across SQL answers and PDF text
-└─────────────────────┘
-         │
-         ▼
-   Fused Answer
-   + Chart Builder
-   + Source Citations
-   + Confidence Badge
+┌──────────────────────────────┐
+│       LANGGRAPH GRAPH        │  ← Typed state graph (fusion_graph.py)
+│   Stateful node-by-node      │    Feature flag: NEXUSIQ_USE_LANGGRAPH=true
+│   orchestration with         │    Rollback: original FusionAgent preserved
+│   controlled error paths     │
+└──────────────┬───────────────┘
+               │
+         ┌─────▼──────┐
+         │   ROUTING   │  ← Gemini 2.5 Flash → Groq Llama 3.3 70B fallback
+         │  + RESOLVE  │    Circuit breaker prevents quota spirals
+         └──────┬──────┘
+                │  (parallel via ThreadPoolExecutor)
+     ┌──────────┼──────────┐
+     ▼          ▼          ▼
+  🗄️ SQL     📄 RAG     🌐 WEB
+  Agent      Agent      Agent
+  │          │          │
+  Supabase   Hybrid     Shopify API
+  PostgreSQL BM25 +     + httpx
+  sqlglot    Vector     + BeautifulSoup
+  safety     + Reranker
+     │          │          │
+     └──────────┴──────────┘
+                │
+                ▼
+     ┌──────────────────────┐
+     │   FUSION + VALIDATE  │  ← Cross-validates SQL ↔ PDF numbers
+     │   HIGH / MED / LOW   │    Deterministic for HIGH confidence
+     │   confidence scoring │    LLM synthesis only when needed
+     └──────────┬───────────┘
+                │
+                ▼
+         Fused Answer
+         + Confidence badge
+         + Source citations
+         + Observability panel
+         + Chart (SQL results)
 ```
+
+### LangGraph Orchestration
+
+NexusIQ uses **LangGraph** as the production orchestration layer over the existing agents. The graph formalizes the SQL/RAG/Web/validation workflow into typed, testable nodes:
+
+```
+cache_lookup → route_question → resolve_question →
+  [sql_node | rag_node | web_node | comparison_node]
+→ validation_node → answer_node → cache_admission → finalize
+```
+
+The original custom FusionAgent is preserved as a rollback path (`NEXUSIQ_USE_LANGGRAPH=false`). LangGraph was added as a production-style orchestration layer, not a rewrite of the underlying agents.
 
 ### Routing Logic
 
-The Fusion Agent routes clear competitor-pricing questions deterministically to the Web Agent. Ambiguous or multi-source questions use a two-tier LLM cascade:
-
 ```
-Clear competitor-pricing query → Web Agent directly
-Other query → Gemini 2.5 Flash (primary, rate-limited)
-              │ quota exhausted?
-              ▼
-         Groq Llama 3.3 70B (fallback)
-              │ all sources return false?
-              ▼
-         "no_data" response (clear message, no hallucination)
-```
+Clear competitor-pricing query  → web_only  (deterministic, no LLM router)
+Revenue/cross-source query      → sql_rag   (cross-validation)
+Policy/compliance/strategy      → rag_only
+Full business analysis          → all       (SQL + RAG + Web)
+Out-of-range / unanswerable     → no_data   (safe refusal)
 
-Six route types:
+LLM router fallback chain:
+  Gemini 2.5 Flash (primary)
+    │ quota exhausted?
+    ▼
+  Groq Llama 3.3 70B (fallback)
+```
 
 | Route | When |
 |-------|------|
 | `sql_only` | Rankings, breakdowns, trends, counts |
-| `rag_only` | Policies, strategy, compliance |
+| `rag_only` | Policies, strategy, compliance, SOPs |
 | `web_only` | Competitor pricing |
 | `sql_rag` | Quarterly/annual revenue (cross-validates PDF reports) |
 | `sql_web` / `rag_web` / `all` | Multi-source fusion queries |
@@ -102,15 +128,17 @@ Six route types:
 
 ## Key Features
 
-**Evidence-aware query routing** — Clear live-pricing requests route deterministically to the Web Agent. Gemini 2.5 Flash classifies ambiguous or multi-source questions, with Groq fallback when needed.
+**LangGraph orchestration** — Production-grade typed state graph formalizes SQL/RAG/Web/validation as named, testable nodes. Conditional routing, controlled error paths, and clean state management. Original FusionAgent preserved as rollback.
 
-**SQL Agent with auto-correction** — Converts plain English to SQL via multi-model cascade (Gemini → Groq). Auto-corrects typos ("Wset" → "West", "Electrnics" → "Electronics"). Resolves ambiguity ("best product" → "best product by revenue").
+**FastAPI REST API + MCP Server** — Programmatic access alongside the Streamlit UI. See [API & MCP](#api--mcp-server) section.
 
-**RAG Agent with hybrid search** — Combines BM25 keyword search + vector embeddings for retrieval. Enters agentic comparison mode for "Compare X vs Y" queries — decomposes into sub-queries, retrieves independently, synthesizes.
+**SQL Agent with auto-correction and parser guardrails** — Converts plain English to SQL via Gemini → Groq cascade. Auto-corrects typos ("Wset" → "West"). Resolves ambiguity ("best product" → "best product by revenue"). Generated SQL is parsed with `sqlglot` — only read-only `SELECT`/`WITH` statements execute; `DROP`, `DELETE`, `ALTER`, and multi-statement queries are rejected at the AST level, not keyword matching.
 
-**Web Agent with controlled LLM usage** — Exact product prices, ranges, extremes, counts, and discount calculations are built directly from product evidence. Interpretive questions such as market positioning still use the LLM. Nine live sources cover five product categories:
+**RAG Agent with hybrid search + reranker** — Combines BM25 keyword + vector embeddings for first-pass retrieval (43 PDFs, 425 chunks). Cross-encoder reranker (`ms-marco-MiniLM-L-6-v2`) re-scores top-20 candidates for precision. Adaptive HyDE: generates a hypothetical answer to improve retrieval only when confidence score falls below threshold (zero LLM cost on normal queries). Agentic comparison mode decomposes "Compare X vs Y" into sub-queries.
 
-| Category | Scrapers |
+**Web Agent with controlled LLM usage** — Exact product prices, ranges, extremes, counts, and discounts are computed deterministically from scraped evidence (no LLM). Interpretive questions use a compact filtered prompt. Named-competitor questions use that competitor's evidence only. Nine live sources across five categories:
+
+| Category | Sources |
 |----------|---------|
 | Electronics | Newegg (BeautifulSoup), Goal Zero (Shopify API) |
 | Home Goods | IKEA (JSON API) |
@@ -118,21 +146,83 @@ Six route types:
 | Food/Supplements | Swanson, NativePath (Shopify API) |
 | Clothing | Taylor Stitch, Chubbies, Finisterre (Shopify API) |
 
-The dashboard distinguishes live results, fresh cache, and stale cache. If a live refresh fails, cached pricing is used for at most seven days and the answer discloses its capture time and failed refresh. Sample fallback data is disabled by default and can be enabled only for an explicit demo with `WEB_ALLOW_SAMPLE_FALLBACK=true`. The IKEA scraper uses a direct JSON API path so the deployed container can run without Selenium.
+**Cross-validation engine** — Extracts dollar amounts from SQL answer text and PDF content, normalizes formats (`$45.2M` vs `$45,200,000`), and computes match confidence. HIGH (< 1% diff), MEDIUM (< 10%), LOW (> 10% or conflict). HIGH-confidence answers are formatted deterministically — no extra LLM call. LLM synthesis fires only on conflict or ambiguity.
 
-**Cross-validation engine** — Extracts dollar amounts from both SQL answer text and PDF content, normalizes formats ($45.2M vs $45,200,000), and computes match confidence within 10% tolerance.
+**Production agent harness** — Optional controlled execution layer with bounded steps, per-step task state, retries on transient failures, and harness metadata in traces (`NEXUSIQ_USE_PRODUCTION_HARNESS=true`).
 
-**Chart builder** — Appears automatically on SQL results with numeric data. Supports bar, line, scatter, pie charts with export to CSV / JSON / Excel.
+**Evaluation system** — 125 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
 
-**Automated test runner** — 105 test queries across 8 categories and 3 difficulty levels. Run with `python run_tests.py`.
+**Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Optional Langfuse integration (`NEXUSIQ_LANGFUSE_ENABLED=1`). AWS CloudWatch in production.
+
+**Conversation memory + query resolution** — Rolls last 5 turns for context-aware follow-ups. Short/ambiguous follow-ups ("q1?") are expanded to standalone questions before hitting SQL/RAG/Web agents. Self-contained questions bypass rewriting to prevent context pollution.
+
+**Dynamic ingestion pipeline** — CLI for status, incremental PDF add/replace, smart sync, and cache management. BM25 index auto-refreshes on document changes in a running app.
+
+**Chart builder** — Appears automatically on SQL results with numeric data. Supports bar, line, scatter, pie with export to CSV / JSON / Excel / Markdown.
+
+---
+
+## API & MCP Server
+
+### REST API (FastAPI)
+
+The REST API runs alongside the Streamlit UI on the same EC2 container.
+
+**Base URL:** `https://nexusiq-ai.com/api/v1`
+**Swagger UI:** `https://nexusiq-ai.com/api/v1/docs`
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | System health — SQL ping, Chroma count, agent status |
+| `/agents/status` | GET | Per-agent status and model info |
+| `/metrics` | GET | Request counts, latency, cache hit rate |
+| `/query` | POST | Full fusion query (SQL + RAG + Web) with confidence + route |
+| `/query/stream` | POST | SSE streaming — per-agent progress events |
+| `/sql` | POST | SQL-only natural language query |
+| `/rag` | POST | Document-only semantic search |
+
+```bash
+# Example: full fusion query
+curl -X POST https://nexusiq-ai.com/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What was Q4 2024 Electronics revenue?"}'
+
+# Response includes: answer, confidence, route, cached, sources, trace_id
+```
+
+### MCP Server
+
+NexusIQ exposes four tools via the Model Context Protocol — usable in Claude Desktop, Cursor, VS Code Copilot, and Zed.
+
+| Tool | Use for |
+|------|---------|
+| `query_database` | Exact SQL-only totals, rankings, counts, breakdowns |
+| `search_business_documents` | PDF-only evidence retrieval with citations |
+| `query_business_intelligence` | SQL + PDF cross-validation with confidence score |
+| `get_competitor_pricing` | Live competitor pricing across 5 categories |
+
+**Claude Desktop setup:**
+```json
+{
+  "mcpServers": {
+    "nexusiq": {
+      "command": "/path/to/NexusIQ-AI/.venv311/bin/python",
+      "args": ["-m", "mcp_server.server"],
+      "env": {
+        "TRANSFORMERS_OFFLINE": "1",
+        "HF_DATASETS_OFFLINE": "1"
+      }
+    }
+  }
+}
+```
 
 ---
 
 ## Demo
 
-> 🔗 **Live Demo:** [NexusIQ-AI](https://nexusiq-ai.com)
-
-The public demo is deployed on AWS EC2 behind Caddy HTTPS at `nexusiq-ai.com`. GitHub Actions builds the Docker image, pushes it to ECR, and restarts the EC2 container on every push to `main`.
+> 🔗 **Live App:** [nexusiq-ai.com](https://nexusiq-ai.com)
+> 📡 **API Docs:** [nexusiq-ai.com/api/v1/docs](https://nexusiq-ai.com/api/v1/docs)
 
 ### Screenshots
 
@@ -144,25 +234,29 @@ The public demo is deployed on AWS EC2 behind Caddy HTTPS at `nexusiq-ai.com`. G
 |--------------------|------------|
 | ![Multi-Agent](Screenshots/mutli-agent.png) | ![Chart](Screenshots/chart.png) |
 
----
-
-**Example interactions:**
+### Example interactions
 
 ```
 "What was Q4 2024 revenue?"
-→ sql_rag | SQL: $45.2M | RAG: $45.2M | ✅ HIGH confidence
+→ sql_rag | SQL: $59.3M | RAG: $59.3M | ✅ HIGH confidence | deterministic format
 
-"Compare Q3 and Q4 2024 performance across all metrics"
-→ sql_rag | Agentic decomposition into 3 sub-queries | MEDIUM confidence
+"Validate Q4 Electronics revenue across SQL and PDF reports"
+→ sql_rag | SQL: $31,270,715 | RAG: $31.3M | ✅ HIGH (0.03% delta) | no LLM synthesis
 
 "What Goal Zero products and prices are available?"
-→ web_only | deterministic calculation from Goal Zero evidence | no answer LLM required
+→ web_only | deterministic calculation from Goal Zero evidence | Answer method: Calculated
+
+"Compare Q3 and Q4 2024 performance across all metrics"
+→ sql_rag | agentic decomposition into sub-queries | sources cited
 
 "What was revenue in 2020?"
-→ no_data | "Data only covers 2024. SQL and RAG cannot answer this."
+→ no_data | "Data covers 2024 only. SQL and RAG cannot answer this."
 
 "Wset region revenue?"
-→ Auto-corrected to "West region" | sql_rag | answer returned
+→ auto-corrected to "West region" | sql_rag | answer returned
+
+"What is the return policy?"
+→ rag_only | Returns_Refunds_Policy.pdf | 30-day window, category rules, holiday extension
 ```
 
 ---
@@ -173,8 +267,8 @@ The public demo is deployed on AWS EC2 behind Caddy HTTPS at `nexusiq-ai.com`. G
 git clone https://github.com/premsai-pendela/NexusIQ-AI.git
 cd NexusIQ-AI
 
-python -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+python3.11 -m venv .venv311
+source .venv311/bin/activate   # Windows: .venv311\Scripts\activate
 
 pip install -r requirements.txt
 ```
@@ -185,262 +279,141 @@ Create `.env`:
 GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
 DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@POOLER_HOST:6543/postgres
-# Optional demo mode only; leave false for evidence-grounded Web answers
+
+# Optional features
+NEXUSIQ_USE_LANGGRAPH=true
+NEXUSIQ_USE_PRODUCTION_HARNESS=false
+NEXUSIQ_LANGFUSE_ENABLED=0
 WEB_ALLOW_SAMPLE_FALLBACK=false
 ```
 
-Inspect the Supabase relational source or refresh local document retrieval data:
+Check data state and sync documents:
 
 ```bash
 python -m database.ingestion_pipeline status
-python -m database.ingestion_pipeline refresh-all --dry-run
+python -m database.ingestion_pipeline sync-rag --dry-run
 python -m database.ingestion_pipeline sync-rag
 ```
 
 Run the app:
 
 ```bash
+# Streamlit UI
 streamlit run main.py
+
+# FastAPI + Streamlit (same as production)
+sh -c 'uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1 & streamlit run main.py --server.port 8080'
 ```
 
-Open `http://localhost:8501`
+Open `http://localhost:8501` (UI) or `http://localhost:8000/docs` (API).
 
 ---
 
 ## Production Deployment
 
-NexusIQ is deployed as a containerized Streamlit app on AWS:
+NexusIQ runs as a containerized dual-service app on AWS EC2.
 
-| Layer | Production choice |
-|-------|-------------------|
+| Layer | Production |
+|-------|------------|
 | Public URL | `https://nexusiq-ai.com` |
-| Compute | EC2 `t3.small` running the Streamlit Docker container |
-| HTTPS proxy | Caddy reverse proxy to Streamlit on port `8080` |
+| API URL | `https://nexusiq-ai.com/api/v1` |
+| Compute | EC2 `t3.small` — Docker container (linux/amd64) |
+| Services | Streamlit (port 8080) + FastAPI/uvicorn (port 8000) in one container |
+| HTTPS | Caddy reverse proxy — Streamlit at `/`, API at `/api/*` |
 | Image registry | Amazon ECR |
-| CI/CD | GitHub Actions deploys `main` to EC2 |
-| Secrets | AWS Secrets Manager for Google, Groq, and database credentials |
+| CI/CD | GitHub Actions → ECR push → EC2 deploy on every push to `main` |
+| Secrets | AWS Secrets Manager (Gemini, Groq, database, Langfuse) |
 | Document archive | S3 PDF archive |
-| Traces | CloudWatch trace foundation plus local trace inspector |
-| Database | PostgreSQL via the current `DATABASE_URL`; RDS/pgvector is planned |
-
-Local development still uses the same app entry point:
+| Observability | CloudWatch logs + local traces + LLM task ledger |
+| Database | Supabase PostgreSQL (all envs hit same DB — no data drift) |
 
 ```bash
-streamlit run main.py
+# CI/CD: one command ships to production
+git push origin main
 ```
-
-Streamlit Cloud remains available as a backup demo path, but AWS is the primary production deployment.
 
 ---
 
-## Automated Testing
+## Testing & Evaluation
 
 ```bash
-# Fast deterministic validation suite
+# Full deterministic test suite (125 tests)
 python -m unittest discover -s tests -v
 
-# Offline SQL/RAG/Web validation harness (no API calls)
+# Offline eval harness (no LLM/DB calls)
 python -m evals.offline_eval
 
-# Production-style golden evals
+# Production golden evals
 python -m evals.golden_eval --dry-run
 python -m evals.golden_eval --limit 3
-python -m evals.golden_eval --replay latest
+python -m evals.golden_eval --limit 3 --with-judge
 python -m evals.golden_eval --answer-only --delay 8 --retries 1
+python -m evals.golden_eval --replay latest
 
-# Refresh golden expected numbers from configured DATABASE_URL
+# RAG retrieval benchmark (43 queries — Hit@5, MRR, Context Recall)
+python -m evals.rag_eval
+python -m evals.rag_eval --quick
+
+# Refresh golden truth from live Supabase
 python -m evals.refresh_golden_truth --dry-run
-
-# Inspect local AI observability traces
-python -m observability.inspect_traces --latest
-tail -n 30 data/query_traces.jsonl
-
-# Inspect LLM task usage generated across SQL, RAG, Fusion, and Web
-python -m observability.inspect_llm_usage
-
-# Run all 105 queries
-python run_tests.py
-
-# Run by phase
-python run_tests.py --phase 1   # Basic functionality (5 queries)
-python run_tests.py --phase 2   # Cross-validation (3 queries)
-python run_tests.py --phase 3   # Edge cases (5 queries)
-python run_tests.py --phase 4   # Advanced multi-source (6 queries)
-python run_tests.py --phase 5   # Chart builder SQL (4 queries)
-
-# Run specific queries
-python run_tests.py --ids 46,85,91
-
-# Run a section
-python run_tests.py --section "SQL ONLY"
-
-# Dry run (print queries without executing)
-python run_tests.py --dry-run
+python -m evals.refresh_golden_truth
 ```
 
-Reports are saved to `.gstack/test-reports/` as Markdown + JSON.
+**Current results:**
+- Unit + contract tests: **125/125 passing**
+- Offline evals: **7/7 passing**
+- RAG benchmark: **97.7% Hit@5 · 0.919 Context Recall · 0.778 MRR**
 
-See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live multi-agent test runs. See [docs/observability.md](docs/observability.md) for local trace debugging and the LLM task ledger.
+See [docs/evaluation.md](docs/evaluation.md) for the difference between unit tests, offline evals, and live golden evals.
 
-**Current deterministic test results: 56/56 passing.**
+---
+
+## Observability
+
+```bash
+# Inspect latest query trace
+python -m observability.inspect_traces --latest
+python -m observability.inspect_traces --latest --json
+
+# Quick terminal scan (JSONL index)
+tail -n 30 data/query_traces.jsonl
+
+# LLM task usage (task, model, latency, tokens)
+tail -n 20 data/llm_task_ledger.jsonl
+```
+
+Every answer includes a "How NexusIQ Ran This Answer" panel in the UI showing route, total time, validation confidence, router model, slowest span, and trace ID.
+
+See [docs/observability.md](docs/observability.md) for Langfuse setup and CloudWatch integration.
 
 ---
 
 ## Ingestion Pipeline
 
-NexusIQ keeps structured sales data, business PDFs, and the ChromaDB vector index in sync through one CLI:
-
 ```bash
-# Show SQL row counts, PDF inventory, Chroma document count, and cache files
+# Show SQL row counts, PDF inventory, Chroma count, cache files
 python -m database.ingestion_pipeline status
 
-# Preview document-index refresh without writing Chroma files
-python -m database.ingestion_pipeline refresh-all --dry-run
-
-# SQL facts are protected: this reports that Supabase replacement is disabled
-python -m database.ingestion_pipeline rebuild-sql
-
-# Rebuild the ChromaDB document index from data/pdfs/
-python -m database.ingestion_pipeline rebuild-rag
-
-# Smart-sync only new, changed, or deleted PDFs using the manifest
+# Smart-sync only new, changed, or deleted PDFs
 python -m database.ingestion_pipeline sync-rag --dry-run
 python -m database.ingestion_pipeline sync-rag
 
-# Incrementally add or replace one PDF without rebuilding every document
-python -m database.ingestion_pipeline add-pdf --path data/pdfs/01_financial/example.pdf --category 01_financial
+# Incrementally add or replace one PDF
+python -m database.ingestion_pipeline add-pdf \
+  --path data/pdfs/01_financial/example.pdf \
+  --category 01_financial
 
-# Preserve Supabase SQL facts and rebuild local RAG
-python -m database.ingestion_pipeline refresh-all
+# Full Chroma rebuild from all PDFs
+python -m database.ingestion_pipeline rebuild-rag
+
+# Preview without writing
+python -m database.ingestion_pipeline refresh-all --dry-run
 
 # Remove local runtime caches only
 python -m database.ingestion_pipeline clear-caches
 ```
 
-Use `sync-rag` for everyday document folder updates. It hashes PDFs, skips unchanged files, updates new or edited PDFs, removes chunks for deleted PDFs, and bumps the ingestion version only when something changed. Use `rebuild-rag` when you want a clean full reset from all PDFs.
-
-`DATABASE_URL` is the only supported relational data source and should point to Supabase PostgreSQL. `refresh-all` preserves those SQL facts and rebuilds only generated local RAG state. Do not commit runtime/cache outputs from `data/chroma_db/`, including `data/chroma_db/ingestion_version.json` and `data/chroma_db/pdf_manifest.json`, `data/web_cache.json`, `data/quota_tracker.json`, `data/llm_task_ledger.jsonl`, `data/query_traces.jsonl`, `traces/`, `eval-reports/`, or `.gstack/` unless you intentionally want to update a tracked baseline.
-
-### Enterprise Data Expansion
-
-The deployed 2024 Supabase dataset remains the validated truth baseline. A
-separate generator creates versioned, linked staging extracts for a larger
-2021-through-June-2026 retail scenario without connecting to Supabase or
-overwriting live tables:
-
-```bash
-# Inspect the intended 5-million-transaction portfolio dataset
-python -m database.generate_enterprise_expansion plan --profile portfolio
-
-# Produce a smaller local staging dataset first
-python -m database.generate_enterprise_expansion generate --profile pilot
-python -m database.generate_enterprise_expansion validate --dataset-dir data/expansion/enterprise_pilot_v1
-```
-
-The portfolio profile includes customers, products, stores, vendors,
-promotions, transactions, returns, inventory snapshots, support cases, and a
-business-event timeline. Its future five-million-row sales view is composed
-of the untouched 100,000-row live 2024 baseline plus 4,900,000 generated rows
-outside 2024, so current PDF cross-validation remains valid. Generated files
-are ignored under `data/expansion/`; they must eventually be loaded into a
-dedicated staging namespace and validated before any reviewed production promotion. See
-[docs/data_expansion_plan.md](docs/data_expansion_plan.md).
-
-The generator validates linked staged rows and rejects generated sales inside
-the protected 2024 PDF-aligned period. New reporting-year PDFs must be
-generated from staged SQL aggregates and pass SQL-to-PDF golden evaluation
-before the expanded data can replace the live query source.
-
-Review the isolated Supabase staging load locally before approving any remote
-write:
-
-```bash
-python -m database.load_enterprise_staging plan --dataset-dir data/expansion/enterprise_pilot_v1
-python -m database.load_enterprise_staging ddl --dataset-dir data/expansion/enterprise_pilot_v1
-```
-
-The execution command is locked behind an explicit staging-only confirmation
-token and loads only `nexusiq_expansion_staging`; it does not modify existing
-public production tables. Load the pilot dataset before the full portfolio
-extract.
-
-Plan the next SQL-to-PDF evidence step without connecting to Supabase or
-writing documents:
-
-```bash
-python -m database.generate_pilot_financial_pdfs plan
-python -m database.generate_pilot_financial_pdfs sql
-```
-
-The pilot document generator is locked to direct generated tables in
-`nexusiq_expansion_staging` for `enterprise_pilot_v1`; it never reads the
-combined view containing public live rows and excludes the protected 2024
-reporting year. When separately approved, generation requires the
-acknowledgement token `GENERATE_PILOT_PDFS_FROM_STAGING_ONLY` and atomically
-publishes all new-period PDFs under the repository-owned
-`data/pdfs_staging/enterprise_pilot_v1/validated_v2/01_financial/` directory, outside the
-existing `data/pdfs/` archive and local RAG index.
-Only `validated_v2` is eligible for pilot indexing; older staged pilot
-document folders are superseded and must remain unindexed.
-
-After staged PDFs have been separately reviewed, inspect the isolated pilot
-RAG and alignment work without opening Chroma or the database:
-
-```bash
-python -m database.pilot_document_phase plan-ingestion
-python -m database.pilot_document_phase plan-alignment
-python -m database.pilot_document_phase plan-index-alignment
-```
-
-Execution remains gated. PDF-to-SQL validation can be run independently, and
-is also required inside ingestion before the isolated index can be published:
-
-```bash
-python -m database.pilot_document_phase validate-alignment \
-  --execute-remote \
-  --confirm-staging-only VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
-
-python -m database.pilot_document_phase ingest \
-  --execute \
-  --confirm-staging-only INGEST_PILOT_PDFS_TO_ISOLATED_STAGING_ONLY \
-  --confirm-pdf-validation VALIDATE_PILOT_PDFS_AGAINST_STAGING_SQL_ONLY
-
-python -m database.pilot_document_phase validate-index-alignment \
-  --execute-remote \
-  --confirm-staging-only VALIDATE_PILOT_STAGING_INDEX_AGAINST_STAGING_SQL_ONLY
-```
-
-Pilot ingestion writes only to
-`data/chroma_staging/enterprise_pilot_v1/validated_v2/financial_documents/` in the
-separate `nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2` collection,
-published atomically only after PDF headline revenue and transaction totals pass.
-The final index-alignment validation proves that evidence retrieved from this
-isolated staged index matches direct staging SQL aggregates.
-Production PDFs, `data/chroma_db/`, and the live `nexusiq_docs` RAG collection
-remain untouched until staging SQL-to-PDF/index validation passes.
-
-### Enterprise Pilot Demo Mode
-
-The Fusion Agent page now has two explicit evidence workspaces:
-
-- `Live Baseline (2024)` continues to use the production Supabase transaction table,
-  the `nexusiq_docs` collection, and live web pricing.
-- `Enterprise Pilot (Validated Staging)` uses only the read-only
-  `nexusiq_expansion_staging.combined_sales_transactions_enterprise_pilot_v1_793cb277`
-  view and the isolated
-  `nexusiq_pilot_financial_docs_enterprise_pilot_v1_validated_v2` collection.
-
-Pilot mode displays the verified 250,000-transaction / $340.66M combined
-staging scale and guided FY 2021-FY 2023, FY 2025, and H1 2026 evidence
-questions. It disables Web routing and refuses to treat production documents
-as pilot evidence. The live experience remains the default.
-
-The pilot PDFs and Chroma index are ignored runtime artifacts rather than Git
-assets. The EC2 deployment script provisions them in dedicated persistent
-Docker volumes before replacing the running app container and re-runs
-PDF-to-SQL and index-to-SQL validation on each deployment. If a partial pilot
-artifact set is found, deployment fails rather than overwriting evidence
-automatically.
+Use `sync-rag` for everyday updates — hashes PDFs, skips unchanged files, removes stale chunks, auto-bumps ingestion version. BM25 index refreshes automatically in a running app on the next query after a version change.
 
 ---
 
@@ -448,12 +421,11 @@ automatically.
 
 ### SQL Only
 ```
-What is the total revenue?
-Top 5 products by revenue                   → Bar chart
-Show sales by region                        → Bar chart
-Monthly sales trend for 2024               → Line chart
-Payment method distribution                → Pie chart
-Year-over-year growth rate by quarter
+What is the total 2024 revenue?
+Top 5 products by revenue                    → bar chart
+Show sales by region                         → bar chart
+Monthly sales trend for 2024                 → line chart
+Payment method distribution                  → pie chart
 Which store in the East region performed best?
 ```
 
@@ -462,35 +434,40 @@ Which store in the East region performed best?
 What is the return policy?
 What are the Q4 2024 strategic priorities?
 What is the Digital Wallet initiative?
-Compare Q3 and Q4 2024 performance across all metrics
+Summarize the inventory reorder SOP
+What happened during the Black Friday incident?
 ```
 
 ### Web Only
 ```
 What are competitor prices for electronics?
-How do IKEA's home goods prices compare to ours?
-What is the price range for camping gear at competitors?
+What Goal Zero products and prices are available?
+Show discounted clothing products and original prices
+Price range for camping gear at competitors?
 ```
 
-### SQL + RAG Fusion (Cross-Validation)
+### SQL + RAG (Cross-Validation)
 ```
 What was Q4 2024 revenue?
-Validate Q4 2024 Electronics revenue against reports
-Compare Q3 and Q4 revenue with full validation
+Validate Q4 Electronics revenue across SQL and PDF reports
+Compare Q3 and Q4 2024 revenue with full validation
+Annual 2024 revenue — validate across sources
 ```
 
 ### All Sources
 ```
 Complete Q4 2024 analysis: validate revenue, compare competitor pricing, assess strategy
 Full business intelligence: quarterly numbers, strategic goals, competitor benchmarks
+Explain why West region outperformed South in 2024
 ```
 
 ### Edge Cases
 ```
-What was revenue in Wset region?           → Auto-corrects to "West"
-Show me sales for Electrnics               → Infers "Electronics"
-What was revenue in 2020?                  → Returns "no data" (data covers 2024 only)
-What is the best product?                  → Auto-resolves to "by revenue"
+"Wset region revenue?"         → auto-corrected to "West"
+"Electrnics sales?"            → inferred as "Electronics"
+"Revenue in 2020?"             → no_data (data covers 2024 only)
+"Best product?"                → auto-resolved to "by revenue"
+"q1?" (after prior Q4 query)  → resolved to "Q1 2024 Electronics revenue"
 ```
 
 ---
@@ -500,12 +477,14 @@ What is the best product?                  → Auto-resolves to "by revenue"
 | Attribute | Value |
 |-----------|-------|
 | Transactions | 100,000 |
-| Revenue | ~$175.16M |
+| Revenue | $175,595,178 |
 | Time Period | Jan 2024 – Dec 2024 |
 | Regions | East, West, North, South, Central |
 | Categories | Electronics, Clothing, Food, Home, Sports |
 | Payment Methods | Credit Card, Debit Card, Digital Wallet, Cash |
-| PDF Documents | 25 (quarterly reports, strategy, compliance, policies) |
+| Seasonal pattern | Q1 $26.9M → Q4 $59.3M (realistic retail distribution) |
+| PDF Documents | 43 (quarterly reports, SOPs, incident reports, analyst memos, policy docs) |
+| ChromaDB chunks | 425 |
 
 ---
 
@@ -513,17 +492,27 @@ What is the best product?                  → Auto-resolves to "by revenue"
 
 | Layer | Technology |
 |-------|-----------|
+| Orchestration | LangGraph (StateGraph, typed nodes, conditional edges) |
 | LLM (Primary) | Gemini 2.5 Flash |
 | LLM (Fallback) | Groq Llama 3.3 70B |
-| LLM (Local) | Ollama |
-| SQL Engine | PostgreSQL (Supabase) · SQLAlchemy |
-| Vector DB | ChromaDB |
-| Embeddings | `all-MiniLM-L6-v2` (sentence-transformers) |
-| BM25 Search | `rank_bm25` |
-| Web Scraping | httpx, BeautifulSoup, Shopify APIs |
-| Frontend | Streamlit |
+| LLM (Local dev) | Ollama |
+| REST API | FastAPI + uvicorn + slowapi |
+| MCP Server | fastmcp (4 tools) |
+| SQL Engine | PostgreSQL (Supabase) · SQLAlchemy · sqlglot (parser safety) |
+| Vector DB | ChromaDB (cosine distance) |
+| Embeddings | `all-MiniLM-L6-v2` (sentence-transformers, 384 dim) |
+| Reranker | `ms-marco-MiniLM-L-6-v2` (cross-encoder, ~22MB CPU) |
+| BM25 | `rank_bm25` |
+| Web Scraping | httpx · BeautifulSoup · Shopify JSON API |
+| Frontend | Streamlit 1.51+ |
 | Charts | Plotly |
-| Data | Pandas |
+| Data | Pandas · NumPy |
+| Containerization | Docker (linux/amd64) |
+| Cloud | AWS EC2 · ECR · S3 · Secrets Manager · CloudWatch |
+| CI/CD | GitHub Actions |
+| HTTPS | Caddy + Let's Encrypt |
+| DNS | Cloudflare |
+| Observability | Local JSON traces · JSONL ledger · Langfuse (optional) · CloudWatch |
 
 ---
 
@@ -532,31 +521,83 @@ What is the best product?                  → Auto-resolves to "by revenue"
 ```
 NexusIQ-AI/
 ├── agents/
-│   ├── fusion_agent.py      # Routing + orchestration
-│   ├── sql_agent.py         # NL → SQL → answer
-│   ├── rag_agent.py         # Hybrid BM25 + vector retrieval
-│   └── web_agent.py         # Competitor scraping
-├── ui/
-│   └── fusion_chat.py       # Streamlit UI
-├── utils/
-│   ├── validators.py        # Typo correction, ambiguity resolution
-│   └── quota_tracker.py     # Circuit breaker for LLM quotas
+│   ├── fusion_agent.py        # Original orchestration (rollback path)
+│   ├── fusion_graph.py        # LangGraph orchestration (production)
+│   ├── _singleton.py          # Shared agent instances (FastAPI + Streamlit)
+│   ├── production_harness.py  # Bounded controller + task state
+│   ├── sql_agent.py           # NL → SQL → answer (sqlglot safety)
+│   ├── rag_agent.py           # Hybrid BM25 + vector + reranker
+│   └── web_agent.py           # Competitor scraping (9 sources)
+├── api/
+│   ├── main.py                # FastAPI app + lifespan pre-warm
+│   ├── routes/
+│   │   ├── query.py           # POST /query, POST /query/stream (SSE)
+│   │   ├── agents.py          # POST /sql, POST /rag
+│   │   └── health.py          # GET /health, /agents/status, /metrics
+│   ├── models/schemas.py      # Pydantic v2 request/response models
+│   └── middleware/auth.py     # API key auth
+├── mcp_server/
+│   └── server.py              # 4 MCP tools + 2 resources + 1 prompt template
+├── config/
+│   ├── settings.py            # Pydantic config + feature flags
+│   ├── company_data.py        # Single source of truth for business metrics
+│   └── data_inventory.py      # RAG routing patterns
 ├── database/
-│   └── ingestion_pipeline.py # SQL/RAG refresh workflow
+│   └── ingestion_pipeline.py  # CLI: status, sync-rag, add-pdf, rebuild-*
 ├── observability/
-│   └── tracer.py            # Local + CloudWatch trace hooks
+│   ├── tracer.py              # Local JSON traces + JSONL index + CloudWatch
+│   ├── langfuse_adapter.py    # Optional Langfuse integration
+│   └── inspect_traces.py      # CLI trace inspector
+├── utils/
+│   ├── llm_gateway.py         # Centralized model calls + task ledger
+│   ├── validators.py          # Typo correction, ambiguity resolution
+│   ├── quota_tracker.py       # Circuit breaker
+│   └── query_normalization.py # Canonical question matching
 ├── evals/
-│   └── golden_eval.py       # Production-style golden eval runner
-├── data/
-│   └── chroma_db/           # Vector store
-├── run_tests.py             # Automated test runner
-├── test_queries.txt         # 105 test queries across 8 categories
-└── main.py                  # Entry point
+│   ├── golden_eval.py         # Live golden eval runner
+│   ├── golden_cases.json      # 12 golden cases
+│   ├── offline_eval.py        # No-API deterministic harness
+│   ├── rag_eval.py            # 43-query RAG benchmark
+│   ├── judge.py               # Optional LLM-as-judge
+│   └── refresh_golden_truth.py
+├── tests/
+│   ├── test_validation_contracts.py  # 90+ contract + routing tests
+│   ├── test_fusion_graph.py          # LangGraph route tests
+│   ├── test_ingestion_pipeline.py    # Ingestion tests
+│   ├── test_production_harness.py    # Harness tests
+│   ├── test_langfuse_observability.py
+│   └── test_sql_safety.py            # sqlglot guardrail tests
+├── ui/
+│   └── fusion_chat.py         # Streamlit UI + observability panel
+├── docs/
+│   ├── evaluation.md
+│   ├── observability.md
+│   └── sql_guardrails.md
+├── data/pdfs/                 # 43 business documents (8 categories)
+├── Dockerfile                 # linux/amd64, dual-service (uvicorn + streamlit)
+├── main.py                    # Streamlit entry point
+└── requirements.txt
 ```
+
+---
+
+## Key Engineering Decisions
+
+| Decision | Rationale |
+|----------|-----------|
+| LangGraph over custom-only orchestration | Formalizes existing graph-like workflow; typed state, testable nodes, explainable in interviews. Custom FusionAgent preserved as rollback. |
+| Hybrid BM25 + vector search | Vector alone misses exact keywords (Q4, Electronics, $31.7M). BM25 catches those; vector catches semantic matches. |
+| Cross-encoder reranker | Re-scores top-20 hybrid candidates; higher precision especially when wrong doc type retrieves first. |
+| Adaptive HyDE | Checks retrieval confidence before spending an LLM call; normal queries pay zero cost. |
+| Deterministic synthesis for HIGH confidence | Formatting validated facts directly is faster, cheaper, more stable than LLM paraphrase. LLM fires only on conflict. |
+| sqlglot AST-based SQL safety | Parser understands SQL grammar — distinguishes `created_at` column from `CREATE` command. Regex matching had false positives. |
+| ThreadPoolExecutor for parallelism | All agents are I/O-bound. Threads release GIL during I/O. Zero agent code changes. asyncio would require full sync→async rewrite. |
+| TTL dict cache | No deps, no infra, bounded memory, auto-expires. Redis overkill for single-user demo. Quality-gated: degraded or low-confidence answers not cached. |
+| Delete-then-upsert for PDF ingestion | Upsert alone leaves stale chunks when an edited PDF shrinks. Delete first ensures only fresh chunks remain. |
 
 ---
 
 ## Author
 
 **Naga Prem Sai Pendela**
-GitHub: [premsai-pendela](https://github.com/premsai-pendela)
+[GitHub](https://github.com/premsai-pendela) · [LinkedIn](https://www.linkedin.com/in/nagapremsai-pendela/) · [Portfolio](https://tinyurl.com/naga-portfolio)

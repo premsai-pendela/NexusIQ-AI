@@ -69,6 +69,97 @@ Current task coverage:
 
 JSON-producing tasks validate their response before accepting it. If a router or RAG decomposition model returns malformed JSON, the gateway records an invalid-response attempt and tries its fallback model without treating the provider as quota-down.
 
+## Production Harness Traces
+
+By default, NexusIQ wraps Fusion Agent execution in the production harness.
+Trace metadata marks the outer orchestrator as `production_harness`. The default
+harness engine is LangGraph, so successful responses also include
+`harness_engine: langgraph` and `workflow_orchestrator: langgraph`.
+
+The primary/default span is:
+
+- `harness.run_langgraph_workflow`
+
+If LangGraph fails or is disabled, the harness falls back to native controlled
+steps such as:
+
+- `harness.cache_lookup`
+- `harness.route_question`
+- `harness.resolve_question`
+- `harness.run_sql`
+- `harness.run_rag`
+- `harness.run_web`
+- `harness.run_multi_source`
+- `harness.validate_sources`
+- `harness.generate_fused_answer`
+- `harness.cache_admission`
+
+Responses include `harness_task_id`, completed steps, and failed steps. Local
+task snapshots are appended to `data/harness_tasks.jsonl`, which is ignored by
+git. See `docs/production_harness.md` for the production-first workflow and
+fallback flags.
+
+## Langfuse Export
+
+NexusIQ mirrors safe observability metadata to Langfuse automatically when
+Langfuse credentials are present. Local JSON traces and the local LLM ledger
+remain the source of truth.
+
+Install dependencies from `requirements.txt`, then set:
+
+```bash
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+# Optional for self-hosted Langfuse. NexusIQ supports both names:
+LANGFUSE_BASE_URL=https://cloud.langfuse.com
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+Then run the app normally:
+
+```bash
+streamlit run main.py
+```
+
+To disable Langfuse explicitly:
+
+```bash
+NEXUSIQ_LANGFUSE_ENABLED=0 streamlit run main.py
+```
+
+What is exported:
+
+- Fusion trace summaries: route, orchestrator, duration, cache status, validation summary.
+- LLM generation metadata: task name, model, provider type, latency status, prompt hash, and estimated tokens.
+
+What is not exported by default:
+
+- Raw prompts.
+- Raw database URLs or API keys.
+- Full retrieved document text.
+
+This keeps Langfuse useful for production debugging while preserving the same
+privacy posture as the local trace and ledger system.
+
+For the AWS EC2 deployment, store the values in AWS Secrets Manager:
+
+```bash
+aws secretsmanager create-secret \
+  --name nexusiq/langfuse-public-key \
+  --secret-string "pk-lf-..."
+
+aws secretsmanager create-secret \
+  --name nexusiq/langfuse-secret-key \
+  --secret-string "sk-lf-..."
+
+aws secretsmanager create-secret \
+  --name nexusiq/langfuse-host \
+  --secret-string "https://cloud.langfuse.com"
+```
+
+`scripts/deploy_ec2.sh` reads those optional secrets if present and passes them
+to the Docker container. Missing Langfuse secrets do not block deployment.
+
 Disable ledger writes with:
 
 ```bash

@@ -38,7 +38,7 @@ The system routes each question to the right source(s), runs agents in parallel,
 - Cross-validation precision: **0.03% SQL↔PDF delta** on matching facts
 - Multi-source query latency: **5–12 seconds**
 - Repeat queries (cached): **< 100ms**
-- Test coverage: **125 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
+- Test coverage: **127 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
 
 ---
 
@@ -49,9 +49,9 @@ User Question (plain English)
          │
          ▼
 ┌──────────────────────────────┐
-│       LANGGRAPH GRAPH        │  ← Typed state graph (fusion_graph.py)
-│   Stateful node-by-node      │    Feature flag: NEXUSIQ_USE_LANGGRAPH=true
-│   orchestration with         │    Rollback: original FusionAgent preserved
+│ PRODUCTION HARNESS + GRAPH   │  ← Harness default, LangGraph primary engine
+│   Stateful node-by-node      │    Fallback: native harness, then legacy FusionAgent
+│   orchestration with         │    Opt out: NEXUSIQ_USE_PRODUCTION_HARNESS=false
 │   controlled error paths     │
 └──────────────┬───────────────┘
                │
@@ -87,9 +87,9 @@ User Question (plain English)
          + Chart (SQL results)
 ```
 
-### LangGraph Orchestration
+### Production Harness + LangGraph Orchestration
 
-NexusIQ uses **LangGraph** as the production orchestration layer over the existing agents. The graph formalizes the SQL/RAG/Web/validation workflow into typed, testable nodes:
+NexusIQ uses a **production agent harness** as the default controller and **LangGraph** as the primary workflow engine inside that harness. The graph formalizes the SQL/RAG/Web/validation workflow into typed, testable nodes:
 
 ```
 cache_lookup → route_question → resolve_question →
@@ -97,7 +97,7 @@ cache_lookup → route_question → resolve_question →
 → validation_node → answer_node → cache_admission → finalize
 ```
 
-The original custom FusionAgent is preserved as a rollback path (`NEXUSIQ_USE_LANGGRAPH=false`). LangGraph was added as a production-style orchestration layer, not a rewrite of the underlying agents.
+Fallback order is production-first: LangGraph workflow → native harness workflow → legacy direct FusionAgent flow. Opt-out flags are available for debugging (`NEXUSIQ_USE_LANGGRAPH=false`, `NEXUSIQ_USE_PRODUCTION_HARNESS=false`), but the normal app path uses the production layer.
 
 ### Routing Logic
 
@@ -148,11 +148,11 @@ LLM router fallback chain:
 
 **Cross-validation engine** — Extracts dollar amounts from SQL answer text and PDF content, normalizes formats (`$45.2M` vs `$45,200,000`), and computes match confidence. HIGH (< 1% diff), MEDIUM (< 10%), LOW (> 10% or conflict). HIGH-confidence answers are formatted deterministically — no extra LLM call. LLM synthesis fires only on conflict or ambiguity.
 
-**Production agent harness** — Optional controlled execution layer with bounded steps, per-step task state, retries on transient failures, and harness metadata in traces (`NEXUSIQ_USE_PRODUCTION_HARNESS=true`).
+**Production agent harness** — Default controlled execution layer with bounded steps, per-step task state, retries on transient failures, LangGraph as the primary workflow engine, native harness fallback, and harness metadata in traces.
 
-**Evaluation system** — 125 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
+**Evaluation system** — 127 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
 
-**Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Optional Langfuse integration (`NEXUSIQ_LANGFUSE_ENABLED=1`). AWS CloudWatch in production.
+**Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Langfuse mirrors safe metadata automatically when keys are present. AWS CloudWatch in production.
 
 **Conversation memory + query resolution** — Rolls last 5 turns for context-aware follow-ups. Short/ambiguous follow-ups ("q1?") are expanded to standalone questions before hitting SQL/RAG/Web agents. Self-contained questions bypass rewriting to prevent context pollution.
 
@@ -280,10 +280,10 @@ GOOGLE_API_KEY=your_gemini_api_key
 GROQ_API_KEY=your_groq_api_key
 DATABASE_URL=postgresql://postgres.PROJECT:PASSWORD@POOLER_HOST:6543/postgres
 
-# Optional features
-NEXUSIQ_USE_LANGGRAPH=true
-NEXUSIQ_USE_PRODUCTION_HARNESS=false
-NEXUSIQ_LANGFUSE_ENABLED=0
+# Production defaults are already on. These are optional debug overrides:
+# NEXUSIQ_USE_PRODUCTION_HARNESS=false
+# NEXUSIQ_USE_LANGGRAPH=false
+# NEXUSIQ_LANGFUSE_ENABLED=0
 WEB_ALLOW_SAMPLE_FALLBACK=false
 ```
 
@@ -327,9 +327,76 @@ NexusIQ runs as a containerized dual-service app on AWS EC2.
 | Observability | CloudWatch logs + local traces + LLM task ledger |
 | Database | Supabase PostgreSQL (all envs hit same DB — no data drift) |
 
+### Production Agent Architecture
+
+The deployed app runs the production path by default:
+
+```
+Request
+  → Production Agent Harness
+  → LangGraph workflow
+  → SQL / RAG / Web agents
+  → Cross-source validation
+  → Fused answer
+  → Local trace + LLM ledger + Langfuse metadata
+```
+
+Fallback order:
+
+1. LangGraph workflow inside the harness.
+2. Native harness workflow if LangGraph errors.
+3. Legacy direct FusionAgent flow if the production layer errors.
+
+Production safeguards:
+
+- Harness step tracking and bounded execution.
+- Parser-based SQL guardrails with `sqlglot`.
+- Cache-first behavior for repeated questions.
+- Local JSON traces in `traces/`.
+- LLM call ledger in `data/llm_task_ledger.jsonl`.
+- Langfuse tracing when keys are present.
+- AWS Secrets Manager for deployment secrets.
+
+Debug opt-outs are available but should not be used for normal production:
+
+```bash
+NEXUSIQ_USE_PRODUCTION_HARNESS=false
+NEXUSIQ_USE_LANGGRAPH=false
+NEXUSIQ_LANGFUSE_ENABLED=0
+```
+
 ```bash
 # CI/CD: one command ships to production
 git push origin main
+```
+
+### Production Health And Smoke Checks
+
+Run these after local startup or after EC2 deployment.
+
+```bash
+# Local FastAPI default
+python scripts/production_health_check.py --base-url http://localhost:8000
+python scripts/production_smoke_test.py --base-url http://localhost:8000
+
+# Public EC2/Caddy URL
+python scripts/production_health_check.py --base-url https://nexusiq-ai.com
+python scripts/production_smoke_test.py --base-url https://nexusiq-ai.com
+```
+
+If `NEXUSIQ_API_KEYS` is enabled in production, pass the key without printing it:
+
+```bash
+export NEXUSIQ_API_KEY="your-api-key"
+python scripts/production_health_check.py --base-url https://nexusiq-ai.com
+python scripts/production_smoke_test.py --base-url https://nexusiq-ai.com
+```
+
+On EC2, the same scripts can run from the repo directory against localhost:
+
+```bash
+python scripts/production_health_check.py --base-url http://localhost:8000
+python scripts/production_smoke_test.py --base-url http://localhost:8000
 ```
 
 ---
@@ -337,7 +404,7 @@ git push origin main
 ## Testing & Evaluation
 
 ```bash
-# Full deterministic test suite (125 tests)
+# Full deterministic test suite (127 tests)
 python -m unittest discover -s tests -v
 
 # Offline eval harness (no LLM/DB calls)
@@ -360,7 +427,7 @@ python -m evals.refresh_golden_truth
 ```
 
 **Current results:**
-- Unit + contract tests: **125/125 passing**
+- Unit + contract tests: **127/127 passing**
 - Offline evals: **7/7 passing**
 - RAG benchmark: **97.7% Hit@5 · 0.919 Context Recall · 0.778 MRR**
 

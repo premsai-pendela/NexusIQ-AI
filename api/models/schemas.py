@@ -36,6 +36,7 @@ class StreamEvent(BaseModel):
 class HealthResponse(BaseModel):
     status: str  # "healthy" / "degraded"
     agents: dict
+    production_features: dict = {}
     chroma_chunks: int
     cache_entries: int
     uptime_seconds: float

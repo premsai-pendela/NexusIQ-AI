@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
 
+from observability.langfuse_adapter import get_langfuse_observer
+
 logger = logging.getLogger(__name__)
 
 
@@ -273,6 +275,11 @@ class TraceSession:
         _prune_old_traces(trace_dir)
         timestamp = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
         self.path = trace_dir / f"trace-{timestamp}-{self.trace_id}.json"
+        langfuse_observer = get_langfuse_observer()
+        langfuse_url = langfuse_observer.record_trace_summary(self.data)
+        if langfuse_url:
+            self.data["langfuse_url"] = langfuse_url
+        langfuse_observer.flush()
         self.path.write_text(json.dumps(self.data, indent=2, default=str))
         _append_trace_index(self.data, self.path)
         _send_to_cloudwatch(self.data)

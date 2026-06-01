@@ -18,11 +18,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional
 
 from config.settings import settings
+from observability.langfuse_adapter import get_langfuse_observer
 
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_LEDGER_PATH = Path("data/llm_task_ledger.jsonl")
+DEFAULT_LEDGER_PATH = Path(__file__).parent.parent / "data" / "llm_task_ledger.jsonl"
 
 
 class LLMResponseValidationError(ValueError):
@@ -204,14 +205,36 @@ class LLMGateway:
                 logger.info("⏭️ Skipping %s: %s", model_name, skip_reason)
                 continue
 
+            observer = get_langfuse_observer()
+            generation = None
             try:
                 logger.info("🔄 Trying %s...", model_config.get("description", model_name))
                 client = self.client_factory(model_config, temperature)
-                response = client.invoke(prompt)
-                content = _response_text(response)
+                with observer.generation_context(
+                    task=task,
+                    model=model_name,
+                    model_type=model_config.get("type"),
+                    metadata=metadata or {},
+                    input_summary={
+                        "prompt_hash": prompt_hash,
+                        "input_tokens_estimate": prompt_tokens,
+                    },
+                ) as generation:
+                    response = client.invoke(prompt)
+                    content = _response_text(response)
                 if response_validator is not None and not response_validator(content):
                     raise LLMResponseValidationError("LLM response did not pass task validation")
                 elapsed = time.time() - model_start
+                output_tokens = _estimate_tokens(content)
+                observer.update_generation(
+                    generation,
+                    status="success",
+                    output_summary={
+                        "output_tokens_estimate": output_tokens,
+                        "total_tokens_estimate": prompt_tokens + output_tokens,
+                    },
+                    metadata={"status": "success"},
+                )
 
                 tracker.report_success(model_name)
                 attempt = {
@@ -224,7 +247,6 @@ class LLMGateway:
                 }
                 models_tried.append(attempt)
 
-                output_tokens = _estimate_tokens(content)
                 self._record_attempt({
                     "started_at": started_at,
                     "invocation_id": invocation_id,
@@ -271,6 +293,19 @@ class LLMGateway:
                     "task": task,
                 }
                 models_tried.append(attempt)
+                observer.update_generation(
+                    generation,
+                    status="failed",
+                    output_summary={
+                        "output_tokens_estimate": 0,
+                        "total_tokens_estimate": prompt_tokens,
+                    },
+                    metadata={
+                        "status": "failed",
+                        "failure_kind": failure_kind,
+                    },
+                    error=error_msg,
+                )
                 self._record_attempt({
                     "started_at": started_at,
                     "invocation_id": invocation_id,

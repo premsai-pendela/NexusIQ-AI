@@ -9,6 +9,9 @@ IMAGE_URI="${IMAGE_URI:?IMAGE_URI is required, for example 630589800012.dkr.ecr.
 GOOGLE_SECRET_ID="${GOOGLE_SECRET_ID:-nexusiq/google-api-key}"
 GROQ_SECRET_ID="${GROQ_SECRET_ID:-nexusiq/groq-api-key}"
 DATABASE_SECRET_ID="${DATABASE_SECRET_ID:-nexusiq/database-url}"
+LANGFUSE_PUBLIC_SECRET_ID="${LANGFUSE_PUBLIC_SECRET_ID:-nexusiq/langfuse-public-key}"
+LANGFUSE_SECRET_SECRET_ID="${LANGFUSE_SECRET_SECRET_ID:-nexusiq/langfuse-secret-key}"
+LANGFUSE_HOST_SECRET_ID="${LANGFUSE_HOST_SECRET_ID:-nexusiq/langfuse-host}"
 
 REGISTRY="${IMAGE_URI%%/*}"
 
@@ -29,6 +32,13 @@ echo "Reading runtime secrets from AWS Secrets Manager"
 GOOGLE_API_KEY="$(aws secretsmanager get-secret-value --secret-id "${GOOGLE_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}")"
 GROQ_API_KEY="$(aws secretsmanager get-secret-value --secret-id "${GROQ_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}")"
 DATABASE_URL="$(aws secretsmanager get-secret-value --secret-id "${DATABASE_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}")"
+LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-$(aws secretsmanager get-secret-value --secret-id "${LANGFUSE_PUBLIC_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)}"
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-$(aws secretsmanager get-secret-value --secret-id "${LANGFUSE_SECRET_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)}"
+LANGFUSE_HOST="${LANGFUSE_HOST:-$(aws secretsmanager get-secret-value --secret-id "${LANGFUSE_HOST_SECRET_ID}" --query SecretString --output text --region "${AWS_REGION}" 2>/dev/null || true)}"
+NEXUSIQ_LANGFUSE_ENABLED="${NEXUSIQ_LANGFUSE_ENABLED:-false}"
+if [[ -n "${LANGFUSE_PUBLIC_KEY}" && -n "${LANGFUSE_SECRET_KEY}" && "${NEXUSIQ_LANGFUSE_ENABLED}" == "false" ]]; then
+  NEXUSIQ_LANGFUSE_ENABLED="true"
+fi
 
 echo "Replacing container: ${CONTAINER_NAME}"
 docker stop "${CONTAINER_NAME}" >/dev/null 2>&1 || true
@@ -47,6 +57,11 @@ docker run -d \
   -e GOOGLE_API_KEY="${GOOGLE_API_KEY}" \
   -e GROQ_API_KEY="${GROQ_API_KEY}" \
   -e DATABASE_URL="${DATABASE_URL}" \
+  -e NEXUSIQ_LANGFUSE_ENABLED="${NEXUSIQ_LANGFUSE_ENABLED}" \
+  -e LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \
+  -e LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}" \
+  -e LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
+  -e LANGFUSE_BASE_URL="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
   "${IMAGE_URI}"
 
 echo "Pruning previous unused image layers after replacement"

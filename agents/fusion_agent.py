@@ -1518,19 +1518,51 @@ ANSWER:"""
         Main fusion query method. Routes to source(s) and combines results.
         progress_cb(source_name, result_dict) called as each parallel agent finishes.
         """
-        use_langgraph = os.getenv("NEXUSIQ_USE_LANGGRAPH", "false").strip().lower() in {"1", "true", "yes"}
-        if use_langgraph:
-            from agents.fusion_graph import FusionGraph
+        use_production_harness = os.getenv("NEXUSIQ_USE_PRODUCTION_HARNESS", "true").strip().lower() in {"1", "true", "yes"}
+        if use_production_harness:
+            try:
+                from agents.production_harness import ProductionAgentHarness
 
-            if not hasattr(self, "_fusion_graph"):
-                self._fusion_graph = FusionGraph(self)
-            return self._fusion_graph.query(
-                question,
-                force_source=force_source,
-                progress_cb=progress_cb,
-                bypass_cache=bypass_cache,
-                web_category=web_category,
-            )
+                if not hasattr(self, "_production_harness"):
+                    self._production_harness = ProductionAgentHarness(self)
+                harness_result = self._production_harness.query(
+                    question,
+                    force_source=force_source,
+                    progress_cb=progress_cb,
+                    bypass_cache=bypass_cache,
+                    web_category=web_category,
+                )
+                if harness_result.get("source_type") != "error":
+                    return harness_result
+                logger.warning(
+                    "Production harness returned an error; falling back to legacy FusionAgent flow: %s",
+                    harness_result.get("error"),
+                )
+            except Exception as exc:
+                logger.exception("Production harness unavailable; falling back to legacy FusionAgent flow: %s", exc)
+
+        use_langgraph = os.getenv("NEXUSIQ_USE_LANGGRAPH", "true").strip().lower() in {"1", "true", "yes"}
+        if use_langgraph:
+            try:
+                from agents.fusion_graph import FusionGraph
+
+                if not hasattr(self, "_fusion_graph"):
+                    self._fusion_graph = FusionGraph(self)
+                graph_result = self._fusion_graph.query(
+                    question,
+                    force_source=force_source,
+                    progress_cb=progress_cb,
+                    bypass_cache=bypass_cache,
+                    web_category=web_category,
+                )
+                if graph_result.get("source_type") != "error":
+                    return graph_result
+                logger.warning(
+                    "LangGraph returned an error; falling back to legacy FusionAgent flow: %s",
+                    graph_result.get("error"),
+                )
+            except Exception as exc:
+                logger.exception("LangGraph unavailable; falling back to legacy FusionAgent flow: %s", exc)
 
         trace = get_tracer().start_trace(
             question,

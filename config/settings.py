@@ -2,6 +2,7 @@
 NexusIQ AI — Configuration Management
 """
 import os
+from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
@@ -63,15 +64,27 @@ class Settings(BaseSettings):
         return value
     
     # Vector Store (ChromaDB)
-    chroma_persist_directory: str = "./data/chroma_db"
+    chroma_persist_directory: str = str(Path(__file__).parent.parent / "data" / "chroma_db")
     
     # App
     environment: str = "development"
     log_level: str = "INFO"
     web_allow_sample_fallback: bool = False
 
+    # Optional production observability/harness flags. These are also read by
+    # the feature modules via os.getenv, but defining them here keeps .env
+    # validation from rejecting a correctly configured local environment.
+    nexusiq_use_production_harness: bool = True
+    nexusiq_use_langgraph: bool = True
+    nexusiq_langfuse_enabled: bool = True
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
+    langfuse_base_url: str = ""
+    langfuse_host: str = ""
+
     class Config:
-        env_file = ".env"
+        env_file = str(Path(__file__).parent.parent / ".env")
         case_sensitive = False
+        extra = "ignore"
 
 settings = Settings()

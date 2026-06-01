@@ -12,6 +12,14 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+try:
+    import sqlglot
+    from sqlglot import errors as sqlglot_errors
+    from sqlglot import exp
+except Exception:  # pragma: no cover - fallback path when optional parser is unavailable
+    sqlglot = None
+    sqlglot_errors = None
+    exp = None
 from config.data_contexts import DataContext, LIVE_CONTEXT
 from config.settings import settings
 from utils.llm_gateway import get_llm_gateway
@@ -384,19 +392,90 @@ SQL QUERY:"""
 
     
     
-    def _validate_query(self, sql_query: str) -> tuple[bool, str]:
-        """Safety check: ensure query is read-only"""
-        
+    @staticmethod
+    def _legacy_validate_query(sql_query: str) -> tuple[bool, str]:
+        """Conservative text fallback used only when sqlglot is unavailable."""
         query_upper = sql_query.upper().strip()
-        
         forbidden = ['DELETE', 'DROP', 'TRUNCATE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE']
-        
+
         for keyword in forbidden:
             if re.search(rf"\b{keyword}\b", query_upper):
                 return False, f"Forbidden keyword: {keyword}"
-        
+
         if not query_upper.startswith('SELECT') and not query_upper.startswith('WITH'):
             return False, "Only SELECT queries allowed"
+
+        return True, ""
+
+    @staticmethod
+    def _unsafe_statement_type(expression) -> Optional[str]:
+        if exp is None or expression is None:
+            return None
+
+        unsafe_types = {
+            exp.Delete: "DELETE",
+            exp.Drop: "DROP",
+            exp.Update: "UPDATE",
+            exp.Insert: "INSERT",
+            exp.Alter: "ALTER",
+            exp.Create: "CREATE",
+        }
+        truncate_type = getattr(exp, "TruncateTable", None) or getattr(exp, "Truncate", None)
+        if truncate_type is not None:
+            unsafe_types[truncate_type] = "TRUNCATE"
+
+        for node in expression.walk():
+            for node_type, label in unsafe_types.items():
+                if isinstance(node, node_type):
+                    return label
+        return None
+
+    @staticmethod
+    def _is_read_only_expression(expression) -> bool:
+        if exp is None or expression is None:
+            return False
+
+        read_only_types = [exp.Select, exp.Union, exp.Except, exp.Intersect]
+        return isinstance(expression, tuple(read_only_types))
+
+    def _validate_query(self, sql_query: str) -> tuple[bool, str]:
+        """Safety check: parse SQL and allow only one read-only statement."""
+        if not str(sql_query or "").strip():
+            return False, "Empty SQL query"
+
+        if sqlglot is None:
+            return self._legacy_validate_query(sql_query)
+
+        try:
+            statements = sqlglot.parse(sql_query, read="postgres")
+        except Exception as exc:
+            parse_error_types = tuple(
+                error_type
+                for error_type in (
+                    getattr(sqlglot_errors, "ParseError", None),
+                    getattr(sqlglot_errors, "TokenError", None),
+                )
+                if error_type is not None
+            )
+            if parse_error_types and isinstance(exc, parse_error_types):
+                return False, f"SQL parse error: {str(exc).splitlines()[0]}"
+            return False, f"SQL parse error: {str(exc).splitlines()[0]}"
+
+        statements = [statement for statement in statements if statement is not None]
+        if not statements:
+            return False, "Empty SQL query"
+
+        for statement in statements:
+            unsafe_type = self._unsafe_statement_type(statement)
+            if unsafe_type:
+                return False, f"Forbidden statement type: {unsafe_type}"
+
+        if len(statements) != 1:
+            return False, "Only one SQL statement allowed"
+
+        statement = statements[0]
+        if not self._is_read_only_expression(statement):
+            return False, "Only SELECT or WITH queries allowed"
 
         return True, ""
     

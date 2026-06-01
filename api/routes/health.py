@@ -1,4 +1,5 @@
 import time
+import os
 from datetime import datetime, timezone
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -6,6 +7,7 @@ from sqlalchemy import text
 
 from api.models.schemas import HealthResponse
 from agents._singleton import get_fusion_agent, get_sql_agent, get_rag_agent, get_web_agent
+from observability.langfuse_adapter import get_langfuse_observer
 
 router = APIRouter()
 
@@ -24,6 +26,22 @@ def _cache_entry_count() -> int:
         return len(get_fusion_agent()._query_cache)
     except Exception:
         return -1
+
+
+def _truthy_env(name: str, default: str = "1") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _production_features() -> dict:
+    langfuse = get_langfuse_observer()
+    return {
+        "production_harness": _truthy_env("NEXUSIQ_USE_PRODUCTION_HARNESS", "1"),
+        "langgraph": _truthy_env("NEXUSIQ_USE_LANGGRAPH", "1"),
+        "langfuse": langfuse.enabled(),
+        "trace_enabled": _truthy_env("NEXUSIQ_TRACE_ENABLED", "1"),
+        "llm_ledger_enabled": os.getenv("NEXUSIQ_LLM_LEDGER_ENABLED", "1") != "0",
+        "environment": os.getenv("ENVIRONMENT", "development"),
+    }
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -70,6 +88,7 @@ async def health():
     response = HealthResponse(
         status=status,
         agents=agents_status,
+        production_features=_production_features(),
         chroma_chunks=chroma_chunks,
         cache_entries=cache_entries,
         uptime_seconds=round(time.time() - _START_TIME, 1),

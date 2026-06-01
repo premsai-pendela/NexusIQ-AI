@@ -597,6 +597,18 @@ NexusIQ-AI/
 
 ---
 
+## Future Improvements
+
+- **CSV ingestion** — add CSV files as a first-class data source alongside SQL, PDF, and web
+- **Dynamic company onboarding** — upload files, auto-index, query your own company knowledge base
+- **Eval dashboard** — pass/fail accuracy, confidence trends, source quality, and regression history
+- **Voice input** — speak questions instead of typing (Claude/Codex voice style)
+- **Memory layer** — persist useful previous tasks, preferences, and repeated company context across sessions
+- **Better error recovery** — more graceful degradation when one source fails mid-query
+- **Production deployment polish** — EC2/Docker health checks, monitoring docs, deeper CloudWatch alarms
+
+---
+
 ## Author
 
 **Naga Prem Sai Pendela**

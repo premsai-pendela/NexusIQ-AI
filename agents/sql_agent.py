@@ -590,7 +590,8 @@ ANSWER:"""
             return {
                 "success": True,
                 "answer": result["response"],
-                "models_tried": result["models_tried"]
+                "models_tried": result["models_tried"],
+                "answer_mode": "llm_sql_format",
             }
         else:
             # Fallback to simple formatting
@@ -602,7 +603,8 @@ ANSWER:"""
             return {
                 "success": True,
                 "answer": simple_answer,
-                "models_tried": result.get("models_tried", [])
+                "models_tried": result.get("models_tried", []),
+                "answer_mode": "deterministic_fallback",
             }
     
     
@@ -800,6 +802,9 @@ EXPLANATION:"""
             "row_count": execution_result["row_count"],
             "answer": format_result["answer"],
             "explanation": explain_result.get("explanation", ""),
+            "answer_mode": format_result.get("answer_mode"),
+            "explanation_mode": "llm_explanation" if explain_result.get("models_tried") else "deterministic_fallback",
+            "explanation_generated_by_llm": bool(explain_result.get("models_tried")),
             "complexity": query_result.get("complexity", "simple"),
             "model_used": query_result.get("model_used"),
             "models_tried": all_models_tried,

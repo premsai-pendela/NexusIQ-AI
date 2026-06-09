@@ -19,7 +19,7 @@ import time
 import logging
 import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import Any, Dict, List, Optional, Tuple, Callable
 from datetime import datetime
 
 import sys
@@ -219,6 +219,49 @@ Cross-validation rules:
             "product",
         )
         return "web_only" if any(term in q for term in pricing_terms) else None
+
+    def _rule_based_source_route(self, question: str) -> Optional[str]:
+        """Route high-confidence obvious questions without spending a router LLM call."""
+        from config.data_inventory import (
+            can_rag_answer,
+            can_sql_answer,
+            can_web_answer,
+            should_cross_validate,
+        )
+
+        q = str(question or "").lower()
+
+        web_route = self._rule_based_web_route(question)
+        if web_route:
+            self._last_routing_model = "Rules-based Web routing"
+            return web_route
+
+        if any(word in q for word in ("compare", "vs", "versus", "difference")) and any(
+            term in q for term in ("q1", "q2", "q3", "q4", "quarter", "quarterly")
+        ):
+            self._last_routing_model = "Rules-based source routing"
+            return "comparison"
+
+        validation_check = should_cross_validate(question)
+        if validation_check.get("should_validate"):
+            self._last_routing_model = "Rules-based source routing"
+            return "sql_rag"
+
+        checks = {
+            "sql": can_sql_answer(question),
+            "rag": can_rag_answer(question),
+            "web": can_web_answer(question),
+        }
+        high_confidence_sources = [
+            source
+            for source, check in checks.items()
+            if check.get("can_answer") and check.get("confidence") == "high"
+        ]
+        if len(high_confidence_sources) == 1:
+            self._last_routing_model = "Rules-based source routing"
+            return f"{high_confidence_sources[0]}_only"
+
+        return None
 
     def _history_context(self, max_turns: int = 3) -> str:
         if not self._history:
@@ -452,6 +495,9 @@ Reply with ONLY this JSON (no extra text):
                 'results': result.get('results', []),
                 'row_count': result.get('row_count', 0),
                 'model_used': result.get('model_used', ''),
+                'answer_mode': result.get('answer_mode'),
+                'explanation_mode': result.get('explanation_mode'),
+                'explanation_generated_by_llm': result.get('explanation_generated_by_llm', False),
                 'time': round(elapsed, 2),
                 'source': 'SQL Database'
             }
@@ -1398,7 +1444,10 @@ ANSWER:"""
         models = []
         for label, key in (("SQL", "sql_result"), ("RAG", "rag_result"), ("Web", "web_result")):
             agent_result = result.get(key) or {}
-            model = agent_result.get("model_used")
+            if label == "SQL" and agent_result.get("answer_mode") == "deterministic_sql_format":
+                model = "Deterministic SQL formatting"
+            else:
+                model = agent_result.get("model_used")
             if model and model != "none":
                 models.append(f"{label}: {model}")
         if models:
@@ -1407,13 +1456,81 @@ ANSWER:"""
             return "System response"
         return "n/a"
 
+    @staticmethod
+    def _summarize_llm_usage_from_trace(trace: TraceSession) -> Dict[str, Any]:
+        """Summarize LLM call usage recorded on this query trace."""
+        llm_events = [
+            span.get("metadata") or {}
+            for span in trace.data.get("spans", [])
+            if span.get("name") == "llm.call"
+        ]
+        avoided_events = [
+            span.get("metadata") or {}
+            for span in trace.data.get("spans", [])
+            if span.get("name") == "llm.call_skipped"
+        ]
+        if not llm_events:
+            return {
+                "measurement_profile": os.getenv("NEXUSIQ_MEASUREMENT_PROFILE", "foundation_before_call_disabling"),
+                "attempts": 0,
+                "successful_calls": 0,
+                "failed_attempts": 0,
+                "skipped_attempts": 0,
+                "avoided_calls": len(avoided_events),
+                "estimated_tokens": 0,
+                "successful_estimated_tokens": 0,
+                "actual_tokens": 0,
+                "actual_token_events": 0,
+                "tasks": [],
+                "avoided_tasks": avoided_events,
+            }
+
+        successful = [event for event in llm_events if event.get("status") == "success"]
+        tasks = []
+        for event in llm_events:
+            tasks.append({
+                "task": event.get("task"),
+                "model": event.get("model"),
+                "status": event.get("status"),
+                "skip_reason": event.get("skip_reason") or event.get("error"),
+                "estimated_tokens": event.get("total_tokens_estimate", 0) or 0,
+                "actual_tokens": event.get("total_tokens_actual"),
+                "latency_s": event.get("latency_s", 0) or 0,
+            })
+
+        summary = {
+            "measurement_profile": os.getenv("NEXUSIQ_MEASUREMENT_PROFILE", "foundation_before_call_disabling"),
+            "attempts": len(llm_events),
+            "successful_calls": len(successful),
+            "failed_attempts": sum(event.get("status") == "failed" for event in llm_events),
+            "skipped_attempts": sum(event.get("status") == "skipped" for event in llm_events),
+            "avoided_calls": len(avoided_events),
+            "estimated_tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in llm_events),
+            "successful_estimated_tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in successful),
+            "actual_tokens": sum(event.get("total_tokens_actual", 0) or 0 for event in llm_events),
+            "actual_token_events": sum(bool(event.get("actual_tokens_available")) for event in llm_events),
+            "tasks": tasks,
+            "avoided_tasks": avoided_events,
+        }
+        return summary
+
     def _finalize_trace(self, trace: TraceSession, result: Dict, cached: bool = False) -> Dict:
         """Attach trace metadata to the response after writing the trace file."""
         result["answer_models"] = result.get("answer_models") or self._collect_answer_models(result)
+        result["llm_usage"] = result.get("llm_usage") or self._summarize_llm_usage_from_trace(trace)
+        if cached and result.get("llm_usage"):
+            result["cache_savings"] = {
+                "saved_successful_calls": result["llm_usage"].get("successful_calls", 0),
+                "saved_estimated_tokens": result["llm_usage"].get("successful_estimated_tokens", 0),
+                "saved_actual_tokens": result["llm_usage"].get("actual_tokens", 0),
+                "reason": "cache_hit_reused_previous_answer",
+            }
         final_summary = {
             "source_type": result.get("source_type"),
             "routing_model": result.get("routing_model"),
             "answer_models": result.get("answer_models"),
+            "llm_usage": result.get("llm_usage"),
+            "cache_savings": result.get("cache_savings"),
             "answer_generation_mode": result.get("answer_generation_mode"),
             "answer_generation_reason": result.get("answer_generation_reason"),
             "fusion_model_used": result.get("fusion_model_used"),
@@ -1579,11 +1696,27 @@ ANSWER:"""
         if not force_source and not bypass_cache:
             cached = self._cache_get(question)
             if cached:
+                llm_usage = cached.get("llm_usage") or {}
                 trace.record_event(
                     "cache.hit",
                     {
                         "source_type": cached.get("source_type"),
                         "previous_trace_id": cached.get("trace_id"),
+                        "orchestrator": "legacy_fusion",
+                        "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                        "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                        "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
+                    },
+                )
+                trace.record_event(
+                    "llm.call_skipped",
+                    {
+                        "task": "query_execution",
+                        "reason": "cache_hit_reused_previous_answer",
+                        "orchestrator": "legacy_fusion",
+                        "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                        "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                        "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
                     },
                 )
                 cached["query_time"] = 0
@@ -1604,11 +1737,20 @@ ANSWER:"""
                 source_type = force_source
                 logger.info(f"📋 Query routing: {source_type.upper()} (forced by user)")
             else:
-                source_type = self._rule_based_web_route(question)
+                rule_router = getattr(self, "_rule_based_source_route", self._rule_based_web_route)
+                source_type = rule_router(question)
                 if source_type:
-                    if not self._last_routing_model:
-                        self._last_routing_model = "Rules-based Web routing"
-                        logger.info(f"📋 Query routing: {source_type.upper()} (explicit web pricing rule)")
+                    logger.info(f"📋 Query routing: {source_type.upper()} ({self._last_routing_model})")
+                    trace.record_event(
+                        "llm.call_skipped",
+                        {
+                            "task": "fusion.route",
+                            "reason": "rule_based_routing_selected_source",
+                            "source_type": source_type,
+                            "routing_model": self._last_routing_model,
+                            "orchestrator": "legacy_fusion",
+                        },
+                    )
                 else:
                     source_type = self._classify_query_source_llm(question)
                     if source_type:

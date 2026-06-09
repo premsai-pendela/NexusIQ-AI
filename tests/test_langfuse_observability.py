@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from observability.langfuse_adapter import LangfuseObserver
 from observability.tracer import TraceSession
-from utils.llm_gateway import LLMGateway
+from utils.llm_gateway import LLMGateway, llm_call_context
 
 
 class FakeObservation:
@@ -109,6 +110,55 @@ class LangfuseObservabilityTests(unittest.TestCase):
         self.assertIn("prompt_hash", generation_call["input"])
         self.assertNotIn("secret-ish prompt", str(generation_call))
         self.assertEqual(client.observations[0].updates[0]["metadata"]["status"], "success")
+
+    def test_llm_gateway_attaches_call_events_to_trace(self):
+        class Response:
+            content = "answer"
+            usage_metadata = {
+                "input_tokens": 7,
+                "output_tokens": 2,
+                "total_tokens": 9,
+            }
+
+        def factory(_model_config, _temperature):
+            class Client:
+                def invoke(self, _prompt):
+                    return Response()
+
+            return Client()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_index = Path(tmp) / "index.jsonl"
+            with patch.dict(
+                os.environ,
+                {
+                    "NEXUSIQ_TRACE_DIR": tmp,
+                    "NEXUSIQ_TRACE_INDEX_PATH": str(trace_index),
+                    "NEXUSIQ_LANGFUSE_ENABLED": "0",
+                },
+                clear=False,
+            ):
+                trace = TraceSession("What was revenue?")
+                gateway = LLMGateway(ledger_path=Path(tmp) / "ledger.jsonl", client_factory=factory)
+                with llm_call_context(
+                    trace=trace,
+                    trace_id=trace.trace_id,
+                    harness_task_id="task-123",
+                ):
+                    gateway.invoke_with_fallback(
+                        prompt="Question",
+                        models=[{"name": "fake-model", "type": "fake", "description": "Fake"}],
+                        tracker=FakeTracker(),
+                        task="test.task",
+                    )
+                path = trace.finish({"source_type": "sql_only"})
+
+            trace_data = json.loads(Path(path).read_text())
+            llm_events = [span for span in trace_data["spans"] if span["name"] == "llm.call"]
+            self.assertEqual(len(llm_events), 1)
+            self.assertEqual(llm_events[0]["metadata"]["task"], "test.task")
+            self.assertEqual(llm_events[0]["metadata"]["harness_task_id"], "task-123")
+            self.assertEqual(llm_events[0]["metadata"]["total_tokens_actual"], 9)
 
     def test_trace_session_keeps_working_when_langfuse_disabled(self):
         with tempfile.TemporaryDirectory() as tmp:

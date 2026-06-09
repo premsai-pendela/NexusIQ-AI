@@ -8,6 +8,7 @@ existing routing, agent execution, validation, cache, and answer generation.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from config.settings import settings
 from observability.tracer import TraceSession, get_tracer
+from utils.llm_gateway import llm_call_context
 
 logger = logging.getLogger(__name__)
 
@@ -135,45 +137,59 @@ class ProductionAgentHarness:
         task = HarnessTaskState(task_id=uuid.uuid4().hex[:16], question=question)
         self._save(task)
         start_time = datetime.now()
+        query_hash = hashlib.sha256(question.encode("utf-8")).hexdigest()[:16]
 
-        try:
-            result = self._execute(
-                task,
-                trace,
-                question=question,
-                force_source=force_source,
-                progress_cb=progress_cb,
-                bypass_cache=bypass_cache,
-                web_category=web_category,
-                start_time=start_time,
-            )
-            task.status = "completed"
-        except HarnessStepLimitExceeded as exc:
-            result = {
-                "answer": (
-                    "NexusIQ stopped this task before it could waste more tokens. "
-                    "The production harness step limit was reached."
-                ),
-                "source_type": "error",
-                "error": str(exc),
-                "query_time": (datetime.now() - start_time).total_seconds(),
-            }
-            task.status = "failed"
-        except Exception as exc:
-            logger.exception("Production harness failed")
-            result = {
-                "answer": "NexusIQ could not complete this request safely.",
-                "source_type": "error",
-                "error": str(exc),
-                "query_time": (datetime.now() - start_time).total_seconds(),
-            }
-            task.status = "failed"
+        with llm_call_context(
+            trace=trace,
+            trace_id=trace.trace_id,
+            harness_task_id=task.task_id,
+            query_hash=query_hash,
+            orchestrator="production_harness",
+        ):
+            try:
+                result = self._execute(
+                    task,
+                    trace,
+                    question=question,
+                    force_source=force_source,
+                    progress_cb=progress_cb,
+                    bypass_cache=bypass_cache,
+                    web_category=web_category,
+                    start_time=start_time,
+                )
+                task.status = "completed"
+            except HarnessStepLimitExceeded as exc:
+                result = {
+                    "answer": (
+                        "NexusIQ stopped this task before it could waste more tokens. "
+                        "The production harness step limit was reached."
+                    ),
+                    "source_type": "error",
+                    "error": str(exc),
+                    "query_time": (datetime.now() - start_time).total_seconds(),
+                }
+                task.status = "failed"
+            except Exception as exc:
+                logger.exception("Production harness failed")
+                result = {
+                    "answer": "NexusIQ could not complete this request safely.",
+                    "source_type": "error",
+                    "error": str(exc),
+                    "query_time": (datetime.now() - start_time).total_seconds(),
+                }
+                task.status = "failed"
 
         result["orchestrator"] = "production_harness"
         result["harness_task_id"] = task.task_id
         result["harness_steps"] = [step.name for step in task.steps]
         result["harness_completed_steps"] = list(task.completed_steps)
         result["harness_failed_steps"] = list(task.failed_steps)
+        result["llm_query_context"] = {
+            "trace_id": trace.trace_id,
+            "harness_task_id": task.task_id,
+            "query_hash": query_hash,
+            "orchestrator": "production_harness",
+        }
 
         task.result_summary = {
             "source_type": result.get("source_type"),
@@ -462,12 +478,27 @@ class ProductionAgentHarness:
         cached = self.fusion_agent._cache_get(question)
         if cached:
             cached = dict(cached, _from_cache=True)
+            llm_usage = cached.get("llm_usage") or {}
             trace.record_event(
                 "cache.hit",
                 {
                     "source_type": cached.get("source_type"),
                     "previous_trace_id": cached.get("trace_id"),
                     "orchestrator": "production_harness",
+                    "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                    "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                    "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
+                },
+            )
+            trace.record_event(
+                "llm.call_skipped",
+                {
+                    "task": "query_execution",
+                    "reason": "cache_hit_reused_previous_answer",
+                    "orchestrator": "production_harness",
+                    "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                    "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                    "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
                 },
             )
         return cached
@@ -486,9 +517,20 @@ class ProductionAgentHarness:
         if force_source:
             source_type = force_source
         else:
-            source_type = agent._rule_based_web_route(question)
+            rule_router = getattr(agent, "_rule_based_source_route", agent._rule_based_web_route)
+            source_type = rule_router(question)
             if source_type:
-                agent._last_routing_model = agent._last_routing_model or "Rules-based Web routing"
+                agent._last_routing_model = agent._last_routing_model or "Rules-based source routing"
+                trace.record_event(
+                    "llm.call_skipped",
+                    {
+                        "task": "fusion.route",
+                        "reason": "rule_based_routing_selected_source",
+                        "source_type": source_type,
+                        "routing_model": agent._last_routing_model,
+                        "orchestrator": "production_harness",
+                    },
+                )
             else:
                 source_type = agent._classify_query_source_llm(question)
                 if not source_type:

@@ -13,9 +13,11 @@ import logging
 import os
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, Iterator, Optional
 
 from config.settings import settings
 from observability.langfuse_adapter import get_langfuse_observer
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_LEDGER_PATH = Path(__file__).parent.parent / "data" / "llm_task_ledger.jsonl"
+_llm_call_context: ContextVar[Dict[str, Any]] = ContextVar("llm_call_context", default={})
 
 
 class LLMResponseValidationError(ValueError):
@@ -41,6 +44,94 @@ def _response_text(response: Any) -> str:
     """Normalize LangChain-style responses and plain strings."""
     content = getattr(response, "content", response)
     return str(content).strip()
+
+
+def _normalize_token_usage(raw_usage: Any) -> Optional[Dict[str, Any]]:
+    """Normalize provider/LangChain token usage metadata when available."""
+    if not isinstance(raw_usage, dict):
+        return None
+
+    input_tokens = (
+        raw_usage.get("input_tokens")
+        or raw_usage.get("prompt_tokens")
+        or raw_usage.get("input_token_count")
+        or raw_usage.get("prompt_token_count")
+    )
+    output_tokens = (
+        raw_usage.get("output_tokens")
+        or raw_usage.get("completion_tokens")
+        or raw_usage.get("output_token_count")
+        or raw_usage.get("candidates_token_count")
+    )
+    total_tokens = (
+        raw_usage.get("total_tokens")
+        or raw_usage.get("total_token_count")
+        or raw_usage.get("total_tokens_count")
+    )
+
+    if total_tokens is None and (input_tokens is not None or output_tokens is not None):
+        total_tokens = (input_tokens or 0) + (output_tokens or 0)
+
+    if input_tokens is None and output_tokens is None and total_tokens is None:
+        return None
+
+    return {
+        "input_tokens_actual": input_tokens,
+        "output_tokens_actual": output_tokens,
+        "total_tokens_actual": total_tokens,
+    }
+
+
+def _extract_actual_token_usage(response: Any) -> Dict[str, Any]:
+    """
+    Extract provider-reported token usage from LangChain responses.
+
+    Gemini, Groq, OpenAI-compatible, and Vertex wrappers expose usage in
+    slightly different places, so this checks the common response surfaces.
+    """
+    candidates = []
+    usage_metadata = getattr(response, "usage_metadata", None)
+    if usage_metadata:
+        candidates.append(("usage_metadata", usage_metadata))
+
+    response_metadata = getattr(response, "response_metadata", None)
+    if isinstance(response_metadata, dict):
+        for key in ("token_usage", "usage", "usage_metadata"):
+            if response_metadata.get(key):
+                candidates.append((f"response_metadata.{key}", response_metadata[key]))
+
+    raw = getattr(response, "raw", None)
+    if isinstance(raw, dict):
+        for key in ("usage", "usage_metadata"):
+            if raw.get(key):
+                candidates.append((f"raw.{key}", raw[key]))
+
+    for source, usage in candidates:
+        normalized = _normalize_token_usage(usage)
+        if normalized:
+            normalized["actual_token_source"] = source
+            normalized["actual_tokens_available"] = True
+            return normalized
+
+    return {
+        "input_tokens_actual": None,
+        "output_tokens_actual": None,
+        "total_tokens_actual": None,
+        "actual_token_source": None,
+        "actual_tokens_available": False,
+    }
+
+
+@contextmanager
+def llm_call_context(**context: Any) -> Iterator[None]:
+    """Attach query/trace context to every LLM ledger row in this call stack."""
+    previous = _llm_call_context.get().copy()
+    merged = {**previous, **{key: value for key, value in context.items() if value is not None}}
+    token = _llm_call_context.set(merged)
+    try:
+        yield
+    finally:
+        _llm_call_context.reset(token)
 
 
 def _error_status(error_message: str) -> str:
@@ -71,6 +162,31 @@ class LLMGateway:
 
     def _record_attempt(self, event: Dict[str, Any]) -> None:
         """Append one LLM task attempt without storing prompt contents."""
+        event.setdefault(
+            "measurement_profile",
+            os.getenv("NEXUSIQ_MEASUREMENT_PROFILE", "foundation_before_call_disabling"),
+        )
+        context = _llm_call_context.get()
+        trace = context.get("trace")
+        safe_context = {key: value for key, value in context.items() if key != "trace"}
+        if safe_context:
+            event.update(safe_context)
+            event["query_context"] = safe_context
+            event["metadata"] = {**safe_context, **(event.get("metadata") or {})}
+
+        if trace is not None:
+            try:
+                trace.record_event(
+                    "llm.call",
+                    {
+                        key: value
+                        for key, value in event.items()
+                        if key not in {"error"}
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Could not attach LLM event to trace: %s", exc)
+
         if not self._ledger_enabled():
             return
 
@@ -176,6 +292,13 @@ class LLMGateway:
 
             is_available, skip_reason = tracker.is_available(model_name)
             if not is_available:
+                token_usage = {
+                    "input_tokens_actual": None,
+                    "output_tokens_actual": None,
+                    "total_tokens_actual": None,
+                    "actual_token_source": None,
+                    "actual_tokens_available": False,
+                }
                 attempt = {
                     "model": model_name,
                     "description": model_config.get("description", model_name),
@@ -194,12 +317,14 @@ class LLMGateway:
                     "temperature": temperature,
                     "status": "skipped",
                     "failure_kind": None,
+                    "skip_reason": skip_reason,
                     "error": skip_reason,
                     "latency_s": 0.0,
                     "prompt_hash": prompt_hash,
                     "input_tokens_estimate": prompt_tokens,
                     "output_tokens_estimate": 0,
                     "total_tokens_estimate": prompt_tokens,
+                    **token_usage,
                     "metadata": metadata or {},
                 })
                 logger.info("⏭️ Skipping %s: %s", model_name, skip_reason)
@@ -226,13 +351,16 @@ class LLMGateway:
                     raise LLMResponseValidationError("LLM response did not pass task validation")
                 elapsed = time.time() - model_start
                 output_tokens = _estimate_tokens(content)
+                actual_usage = _extract_actual_token_usage(response)
+                output_summary = {
+                    "output_tokens_estimate": output_tokens,
+                    "total_tokens_estimate": prompt_tokens + output_tokens,
+                    **actual_usage,
+                }
                 observer.update_generation(
                     generation,
                     status="success",
-                    output_summary={
-                        "output_tokens_estimate": output_tokens,
-                        "total_tokens_estimate": prompt_tokens + output_tokens,
-                    },
+                    output_summary=output_summary,
                     metadata={"status": "success"},
                 )
 
@@ -262,6 +390,7 @@ class LLMGateway:
                     "input_tokens_estimate": prompt_tokens,
                     "output_tokens_estimate": output_tokens,
                     "total_tokens_estimate": prompt_tokens + output_tokens,
+                    **actual_usage,
                     "metadata": metadata or {},
                 })
                 logger.info("✅ Success with %s in %.2fs", model_name, elapsed)
@@ -321,6 +450,11 @@ class LLMGateway:
                     "input_tokens_estimate": prompt_tokens,
                     "output_tokens_estimate": 0,
                     "total_tokens_estimate": prompt_tokens,
+                    "input_tokens_actual": None,
+                    "output_tokens_actual": None,
+                    "total_tokens_actual": None,
+                    "actual_token_source": None,
+                    "actual_tokens_available": False,
                     "metadata": metadata or {},
                 })
                 logger.warning("%s %s: %s", status, model_name, error_msg[:100])

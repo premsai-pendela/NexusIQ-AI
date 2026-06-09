@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from agents.fusion_agent import FusionAgent
 from agents.rag_agent import RAGAgent
+from agents.sql_agent import SQLAgent
 from agents.web_agent import WebAgent
 from config.data_inventory import can_web_answer
 from config.settings import settings
@@ -43,7 +44,7 @@ from ui.fusion_chat import (
     normalize_repeat_question,
     previous_answer_message,
 )
-from utils.llm_gateway import LLMGateway
+from utils.llm_gateway import LLMGateway, llm_call_context
 from utils.validators import validate_question
 
 
@@ -424,8 +425,10 @@ class FusionValidationTests(unittest.TestCase):
 
 
 class FakeLLMResponse:
-    def __init__(self, content):
+    def __init__(self, content, usage_metadata=None, response_metadata=None):
         self.content = content
+        self.usage_metadata = usage_metadata
+        self.response_metadata = response_metadata or {}
 
 
 class FakeTracker:
@@ -496,6 +499,51 @@ class LLMGatewayTests(unittest.TestCase):
             self.assertIn("invocation_id", events[0])
             self.assertNotIn("secret-ish prompt", ledger_path.read_text())
 
+    def test_gateway_records_actual_tokens_and_query_context(self):
+        with TemporaryDirectory() as tmp:
+            ledger_path = Path(tmp) / "llm-ledger.jsonl"
+
+            def factory(model_config, temperature):
+                class Client:
+                    def invoke(self, prompt):
+                        return FakeLLMResponse(
+                            "answer",
+                            usage_metadata={
+                                "input_tokens": 12,
+                                "output_tokens": 3,
+                                "total_tokens": 15,
+                            },
+                        )
+
+                return Client()
+
+            gateway = LLMGateway(ledger_path=ledger_path, client_factory=factory)
+            tracker = FakeTracker()
+            with llm_call_context(
+                trace_id="trace-123",
+                harness_task_id="task-456",
+                query_hash="query-789",
+            ):
+                result = gateway.invoke_with_fallback(
+                    prompt="Question",
+                    models=[{"name": "test-model", "type": "fake", "description": "Test Model"}],
+                    tracker=tracker,
+                    task="fusion.answer",
+                    temperature=0.1,
+                    metadata={"agent": "fusion"},
+                )
+
+            self.assertTrue(result["success"])
+            events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
+            self.assertEqual(events[0]["input_tokens_actual"], 12)
+            self.assertEqual(events[0]["output_tokens_actual"], 3)
+            self.assertEqual(events[0]["total_tokens_actual"], 15)
+            self.assertTrue(events[0]["actual_tokens_available"])
+            self.assertEqual(events[0]["actual_token_source"], "usage_metadata")
+            self.assertEqual(events[0]["query_context"]["trace_id"], "trace-123")
+            self.assertEqual(events[0]["query_context"]["harness_task_id"], "task-456")
+            self.assertEqual(events[0]["metadata"]["agent"], "fusion")
+
     def test_gateway_skips_unavailable_model_then_falls_back(self):
         with TemporaryDirectory() as tmp:
             ledger_path = Path(tmp) / "llm-ledger.jsonl"
@@ -527,6 +575,8 @@ class LLMGatewayTests(unittest.TestCase):
 
             events = [json.loads(line) for line in ledger_path.read_text().splitlines()]
             self.assertEqual([event["status"] for event in events], ["skipped", "success"])
+            self.assertEqual(events[0]["skip_reason"], "RESOURCE_EXHAUSTED: Retry in 20m")
+            self.assertEqual(events[0]["measurement_profile"], "foundation_before_call_disabling")
 
     def test_gateway_reports_failure_before_next_model(self):
         with TemporaryDirectory() as tmp:
@@ -593,6 +643,119 @@ class LLMGatewayTests(unittest.TestCase):
             self.assertEqual(events[0]["failure_kind"], "invalid_response")
             self.assertEqual(events[0]["invocation_id"], events[1]["invocation_id"])
             self.assertIn("task validation", events[0]["error"])
+
+
+class FoundationObservabilityTests(unittest.TestCase):
+    def test_sql_answer_formatting_still_uses_llm_before_disabling_calls(self):
+        agent = SQLAgent.__new__(SQLAgent)
+        calls = []
+
+        def fake_invoke(prompt, complexity, task):
+            calls.append({"prompt": prompt, "complexity": complexity, "task": task})
+            return {
+                "success": True,
+                "response": "There were 8,200 transactions.",
+                "models_tried": [{"task": task}],
+            }
+
+        agent._invoke_with_fallback = fake_invoke
+
+        result = agent._format_answer(
+            question="How many transactions happened in October 2024?",
+            query="SELECT COUNT(*) AS transaction_count FROM sales_transactions",
+            results=[{"transaction_count": 8200}],
+            complexity="simple",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(calls[0]["task"], "sql.format_answer")
+        self.assertEqual(result["answer_mode"], "llm_sql_format")
+
+    def test_sql_ask_still_calls_explanation_before_disabling_calls(self):
+        class Context:
+            sql_table = "sales_transactions"
+            label = "Live Baseline"
+            available_years = [2024]
+
+        agent = SQLAgent.__new__(SQLAgent)
+        agent.data_context = Context()
+        agent.generate_query = lambda _question: {
+            "success": True,
+            "query": "SELECT COUNT(*) AS transaction_count FROM sales_transactions",
+            "models_tried": [{"task": "sql.generate_query"}],
+            "complexity": "simple",
+            "model_used": "Test Model",
+        }
+        agent.execute_query = lambda _query: {
+            "success": True,
+            "results": [{"transaction_count": 8200}],
+            "row_count": 1,
+        }
+        agent._format_answer = lambda **_kwargs: {
+            "success": True,
+            "answer": "Formatted by LLM",
+            "models_tried": [{"task": "sql.format_answer"}],
+            "answer_mode": "llm_sql_format",
+        }
+        agent._explain_query = lambda **_kwargs: {
+            "success": True,
+            "explanation": "Explained by LLM",
+            "models_tried": [{"task": "sql.explain_query"}],
+        }
+
+        with patch("agents.sql_agent.validate_question", return_value={"valid": True}):
+            result = SQLAgent.ask.__wrapped__(
+                agent,
+                "How many transactions happened in October 2024?",
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["explanation_mode"], "llm_explanation")
+        self.assertTrue(result["explanation_generated_by_llm"])
+        self.assertEqual(
+            [call["task"] for call in result["models_tried"]],
+            ["sql.generate_query", "sql.format_answer", "sql.explain_query"],
+        )
+
+    def test_rule_based_source_route_handles_obvious_sql_without_router_llm(self):
+        agent = FusionAgent.__new__(FusionAgent)
+        agent._last_routing_model = None
+
+        route = agent._rule_based_source_route("How many transactions happened in October 2024?")
+
+        self.assertEqual(route, "sql_only")
+        self.assertEqual(agent._last_routing_model, "Rules-based source routing")
+
+    def test_llm_usage_summary_records_skipped_reasons_and_avoided_calls(self):
+        class Trace:
+            data = {
+                "spans": [
+                    {
+                        "name": "llm.call",
+                        "metadata": {
+                            "task": "fusion.route",
+                            "model": "gemini-2.5-flash",
+                            "status": "skipped",
+                            "skip_reason": "SERVER_ERROR: Retry in 4m",
+                            "total_tokens_estimate": 123,
+                        },
+                    },
+                    {
+                        "name": "llm.call_skipped",
+                        "metadata": {
+                            "task": "fusion.route",
+                            "reason": "rule_based_routing_selected_source",
+                        },
+                    },
+                ]
+            }
+
+        summary = FusionAgent._summarize_llm_usage_from_trace(Trace())
+
+        self.assertEqual(summary["skipped_attempts"], 1)
+        self.assertEqual(summary["avoided_calls"], 1)
+        self.assertEqual(summary["tasks"][0]["skip_reason"], "SERVER_ERROR: Retry in 4m")
+        self.assertEqual(summary["avoided_tasks"][0]["reason"], "rule_based_routing_selected_source")
 
 
 class RoutingAndInputTests(unittest.TestCase):

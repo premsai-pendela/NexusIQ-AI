@@ -232,6 +232,8 @@ def previous_answer_message(previous: dict, msg_id: str) -> dict:
         "answer_generation_reason": previous.get("answer_generation_reason"),
         "fusion_model_used": previous.get("fusion_model_used"),
         "routing_fallback": previous.get("routing_fallback"),
+        "llm_usage": previous.get("llm_usage"),
+        "cache_savings": previous.get("cache_savings"),
         "cache_label": "previous_answer",
     }
 
@@ -1170,6 +1172,8 @@ def _format_answer_method(answer_models: str) -> tuple[str, str]:
     """Return a short metric label and full explanation of answer provenance."""
     raw = str(answer_models or "n/a")
     lowered = raw.lower()
+    if "deterministic sql formatting" in lowered:
+        return "Calculated", "SQL answer formatted deterministically; no SQL answer-formatting LLM used."
     if "deterministic calculation" in lowered:
         return "Calculated", "Answer built directly from scraped prices; no answer LLM used."
     if "raw scraped data" in lowered:
@@ -1207,9 +1211,17 @@ def _routing_status_text(routing_model: str) -> str:
         return "Routing: Manual source selection (Router LLM not used)"
     if routing_model == "Rules-based Web routing":
         return "Routing: Clear web-pricing request detected (Router LLM not needed)"
+    if routing_model == "Rules-based source routing":
+        return "Routing: High-confidence source rule matched (Router LLM not needed)"
     if routing_model == "keyword fallback":
         return "Routing: Keyword fallback used after Router LLM was unavailable"
     return f"Router LLM: {routing_model}"
+
+def _format_token_count(value) -> str:
+    try:
+        return f"{int(value or 0):,}"
+    except (TypeError, ValueError):
+        return "0"
 
 def render_observability_panel(msg: dict):
     """Render local trace metadata for a Fusion response."""
@@ -1228,6 +1240,8 @@ def render_observability_panel(msg: dict):
 
     route = final.get("source_type") or msg.get("source_type", "unknown")
     total_duration = trace.get("duration_s") or msg.get("query_time", 0)
+    llm_usage = final.get("llm_usage") or msg.get("llm_usage") or {}
+    cache_savings = final.get("cache_savings") or msg.get("cache_savings") or {}
     routing_model = final.get("routing_model") or msg.get("routing_model") or "n/a"
     answer_models = final.get("answer_models") or msg.get("answer_models") or routing_model
     if route == "no_data" and answer_models == routing_model:
@@ -1248,6 +1262,48 @@ def render_observability_panel(msg: dict):
         metric_cols[3].metric("Answer Method", answer_method)
         st.caption(answer_method_detail)
         st.caption(_routing_status_text(routing_model))
+
+        if llm_usage:
+            usage_cols = st.columns(4)
+            usage_cols[0].metric("LLM Calls", llm_usage.get("successful_calls", 0))
+            usage_cols[1].metric("Est. Tokens", _format_token_count(llm_usage.get("successful_estimated_tokens")))
+            actual_events = llm_usage.get("actual_token_events", 0) or 0
+            actual_label = _format_token_count(llm_usage.get("actual_tokens")) if actual_events else "n/a"
+            usage_cols[2].metric("Actual Tokens", actual_label)
+            usage_cols[3].metric(
+                "Skipped/Avoided",
+                (llm_usage.get("failed_attempts", 0) or 0)
+                + (llm_usage.get("skipped_attempts", 0) or 0)
+                + (llm_usage.get("avoided_calls", 0) or 0),
+            )
+            if llm_usage.get("measurement_profile"):
+                st.caption(f"Measurement profile: `{llm_usage.get('measurement_profile')}`")
+            if llm_usage.get("tasks"):
+                st.caption(
+                    "LLM tasks: "
+                    + ", ".join(
+                        f"{task.get('task')}:{task.get('status')}"
+                        for task in llm_usage.get("tasks", [])[:8]
+                    )
+                )
+            skipped_reasons = [
+                f"{task.get('task')}: {task.get('skip_reason')}"
+                for task in llm_usage.get("tasks", [])
+                if task.get("status") == "skipped" and task.get("skip_reason")
+            ]
+            avoided_reasons = [
+                f"{task.get('task')}: {task.get('reason')}"
+                for task in llm_usage.get("avoided_tasks", [])
+                if task.get("reason")
+            ]
+            if skipped_reasons or avoided_reasons:
+                st.caption("Skipped reasons: " + "; ".join((skipped_reasons + avoided_reasons)[:4]))
+        if cache_savings:
+            st.caption(
+                "Cache savings: "
+                f"{cache_savings.get('saved_successful_calls', 0)} LLM calls, "
+                f"{_format_token_count(cache_savings.get('saved_estimated_tokens'))} estimated tokens"
+            )
 
         if slowest:
             slow_label = "⚠️ " if (slowest.get("duration_s") or 0) > SLOW_SPAN_SECONDS else ""
@@ -1412,6 +1468,8 @@ def add_to_history(question, result, execution_time, source_filter: str = "Auto"
         "answer_generation_reason": result.get("answer_generation_reason"),
         "fusion_model_used": result.get("fusion_model_used"),
         "routing_fallback": result.get("routing_fallback"),
+        "llm_usage": result.get("llm_usage"),
+        "cache_savings": result.get("cache_savings"),
         "source_filter": source_filter,
         "time": execution_time,
         "timestamp": datetime.now(),
@@ -2028,7 +2086,9 @@ def run_fusion_chat():
                 "answer_generation_mode": result.get("answer_generation_mode"),
                 "answer_generation_reason": result.get("answer_generation_reason"),
                 "fusion_model_used": result.get("fusion_model_used"),
-                "routing_fallback": result.get("routing_fallback")
+                "routing_fallback": result.get("routing_fallback"),
+                "llm_usage": result.get("llm_usage"),
+                "cache_savings": result.get("cache_savings"),
             }, is_latest=True)
             
             # Save to chat history
@@ -2050,7 +2110,9 @@ def run_fusion_chat():
                 "answer_generation_mode": result.get("answer_generation_mode"),
                 "answer_generation_reason": result.get("answer_generation_reason"),
                 "fusion_model_used": result.get("fusion_model_used"),
-                "routing_fallback": result.get("routing_fallback")
+                "routing_fallback": result.get("routing_fallback"),
+                "llm_usage": result.get("llm_usage"),
+                "cache_savings": result.get("cache_savings"),
             })
             st.session_state.scroll_target = "answer"
             

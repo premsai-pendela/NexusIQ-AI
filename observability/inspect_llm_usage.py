@@ -57,6 +57,10 @@ def _aggregate(events: List[Dict[str, Any]], key_name: str) -> List[Dict[str, An
             "tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in group),
             "input_tokens": sum(event.get("input_tokens_estimate", 0) or 0 for event in group),
             "output_tokens": sum(event.get("output_tokens_estimate", 0) or 0 for event in group),
+            "actual_tokens": sum(event.get("total_tokens_actual", 0) or 0 for event in group),
+            "actual_input_tokens": sum(event.get("input_tokens_actual", 0) or 0 for event in group),
+            "actual_output_tokens": sum(event.get("output_tokens_actual", 0) or 0 for event in group),
+            "actual_token_events": sum(bool(event.get("actual_tokens_available")) for event in group),
             "average_latency_s": sum(latencies) / len(latencies),
             "p95_latency_s": _percentile(latencies, 0.95),
         })
@@ -101,9 +105,14 @@ def summarize_usage(
         "tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in events),
         "input_tokens": sum(event.get("input_tokens_estimate", 0) or 0 for event in events),
         "output_tokens": sum(event.get("output_tokens_estimate", 0) or 0 for event in events),
+        "actual_tokens": sum(event.get("total_tokens_actual", 0) or 0 for event in events),
+        "actual_input_tokens": sum(event.get("input_tokens_actual", 0) or 0 for event in events),
+        "actual_output_tokens": sum(event.get("output_tokens_actual", 0) or 0 for event in events),
+        "actual_token_events": sum(bool(event.get("actual_tokens_available")) for event in events),
         "average_latency_s": sum(latencies) / len(latencies) if latencies else 0.0,
         "p95_latency_s": _percentile(latencies, 0.95),
         "cache_hits_observed": sum(bool(trace.get("from_cache")) for trace in traces),
+        "by_measurement_profile": _aggregate(events, "measurement_profile"),
         "by_task": _aggregate(events, "task"),
         "by_model": _aggregate(events, "model"),
         "highest_cost_attempts": sorted(
@@ -143,6 +152,11 @@ def format_usage_report(summary: Dict[str, Any]) -> str:
             f"Latency avg/p95: {summary['average_latency_s']:.3f}s/{summary['p95_latency_s']:.3f}s"
         ),
         (
+            f"Provider actual tokens: {summary['actual_tokens']} "
+            f"(input {summary['actual_input_tokens']}, output {summary['actual_output_tokens']}) | "
+            f"actual-token events: {summary['actual_token_events']}"
+        ),
+        (
             f"Grouped fallback invocations: {summary['fallback_invocations']} | "
             f"Legacy attempts without invocation ID: {summary['ungrouped_legacy_attempts']}"
         ),
@@ -155,6 +169,8 @@ def format_usage_report(summary: Dict[str, Any]) -> str:
     lines.extend(_table("By task", summary["by_task"], "task"))
     lines.append("")
     lines.extend(_table("By model", summary["by_model"], "model"))
+    lines.append("")
+    lines.extend(_table("By measurement profile", summary["by_measurement_profile"], "measurement_profile"))
     lines.extend(["", "Highest-cost attempts"])
     for event in summary["highest_cost_attempts"]:
         lines.append(

@@ -146,11 +146,27 @@ class FusionGraph:
         if not state.get("force_source"):
             cached = self.fusion_agent._cache_get(question)
             if cached:
+                llm_usage = cached.get("llm_usage") or {}
                 trace.record_event(
                     "cache.hit",
                     {
                         "source_type": cached.get("source_type"),
                         "previous_trace_id": cached.get("trace_id"),
+                        "orchestrator": "langgraph",
+                        "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                        "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                        "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
+                    },
+                )
+                trace.record_event(
+                    "llm.call_skipped",
+                    {
+                        "task": "query_execution",
+                        "reason": "cache_hit_reused_previous_answer",
+                        "orchestrator": "langgraph",
+                        "saved_successful_calls": llm_usage.get("successful_calls", 0),
+                        "saved_estimated_tokens": llm_usage.get("successful_estimated_tokens", 0),
+                        "saved_actual_tokens": llm_usage.get("actual_tokens", 0),
                     },
                 )
                 cached["query_time"] = 0
@@ -176,10 +192,20 @@ class FusionGraph:
                 source_type = force_source
                 logger.info("LangGraph routing forced to %s", source_type)
             else:
-                source_type = agent._rule_based_web_route(question)
+                rule_router = getattr(agent, "_rule_based_source_route", agent._rule_based_web_route)
+                source_type = rule_router(question)
                 if source_type:
-                    if not agent._last_routing_model:
-                        agent._last_routing_model = "Rules-based Web routing"
+                    logger.info("LangGraph rule-based routing selected %s", source_type)
+                    trace.record_event(
+                        "llm.call_skipped",
+                        {
+                            "task": "fusion.route",
+                            "reason": "rule_based_routing_selected_source",
+                            "source_type": source_type,
+                            "routing_model": agent._last_routing_model,
+                            "orchestrator": "langgraph",
+                        },
+                    )
                 else:
                     source_type = agent._classify_query_source_llm(question)
                     if not source_type:

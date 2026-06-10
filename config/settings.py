@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     nexusiq_use_production_harness: bool = True
     nexusiq_use_langgraph: bool = True
     nexusiq_langfuse_enabled: bool = True
+    # SQL answer/explanation rendering: "deterministic" (default, no LLM call)
+    # or "llm". Read by SQLAgent via os.getenv.
+    nexusiq_sql_format_mode: str = "deterministic"
+    nexusiq_sql_explain_mode: str = "deterministic"
     # Business context layer: inject company-specific metric definitions into
     # SQL generation. Read by context.business_context via os.getenv.
     nexusiq_business_context: bool = True

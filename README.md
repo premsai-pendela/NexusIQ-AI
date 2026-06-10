@@ -6,6 +6,7 @@
 
 *Ask a business question in plain English. Get validated, cited answers from SQL, documents, and live web data — in seconds.*
 
+[![CI](https://github.com/premsai-pendela/NexusIQ-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/premsai-pendela/NexusIQ-AI/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![LangGraph](https://img.shields.io/badge/LangGraph-Orchestration-4A90E2?style=flat-square)](https://langchain-ai.github.io/langgraph/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-REST_API-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
@@ -39,6 +40,7 @@ The system routes each question to the right source(s), runs agents in parallel,
 - Multi-source query latency: **5–12 seconds**
 - Repeat queries (cached): **< 100ms**
 - Test coverage: **164 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
+- LLM cost: **75% fewer LLM calls** on simple SQL queries, **52% fewer tokens** on SQL+RAG validation — proven with before/after ledger profiles
 - Text-to-SQL business accuracy: **2/10 → 10/10** on ambiguous business-metric questions via deterministic business-context injection
 
 ---
@@ -156,6 +158,15 @@ LLM router fallback chain:
 **Evaluation system** — 164 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
 
 **Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Langfuse mirrors safe metadata automatically when keys are present. AWS CloudWatch in production.
+
+**LLM cost optimization, measured before/after** — Every model call is instrumented first (task, tokens, latency, trace ID), then unnecessary calls were replaced with deterministic logic: rule-based routing for obvious questions, deterministic SQL answer formatting, and deterministic SQL explanations. Avoided calls are logged to the ledger and trace with the reason and the prompt tokens that were never sent. Measured on the same queries under measurement profiles:
+
+| Query | LLM calls before → after | Est. tokens before → after |
+|-------|--------------------------|----------------------------|
+| Simple SQL count | 4 → **1** (−75%) | 2,036 → **939** (−54%) |
+| SQL + RAG validation | 7 → **2** (−71%) | 5,132 → **2,478** (−52%) |
+
+Cross-validation confidence is unchanged (HIGH on matching facts) because validation reads structured SQL rows, not formatted text. `NEXUSIQ_SQL_FORMAT_MODE=llm` / `NEXUSIQ_SQL_EXPLAIN_MODE=llm` restore LLM rendering for A/B comparison. Full methodology and evidence: [docs/llm_cost_optimization.md](docs/llm_cost_optimization.md).
 
 **Conversation memory + query resolution** — Rolls last 5 turns for context-aware follow-ups. Short/ambiguous follow-ups ("q1?") are expanded to standalone questions before hitting SQL/RAG/Web agents. Self-contained questions bypass rewriting to prevent context pollution.
 
@@ -455,6 +466,11 @@ tail -n 30 data/query_traces.jsonl
 
 # LLM task usage (task, model, latency, tokens)
 tail -n 20 data/llm_task_ledger.jsonl
+
+# Aggregated LLM usage report — per-task/model/profile tokens, latency,
+# fallbacks, and avoided calls (deterministic paths that skipped an LLM call)
+python -m observability.inspect_llm_usage
+python -m observability.inspect_llm_usage --json
 ```
 
 Every answer includes a "How NexusIQ Ran This Answer" panel in the UI showing route, total time, validation confidence, router model, slowest span, and trace ID.

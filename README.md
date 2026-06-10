@@ -477,6 +477,8 @@ Every answer includes a "How NexusIQ Ran This Answer" panel in the UI showing ro
 
 See [docs/observability.md](docs/observability.md) for Langfuse setup and CloudWatch integration.
 
+**Engineering post-mortems:** [docs/postmortems.md](docs/postmortems.md) — real defects found while operating the system (duplicate root traces, a guardrail false-positive, markdown-blind validation, ContextVar loss across thread pools), each with root cause, fixing commit, and the regression tests that now guard it.
+
 ---
 
 ## Ingestion Pipeline

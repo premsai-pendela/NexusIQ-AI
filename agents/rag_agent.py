@@ -1240,11 +1240,71 @@ ANSWER:"""
             # Use existing simple query flow
             return self._handle_simple_query(question, n_results, return_sources, start_time)
     
+    # Cross-encoder logit thresholds, calibrated on the live corpus
+    # (strong matches ~+7..+9, marginal correct ~+1..+2, off-topic ~-10):
+    # below WEAK the evidence is questionable -> one HyDE retry, then caveat;
+    # below INSUFFICIENT nothing retrieved is relevant -> honest refusal.
+    _RERANK_WEAK_THRESHOLD = 0.0
+    _RERANK_INSUFFICIENT_THRESHOLD = -5.0
+    _HYBRID_WEAK_FALLBACK = 0.35
+
+    @classmethod
+    def _assess_evidence(cls, chunks: List[Dict]) -> Dict:
+        """Deterministic retrieval-quality check. No LLM calls.
+
+        Uses cross-encoder logits when present (the only score comparable
+        across queries); falls back to hybrid score when the reranker was
+        unavailable. Hybrid scores are query-relative (per-query min-max BM25)
+        and must not be compared across queries.
+        """
+        if not chunks:
+            return {"quality": "insufficient", "reason": "no_chunks",
+                    "top_rerank": None, "top_hybrid": None, "unique_docs": 0}
+
+        rerank_scores = [c["rerank_score"] for c in chunks if "rerank_score" in c]
+        top_rerank = max(rerank_scores) if rerank_scores else None
+        top_hybrid = max((c.get("similarity", 0.0) for c in chunks), default=0.0)
+        unique_docs = len({c.get("filename") for c in chunks})
+
+        if top_rerank is not None:
+            if top_rerank < cls._RERANK_INSUFFICIENT_THRESHOLD:
+                quality, reason = "insufficient", "top_rerank_below_relevance_floor"
+            elif top_rerank < cls._RERANK_WEAK_THRESHOLD:
+                quality, reason = "weak", "top_rerank_below_confidence_threshold"
+            else:
+                quality, reason = "sufficient", "rerank_confident"
+        else:
+            if top_hybrid < cls._HYBRID_WEAK_FALLBACK:
+                quality, reason = "weak", "no_reranker_low_hybrid_score"
+            else:
+                quality, reason = "sufficient", "no_reranker_hybrid_acceptable"
+
+        return {
+            "quality": quality,
+            "reason": reason,
+            "top_rerank": round(top_rerank, 3) if top_rerank is not None else None,
+            "top_hybrid": round(top_hybrid, 3),
+            "unique_docs": unique_docs,
+        }
+
+    @staticmethod
+    def _evidence_better(candidate: List[Dict], current: List[Dict]) -> bool:
+        """Compare retrievals by top rerank logit; hybrid only as fallback."""
+        def top(chunks, key, default):
+            values = [c[key] for c in chunks if key in c]
+            return max(values) if values else default
+
+        candidate_rerank = top(candidate, "rerank_score", None)
+        current_rerank = top(current, "rerank_score", None)
+        if candidate_rerank is not None and current_rerank is not None:
+            return candidate_rerank > current_rerank
+        return top(candidate, "similarity", 0.0) > top(current, "similarity", 0.0)
+
     def _handle_simple_query(
-        self, 
-        question: str, 
-        n_results: int, 
-        return_sources: bool, 
+        self,
+        question: str,
+        n_results: int,
+        return_sources: bool,
         start_time: datetime
     ) -> Dict:
         """Handle simple, direct queries (existing logic)"""
@@ -1261,18 +1321,31 @@ ANSWER:"""
         # which makes metadata pre-filtering redundant; hybrid covers cross-document content too
         chunks = self.hybrid_search(retrieval_query, n_results=n_results)
 
-        # Adaptive HyDE: if top score too low, retrieval is struggling → generate hypothetical answer
-        HYDE_THRESHOLD = 0.35
-        if chunks and chunks[0].get("similarity", 1.0) < HYDE_THRESHOLD:
-            logger.info(f"Low confidence ({chunks[0]['similarity']:.3f} < {HYDE_THRESHOLD}) → HyDE triggered")
+        # Bounded evidence loop: retrieve -> assess (deterministic, on
+        # cross-encoder logits) -> if weak, one HyDE retry -> re-assess ->
+        # answer, caveat, or abstain honestly. One retry max.
+        initial_assessment = self._assess_evidence(chunks)
+        evidence = {"initial": initial_assessment, "retried": False}
+        if initial_assessment["quality"] != "sufficient":
+            logger.info(
+                "Weak evidence (%s, top_rerank=%s) → HyDE retry",
+                initial_assessment["reason"], initial_assessment["top_rerank"],
+            )
             hyde_chunks = self._hyde_search(retrieval_query, n_results=n_results)
-            if hyde_chunks and hyde_chunks[0].get("similarity", 0) > chunks[0].get("similarity", 0):
+            evidence["retried"] = True
+            if hyde_chunks and self._evidence_better(hyde_chunks, chunks):
                 logger.info("HyDE improved retrieval — using HyDE results")
                 chunks = hyde_chunks
+        final_assessment = self._assess_evidence(chunks) if evidence["retried"] else initial_assessment
+        evidence["final"] = final_assessment
 
-        if not chunks:
+        if not chunks or final_assessment["quality"] == "insufficient":
             return {
-                'answer': "I couldn't find any relevant information in the documents to answer your question.",
+                'answer': (
+                    "I couldn't find documents relevant enough to answer this reliably. "
+                    "The closest matches scored below the evidence threshold, so I won't "
+                    "guess from unrelated content."
+                ) if chunks else "I couldn't find any relevant information in the documents to answer your question.",
                 'sources': [],
                 'model_used': 'none',
                 'chunks_retrieved': 0,
@@ -1280,6 +1353,8 @@ ANSWER:"""
                 'complexity': complexity,
                 'query_type': 'simple',
                 'models_tried': [],
+                'evidence': evidence,
+                'evidence_quality': 'insufficient',
                 'error': 'No relevant documents found'
             }
         
@@ -1311,13 +1386,23 @@ ANSWER:"""
                 'error': 'All LLM models failed'
             }
         
+        # Weak-but-usable evidence: answer with an explicit caveat instead of
+        # presenting low-relevance retrieval as confident.
+        if final_assessment["quality"] == "weak":
+            answer = (
+                f"{answer}\n\n"
+                "⚠️ **Evidence caveat:** retrieval confidence for this question was low "
+                "even after a retry — the cited documents may only partially cover it. "
+                "Treat this answer as a lead, not a verified fact."
+            )
+
         # Extract sources
         sources = self._extract_sources(answer, chunks) if return_sources else []
-        
+
         query_time = (datetime.now() - start_time).total_seconds()
-        
+
         logger.info(f"✅ Query complete in {query_time:.2f}s using {model_used}")
-        
+
         return {
             'answer': answer,
             'sources': sources,
@@ -1327,6 +1412,8 @@ ANSWER:"""
             'complexity': complexity,
             'query_type': 'simple',
             'models_tried': models_tried,
+            'evidence': evidence,
+            'evidence_quality': final_assessment["quality"],
             'chunks': chunks
         }
 

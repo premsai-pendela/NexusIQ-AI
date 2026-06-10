@@ -6,7 +6,7 @@
       "id": "net_revenue",
       "term": "net revenue",
       "aliases": ["net sales", "revenue after refunds", "actual revenue", "revenue net of returns"],
-      "definition": "Net revenue = SUM(sales_transactions.total_amount) minus SUM(returns.refund_amount) for returns with status = 'refunded' in the same period (filter returns by return_date). Compute as two single-row aggregate CTEs, then SELECT (sales.total - refunds.total) FROM both CTEs cross-joined (FROM sales_cte, refunds_cte) with no GROUP BY.",
+      "definition": "Net revenue = SUM(sales_transactions.total_amount) minus SUM(returns.refund_amount) for returns with status = 'refunded' in the same period (filter returns by return_date). Use exactly this shape: WITH sales AS (SELECT ROUND(SUM(total_amount)::numeric, 2) AS total, COUNT(*) AS transactions_analyzed FROM sales_transactions WHERE <period>), refunds AS (SELECT COALESCE(ROUND(SUM(refund_amount)::numeric, 2), 0) AS total FROM returns WHERE status = 'refunded' AND <period on return_date>) SELECT sales.total - refunds.total AS net_revenue, sales.transactions_analyzed FROM sales, refunds. Put COUNT(*) inside the sales CTE only — never add a bare COUNT(*) to the final SELECT (it mixes an aggregate with non-grouped CTE columns and fails).",
       "category": "metric",
       "tables": ["sales_transactions", "returns"]
     },

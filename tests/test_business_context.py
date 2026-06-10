@@ -191,6 +191,119 @@ class MetadataFlowTest(unittest.TestCase):
         self.assertIsNone(result["business_context"])
 
 
+class GlossaryRecipeContractTest(unittest.TestCase):
+    """Guard SQL-shape guidance that prevents known PostgreSQL failures.
+
+    net_revenue previously collided with SQL prompt rule 8 ("include COUNT(*)
+    AS transactions_analyzed"): models appended a bare COUNT(*) to the final
+    SELECT of the CTE subtraction and hit a GroupingError. The definition now
+    carries the count inside the sales CTE and says so explicitly. If someone
+    rewords the glossary and drops these guards, this test fails first.
+    """
+
+    def test_net_revenue_recipe_keeps_grouping_safe_template(self):
+        entries = {entry.id: entry for entry in load_glossary()}
+        definition = entries["net_revenue"].definition
+        self.assertIn("transactions_analyzed", definition)
+        self.assertIn("COALESCE", definition)
+        self.assertIn("never add a bare COUNT(*)", definition)
+
+    def test_case_resolution_recipe_keeps_interval_guard(self):
+        entries = {entry.id: entry for entry in load_glossary()}
+        definition = entries["case_resolution_time"].definition
+        self.assertIn("EXTRACT(EPOCH", definition)
+        self.assertIn("Never cast an interval directly to numeric", definition)
+
+
+class DegradedMetricGuardTest(unittest.TestCase):
+    """SQL failure on a company-defined metric must not yield a misleading
+    document-only answer presented as complete."""
+
+    FAILED_SQL = {"success": False, "error": "GroupingError: ...", "answer": ""}
+    GROSS_RAG = {
+        "success": True,
+        "answer": "Q4 2024 revenue was **$58,900,000** per the financial report.",
+    }
+
+    def _fusion(self):
+        from agents.fusion_agent import FusionAgent
+
+        return FusionAgent.__new__(FusionAgent)
+
+    def test_net_revenue_sql_failure_warns_instead_of_gross_answer(self):
+        agent = self._fusion()
+        answer = agent._format_degraded_multi_source_answer(
+            sql_result=self.FAILED_SQL,
+            rag_result=self.GROSS_RAG,
+            web_result=None,
+            question="What was net revenue in Q4 2024?",
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertIn("cannot be fully answered", answer)
+        self.assertIn("net_revenue", answer)
+        self.assertIn("needs SQL verification", answer)
+        self.assertIn("Unverified supporting context", answer)
+        self.assertTrue(answer.startswith("⚠️"))
+        self.assertEqual(agent._last_degraded_metric_ids, ["net_revenue"])
+
+    def test_non_metric_question_keeps_standard_degraded_note(self):
+        agent = self._fusion()
+        answer = agent._format_degraded_multi_source_answer(
+            sql_result=self.FAILED_SQL,
+            rag_result=self.GROSS_RAG,
+            web_result=None,
+            question="What was total revenue in October 2024? Validate against reports.",
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertNotIn("needs SQL verification", answer)
+        self.assertIn("Availability note", answer)
+        self.assertEqual(agent._last_degraded_metric_ids, [])
+
+    def test_sql_survivor_on_metric_question_gets_no_warning(self):
+        agent = self._fusion()
+        answer = agent._format_degraded_multi_source_answer(
+            sql_result={"success": True, "answer": "Net revenue: **$58,253,039.89**"},
+            rag_result={"success": False, "error": "no chunks", "answer": ""},
+            web_result=None,
+            question="What was net revenue in Q4 2024?",
+        )
+
+        self.assertIsNotNone(answer)
+        self.assertNotIn("needs SQL verification", answer)
+        self.assertIn("SQL Database", answer)
+
+    def test_single_source_attempt_not_degraded_formatted(self):
+        agent = self._fusion()
+        answer = agent._format_degraded_multi_source_answer(
+            sql_result=None,
+            rag_result=self.GROSS_RAG,
+            web_result=None,
+            question="What was net revenue in Q4 2024?",
+        )
+        self.assertIsNone(answer)
+
+    def test_generate_fused_answer_records_metric_reason(self):
+        agent = self._fusion()
+        agent._format_validated_sql_rag_answer = lambda **_kwargs: None
+        answer = agent._generate_fused_answer(
+            question="What was net revenue in Q4 2024?",
+            sql_result=self.FAILED_SQL,
+            rag_result=self.GROSS_RAG,
+            web_result=None,
+            validation=None,
+        )
+
+        self.assertIn("needs SQL verification", answer)
+        self.assertEqual(
+            agent._last_answer_generation["reason"], "metric_requires_sql_verification"
+        )
+        self.assertEqual(
+            agent._last_answer_generation["business_context_expected"], ["net_revenue"]
+        )
+
+
 class EvalScoringTest(unittest.TestCase):
     """score_case must gate the final pass on context correctness."""
 

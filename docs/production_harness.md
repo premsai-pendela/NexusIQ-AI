@@ -93,6 +93,36 @@ It helps by:
 - preserving task progress for debugging
 - making failures visible in traces instead of silent
 
+## Bounded Verification Loops
+
+NexusIQ treats the loop around the model, not the model itself, as the unit
+of reliability. Every model output is checked by something deterministic, and
+on failure the system gets exactly one bounded repair attempt before failing
+honestly. Two concrete loops ship today:
+
+**SQL repair loop** — generate SQL → validate with the sqlglot read-only
+safety gate → execute → if PostgreSQL rejects it with a repairable semantic
+error (for example a GROUP BY/aggregate mistake), make one `sql.repair_query`
+call with the question, the failed SQL, the database error, the schema, and
+any applied business definitions → re-validate the repaired SQL with the
+same safety gate → execute, or fail with the original error preserved.
+Connection/timeout errors never trigger repair. Every attempt is recorded in
+the LLM ledger and the query trace (`sql_repair` metadata: attempted,
+succeeded, original error, reason).
+
+**RAG evidence loop** — retrieve with hybrid BM25+vector search → assess
+evidence quality deterministically using cross-encoder reranker scores (with
+a hybrid-score fallback when the reranker is unavailable) → if evidence is
+weak, retry retrieval once with HyDE query expansion → re-assess → then
+answer normally, answer with an explicit low-evidence caveat, or refuse
+honestly when nothing retrieved is relevant — without spending the answer
+LLM call. The assessment (`evidence_quality`, retry flag, top scores) is
+attached to the result and visible in traces.
+
+In both loops the boundaries are hard-coded: one retry maximum, deterministic
+checks decide, original failures are never hidden, and downstream
+degraded-answer guards take over when a loop gives up.
+
 ## Current Scope
 
 This first version is intentionally conservative:

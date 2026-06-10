@@ -500,6 +500,7 @@ Reply with ONLY this JSON (no extra text):
                 'explanation_mode': result.get('explanation_mode'),
                 'explanation_generated_by_llm': result.get('explanation_generated_by_llm', False),
                 'business_context': result.get('business_context'),
+                'sql_repair': result.get('sql_repair'),
                 'time': round(elapsed, 2),
                 'source': 'SQL Database'
             }
@@ -530,6 +531,8 @@ Reply with ONLY this JSON (no extra text):
                 'chunks_retrieved': result.get('chunks_retrieved', 0),
                 'model_used': result.get('model_used', ''),
                 'query_type': result.get('query_type', 'simple'),
+                'evidence_quality': result.get('evidence_quality'),
+                'evidence': result.get('evidence'),
                 'time': round(elapsed, 2),
                 'source': 'PDF Documents'
             }
@@ -1068,13 +1071,20 @@ Reply with ONLY this JSON (no extra text):
             sql_result=sql_result,
             rag_result=rag_result,
             web_result=web_result,
+            question=question,
         )
         if degraded_answer:
+            metric_ids = getattr(self, "_last_degraded_metric_ids", [])
             self._last_answer_generation = {
                 "mode": "deterministic_degraded",
-                "reason": "only_one_requested_source_succeeded",
+                "reason": (
+                    "metric_requires_sql_verification" if metric_ids
+                    else "only_one_requested_source_succeeded"
+                ),
                 "model_used": None,
             }
+            if metric_ids:
+                self._last_answer_generation["business_context_expected"] = metric_ids
             return degraded_answer
         
         # Build source summaries
@@ -1305,8 +1315,10 @@ ANSWER:"""
         sql_result: Optional[Dict],
         rag_result: Optional[Dict],
         web_result: Optional[Dict],
+        question: str = "",
     ) -> Optional[str]:
         """Return one complete surviving source answer without an unnecessary LLM call."""
+        self._last_degraded_metric_ids = []
         sources = (
             ("SQL Database", sql_result),
             ("Documents", rag_result),
@@ -1325,6 +1337,32 @@ ANSWER:"""
 
         source_label, source_result = successful[0]
         unavailable_text = ", ".join(unavailable)
+
+        # Trust guard: a question targeting a company-defined metric (net
+        # revenue, return rate, ...) cannot be answered by documents alone —
+        # PDF figures may reflect a different basis (e.g., gross vs net). If
+        # SQL failed on such a question, lead with the insufficiency instead
+        # of presenting the surviving source as a complete answer.
+        sql_failed = sql_result is not None and not sql_result.get("success")
+        if sql_failed and source_label != "SQL Database" and question:
+            from context.business_context import expected_metric_ids
+
+            metric_ids = expected_metric_ids(question)
+            if metric_ids:
+                self._last_degraded_metric_ids = metric_ids
+                metric_names = ", ".join(metric_ids)
+                return (
+                    f"⚠️ **The SQL calculation for a company-defined metric ({metric_names}) failed, "
+                    f"so this question cannot be fully answered right now.** "
+                    f"This metric is computed from the transaction database using company business "
+                    f"definitions; document evidence alone may reflect a different basis "
+                    f"(for example, gross instead of net figures).\n\n"
+                    f"Unverified supporting context from {source_label}:\n\n"
+                    f"{source_result['answer']}\n\n"
+                    f"**Availability note:** {unavailable_text} could not provide usable evidence for this request. "
+                    f"The requested metric needs SQL verification — try again or check the database connection."
+                )
+
         return (
             f"{source_result['answer']}\n\n"
             f"**Availability note:** {unavailable_text} could not provide usable evidence for this request. "

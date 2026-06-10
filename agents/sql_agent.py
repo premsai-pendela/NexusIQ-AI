@@ -526,12 +526,8 @@ SQL QUERY:"""
             }
         
         # Clean SQL
-        sql_query = result["response"]
-        if sql_query.startswith('```sql'):
-            sql_query = sql_query.replace('```sql', '').replace('```', '').strip()
-        elif sql_query.startswith('```'):
-            sql_query = sql_query.replace('```', '').strip()
-        
+        sql_query = self._strip_sql_fences(result["response"])
+
         # Validate
         is_safe, error = self._validate_query(sql_query)
         if not is_safe:
@@ -587,6 +583,109 @@ SQL QUERY:"""
             return {"success": False, "error": str(e), "results": None}
     
     
+    @staticmethod
+    def _strip_sql_fences(sql_text: str) -> str:
+        sql_text = str(sql_text or "")
+        if sql_text.startswith('```sql'):
+            return sql_text.replace('```sql', '').replace('```', '').strip()
+        if sql_text.startswith('```'):
+            return sql_text.replace('```', '').strip()
+        return sql_text.strip()
+
+    # Database errors worth one error-feedback repair attempt: the SQL parsed
+    # as safe but PostgreSQL rejected its semantics. Connection/timeout/quota
+    # problems are NOT repairable by rewriting SQL and must not burn a call.
+    _REPAIRABLE_DB_ERROR = re.compile(
+        r"syntax error|GROUP BY|aggregate|cannot cast|does not exist|undefined"
+        r"|ambiguous|invalid input|operator|GroupingError|must appear",
+        re.IGNORECASE,
+    )
+
+    def _attempt_sql_repair(
+        self,
+        question: str,
+        failed_sql: str,
+        db_error: str,
+        complexity: str = "simple",
+    ) -> Dict[str, Any]:
+        """One bounded error-feedback repair: regenerate SQL with the DB error
+        in context, re-validate with the same AST safety gate, execute once.
+
+        Never loops. Never hides the original error. Returns
+        {"success", "query", "execution_result", "models_tried", "metadata"}.
+        """
+        metadata = {
+            "attempted": False,
+            "succeeded": False,
+            "original_error": str(db_error)[:300],
+        }
+
+        if not self._REPAIRABLE_DB_ERROR.search(str(db_error)):
+            metadata["reason"] = "error_not_repairable_by_sql_rewrite"
+            return {"success": False, "metadata": metadata, "models_tried": []}
+
+        metadata["attempted"] = True
+        context_meta = getattr(self, "_last_business_context", None) or {}
+        context_block = context_meta.get("block") or ""
+
+        repair_prompt = f"""You are an expert PostgreSQL query repairer.
+
+A generated query failed when PostgreSQL executed it. Fix it.
+
+{self.schema_context}
+{context_block}
+ORIGINAL QUESTION: {question}
+
+FAILED SQL:
+{failed_sql}
+
+POSTGRESQL ERROR:
+{db_error}
+
+RULES:
+1. Return ONLY the corrected PostgreSQL query, no explanations
+2. Keep it a single read-only SELECT or WITH statement
+3. Fix the specific error above; preserve the original intent of the question
+4. Never mix a bare aggregate like COUNT(*) with non-grouped columns in the same SELECT
+5. Cast intervals via EXTRACT(EPOCH FROM ...) before numeric math
+
+CORRECTED SQL:"""
+
+        extra_metadata = {"repair": True}
+        if context_meta.get("ids"):
+            extra_metadata["business_context_ids"] = context_meta["ids"]
+        result = self._invoke_with_fallback(
+            repair_prompt, complexity, task="sql.repair_query", extra_metadata=extra_metadata
+        )
+        if not result["success"]:
+            metadata["reason"] = "repair_generation_failed"
+            return {"success": False, "metadata": metadata, "models_tried": result.get("models_tried", [])}
+
+        repaired_sql = self._strip_sql_fences(result["response"])
+        is_safe, safety_error = self._validate_query(repaired_sql)
+        if not is_safe:
+            metadata["reason"] = "repaired_sql_rejected_by_safety_gate"
+            metadata["safety_error"] = safety_error
+            logger.warning("🔧 SQL repair rejected by safety gate: %s", safety_error)
+            return {"success": False, "metadata": metadata, "models_tried": result.get("models_tried", [])}
+
+        execution_result = self.execute_query(repaired_sql)
+        metadata["repair_model"] = result.get("model_used")
+        if execution_result.get("success"):
+            metadata["succeeded"] = True
+            logger.info("🔧 SQL repair succeeded after: %s", str(db_error)[:120])
+            return {
+                "success": True,
+                "query": repaired_sql,
+                "execution_result": execution_result,
+                "metadata": metadata,
+                "models_tried": result.get("models_tried", []),
+            }
+
+        metadata["reason"] = "repaired_sql_execution_failed"
+        metadata["repair_error"] = str(execution_result.get("error"))[:300]
+        return {"success": False, "metadata": metadata, "models_tried": result.get("models_tried", [])}
+
     # Column-name heuristics for deterministic value rendering.
     # Order matters: percent and count hints win over money hints so columns
     # like "total_transactions" or "return_rate" are not rendered as dollars.
@@ -904,7 +1003,24 @@ EXPLANATION:"""
         # ═══════════════════════════════════════════════════════
         
         execution_result = self.execute_query(query_result["query"])
-        
+
+        # Bounded verification loop: on a semantic DB failure, regenerate the
+        # SQL once with the error in context, re-validate, execute. One
+        # attempt only; the original error is preserved either way.
+        sql_repair = None
+        if not execution_result["success"]:
+            repair = self._attempt_sql_repair(
+                question=question,
+                failed_sql=query_result["query"],
+                db_error=execution_result.get("error", ""),
+                complexity=query_result.get("complexity", "simple"),
+            )
+            sql_repair = repair["metadata"]
+            all_models_tried.extend(repair.get("models_tried", []))
+            if repair["success"]:
+                query_result["query"] = repair["query"]
+                execution_result = repair["execution_result"]
+
         if not execution_result["success"]:
             return {
                 "success": False,
@@ -913,6 +1029,7 @@ EXPLANATION:"""
                 "error": execution_result.get("error", "Query execution failed"),
                 "models_tried": all_models_tried,
                 "model_used": query_result.get("model_used"),
+                "sql_repair": sql_repair,
                 "execution_time": time.time() - start_time
             }
         
@@ -964,6 +1081,7 @@ EXPLANATION:"""
             "execution_time": total_time,
             "correction_note": correction_note,
             "business_context": query_result.get("business_context"),
+            "sql_repair": sql_repair,
         }
 
     

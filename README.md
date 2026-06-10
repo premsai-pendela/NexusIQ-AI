@@ -16,7 +16,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com)
 [![AWS](https://img.shields.io/badge/AWS-EC2_+_ECR-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com)
 
-**[🚀 Live Demo](https://nexusiq-ai.com)** · **[📡 REST API](https://nexusiq-ai.com/api/v1/docs)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
+**[🚀 Live Demo](https://nexusiq-ai.com)** · **[📡 REST API](https://nexusiq-ai.com/api/v1/docs)** · **[🎯 Demo Guide](docs/DEMO.md)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
 
 </div>
 
@@ -39,7 +39,7 @@ The system routes each question to the right source(s), runs agents in parallel,
 - Cross-validation precision: **0.03% SQL↔PDF delta** on matching facts
 - Multi-source query latency: **5–12 seconds**
 - Repeat queries (cached): **< 100ms**
-- Test coverage: **164 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
+- Test coverage: **194 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
 - LLM cost: **75% fewer LLM calls** on simple SQL queries, **52% fewer tokens** on SQL+RAG validation — proven with before/after ledger profiles
 - Text-to-SQL business accuracy: **2/10 → 10/10** on ambiguous business-metric questions via deterministic business-context injection
 
@@ -155,7 +155,7 @@ LLM router fallback chain:
 
 **Production agent harness** — Default controlled execution layer with bounded steps, per-step task state, retries on transient failures, LangGraph as the primary workflow engine, native harness fallback, and harness metadata in traces.
 
-**Evaluation system** — 164 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
+**Evaluation system** — 194 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
 
 **Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Langfuse mirrors safe metadata automatically when keys are present. AWS CloudWatch in production.
 
@@ -419,7 +419,7 @@ python scripts/production_smoke_test.py --base-url http://localhost:8000
 ## Testing & Evaluation
 
 ```bash
-# Full deterministic test suite (164 tests)
+# Full deterministic test suite (194 tests)
 python -m unittest discover -s tests -v
 
 # Offline eval harness (no LLM/DB calls)
@@ -446,7 +446,7 @@ python -m evals.context_eval --mode after --ids net_revenue_q4
 ```
 
 **Current results:**
-- Unit + contract tests: **164/164 passing**
+- Unit + contract tests: **194/194 passing**
 - Offline evals: **7/7 passing**
 - RAG benchmark: **97.7% Hit@5 · 0.919 Context Recall · 0.778 MRR**
 

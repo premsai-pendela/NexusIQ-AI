@@ -46,6 +46,7 @@ data/web_cache.json
 data/quota_tracker.json
 data/llm_task_ledger.jsonl
 data/query_traces.jsonl
+data/harness_tasks.jsonl
 
 # Test reports (auto-generated)
 .gstack/

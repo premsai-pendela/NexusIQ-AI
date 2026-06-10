@@ -177,5 +177,20 @@ def reset_default_retriever() -> None:
     _default_retriever = None
 
 
+def expected_metric_ids(question: str) -> List[str]:
+    """IDs of company-defined *metric* glossary entries the question targets.
+
+    Used by Fusion to detect when a question asks for a business-defined
+    metric (net revenue, return rate, ...) that cannot be answered from
+    documents alone. Deterministic; returns [] on any failure.
+    """
+    try:
+        hits = _get_default_retriever().retrieve(question)
+    except Exception as exc:
+        logger.warning("Metric-context check failed; assuming none: %s", exc)
+        return []
+    return [entry.id for _score, entry in hits if entry.category == "metric"]
+
+
 def business_context_enabled() -> bool:
     return os.getenv("NEXUSIQ_BUSINESS_CONTEXT", "1").strip().lower() not in {"0", "false", "no", "off"}

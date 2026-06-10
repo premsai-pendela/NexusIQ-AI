@@ -646,9 +646,10 @@ class LLMGatewayTests(unittest.TestCase):
 
 
 class FoundationObservabilityTests(unittest.TestCase):
-    def test_sql_answer_formatting_still_uses_llm_before_disabling_calls(self):
+    def test_sql_answer_formatting_is_deterministic_by_default(self):
         agent = SQLAgent.__new__(SQLAgent)
         calls = []
+        avoided = []
 
         def fake_invoke(prompt, complexity, task):
             calls.append({"prompt": prompt, "complexity": complexity, "task": task})
@@ -658,8 +659,14 @@ class FoundationObservabilityTests(unittest.TestCase):
                 "models_tried": [{"task": task}],
             }
 
-        agent._invoke_with_fallback = fake_invoke
+        class GatewayStub:
+            def record_avoided_call(self, **kwargs):
+                avoided.append(kwargs)
 
+        agent._invoke_with_fallback = fake_invoke
+        agent.llm_gateway = GatewayStub()
+
+        os.environ.pop("NEXUSIQ_SQL_FORMAT_MODE", None)
         result = agent._format_answer(
             question="How many transactions happened in October 2024?",
             query="SELECT COUNT(*) AS transaction_count FROM sales_transactions",
@@ -668,10 +675,24 @@ class FoundationObservabilityTests(unittest.TestCase):
         )
 
         self.assertTrue(result["success"])
-        self.assertEqual(calls[0]["task"], "sql.format_answer")
-        self.assertEqual(result["answer_mode"], "llm_sql_format")
+        self.assertEqual(calls, [])
+        self.assertEqual(result["answer_mode"], "deterministic_sql_format")
+        self.assertIn("8,200", result["answer"])
+        self.assertEqual(avoided[0]["task"], "sql.format_answer")
+        self.assertEqual(avoided[0]["reason"], "deterministic_sql_format")
 
-    def test_sql_ask_still_calls_explanation_before_disabling_calls(self):
+        with patch.dict(os.environ, {"NEXUSIQ_SQL_FORMAT_MODE": "llm"}):
+            llm_result = agent._format_answer(
+                question="How many transactions happened in October 2024?",
+                query="SELECT COUNT(*) AS transaction_count FROM sales_transactions",
+                results=[{"transaction_count": 8200}],
+                complexity="simple",
+            )
+
+        self.assertEqual(calls[0]["task"], "sql.format_answer")
+        self.assertEqual(llm_result["answer_mode"], "llm_sql_format")
+
+    def test_sql_ask_propagates_llm_explanation_results(self):
         class Context:
             sql_table = "sales_transactions"
             label = "Live Baseline"

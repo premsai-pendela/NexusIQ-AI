@@ -27,6 +27,7 @@ from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
 from typing import Dict, Any, List, Optional
 import logging
+import os
 import time
 import re
 from functools import wraps
@@ -559,18 +560,106 @@ SQL QUERY:"""
             return {"success": False, "error": str(e), "results": None}
     
     
+    # Column-name heuristics for deterministic value rendering.
+    # Order matters: percent and count hints win over money hints so columns
+    # like "total_transactions" or "return_rate" are not rendered as dollars.
+    _PCT_COLUMN_HINTS = ("percent", "pct", "rate", "margin", "share", "ratio")
+    _COUNT_COLUMN_HINTS = (
+        "count", "quantity", "transactions", "orders", "units",
+        "customers", "items", "records", "num_", "rows", "qty",
+    )
+    _MONEY_COLUMN_HINTS = (
+        "revenue", "amount", "price", "sales", "cost", "total",
+        "spend", "value", "profit", "income",
+    )
+
+    @classmethod
+    def _classify_column(cls, column: str) -> str:
+        name = column.lower()
+        if any(hint in name for hint in cls._PCT_COLUMN_HINTS):
+            return "percent"
+        if any(hint in name for hint in cls._COUNT_COLUMN_HINTS):
+            return "count"
+        if any(hint in name for hint in cls._MONEY_COLUMN_HINTS):
+            return "money"
+        return "plain"
+
+    @classmethod
+    def _format_cell(cls, column: str, value: Any) -> str:
+        """Render one SQL value as business-friendly text without an LLM."""
+        if value is None:
+            return "n/a"
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+
+        kind = cls._classify_column(column)
+        if kind == "percent":
+            return f"{number:,.2f}%"
+        if kind == "count":
+            return f"{int(round(number)):,}"
+        if kind == "money":
+            return f"${number:,.2f}"
+        if float(number).is_integer():
+            return f"{int(number):,}"
+        return f"{number:,.2f}"
+
+    @staticmethod
+    def _humanize_column(column: str) -> str:
+        return str(column).replace("_", " ").strip().capitalize()
+
+    def _deterministic_format_answer(self, results: list) -> Optional[str]:
+        """Format common SQL result shapes without an LLM call.
+
+        Returns None when the shape is unusual, so the caller can fall back
+        to LLM formatting.
+        """
+        if not results or not isinstance(results[0], dict):
+            return None
+
+        columns = list(results[0].keys())
+        if not columns:
+            return None
+
+        # Single row, single column: scalar aggregate.
+        if len(results) == 1 and len(columns) == 1:
+            column = columns[0]
+            return f"{self._humanize_column(column)}: **{self._format_cell(column, results[0][column])}**"
+
+        # Single row, multiple columns: key-value summary.
+        if len(results) == 1:
+            lines = [
+                f"- {self._humanize_column(column)}: **{self._format_cell(column, results[0][column])}**"
+                for column in columns
+            ]
+            return "Result:\n" + "\n".join(lines)
+
+        # Multiple rows: markdown table, capped at 10 rows.
+        display_rows = results[:10]
+        header = "| " + " | ".join(self._humanize_column(column) for column in columns) + " |"
+        divider = "|" + "|".join([" --- "] * len(columns)) + "|"
+        body = [
+            "| " + " | ".join(self._format_cell(column, row.get(column)) for column in columns) + " |"
+            for row in display_rows
+        ]
+        table = "\n".join([header, divider, *body])
+        if len(results) > len(display_rows):
+            table += f"\n\nShowing first {len(display_rows)} of {len(results):,} rows."
+        return f"Found {len(results):,} results:\n\n{table}"
+
     def _format_answer(self, question: str, query: str, results: list, complexity: str) -> Dict[str, Any]:
         """Format results as natural language"""
-        
+
         if not results:
             return {
                 "success": True,
                 "answer": "No data found matching your question.",
                 "models_tried": []
             }
-        
+
         sample_results = results[:10] if len(results) > 10 else results
-        
+
         formatting_prompt = f"""Based on this SQL query and results, provide a clear answer.
 
 QUESTION: {question}
@@ -583,6 +672,23 @@ Provide a business-friendly answer with:
 3. Brief insights if multiple rows
 
 ANSWER:"""
+
+        format_mode = os.getenv("NEXUSIQ_SQL_FORMAT_MODE", "deterministic").lower()
+        if format_mode != "llm":
+            deterministic_answer = self._deterministic_format_answer(results)
+            if deterministic_answer:
+                self.llm_gateway.record_avoided_call(
+                    task="sql.format_answer",
+                    reason="deterministic_sql_format",
+                    prompt=formatting_prompt,
+                    metadata={"agent": "sql", "complexity": complexity, "row_count": len(results)},
+                )
+                return {
+                    "success": True,
+                    "answer": deterministic_answer,
+                    "models_tried": [],
+                    "answer_mode": "deterministic_sql_format",
+                }
 
         result = self._invoke_with_fallback(formatting_prompt, complexity, task="sql.format_answer")
         
@@ -610,7 +716,7 @@ ANSWER:"""
     
     def _explain_query(self, sql_query: str, question: str) -> Dict[str, Any]:
         """Generate plain English explanation of SQL query"""
-        
+
         explanation_prompt = f"""You are a SQL teacher explaining a query to a beginner.
 
 ORIGINAL QUESTION: {question}
@@ -638,19 +744,36 @@ Only include steps that are actually in the query. Be concise but clear.
 
 EXPLANATION:"""
 
+        explain_mode = os.getenv("NEXUSIQ_SQL_EXPLAIN_MODE", "deterministic").lower()
+        if explain_mode != "llm":
+            self.llm_gateway.record_avoided_call(
+                task="sql.explain_query",
+                reason="deterministic_explanation_default",
+                prompt=explanation_prompt,
+                metadata={"agent": "sql"},
+            )
+            return {
+                "success": True,
+                "explanation": self._generate_basic_explanation(sql_query),
+                "models_tried": [],
+                "explanation_mode": "deterministic_explanation",
+            }
+
         result = self._invoke_with_fallback(explanation_prompt, "simple", task="sql.explain_query")
-        
+
         if result["success"]:
             return {
                 "success": True,
                 "explanation": result["response"],
-                "models_tried": result["models_tried"]
+                "models_tried": result["models_tried"],
+                "explanation_mode": "llm_explanation",
             }
         else:
             return {
                 "success": True,
                 "explanation": self._generate_basic_explanation(sql_query),
-                "models_tried": result.get("models_tried", [])
+                "models_tried": result.get("models_tried", []),
+                "explanation_mode": "deterministic_fallback",
             }
     
     
@@ -803,7 +926,10 @@ EXPLANATION:"""
             "answer": format_result["answer"],
             "explanation": explain_result.get("explanation", ""),
             "answer_mode": format_result.get("answer_mode"),
-            "explanation_mode": "llm_explanation" if explain_result.get("models_tried") else "deterministic_fallback",
+            "explanation_mode": explain_result.get(
+                "explanation_mode",
+                "llm_explanation" if explain_result.get("models_tried") else "deterministic_fallback",
+            ),
             "explanation_generated_by_llm": bool(explain_result.get("models_tried")),
             "complexity": query_result.get("complexity", "simple"),
             "model_used": query_result.get("model_used"),

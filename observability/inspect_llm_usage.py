@@ -54,6 +54,8 @@ def _aggregate(events: List[Dict[str, Any]], key_name: str) -> List[Dict[str, An
             "invalid_responses": sum(_is_invalid_response(event) for event in group),
             "failed": sum(event.get("status") == "failed" for event in group),
             "skipped": sum(event.get("status") == "skipped" for event in group),
+            "avoided": sum(event.get("status") == "avoided" for event in group),
+            "tokens_avoided": sum(event.get("tokens_avoided_estimate", 0) or 0 for event in group),
             "tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in group),
             "input_tokens": sum(event.get("input_tokens_estimate", 0) or 0 for event in group),
             "output_tokens": sum(event.get("output_tokens_estimate", 0) or 0 for event in group),
@@ -100,6 +102,8 @@ def summarize_usage(
         "successes": statuses["success"],
         "failed": statuses["failed"],
         "skipped": statuses["skipped"],
+        "avoided": statuses["avoided"],
+        "tokens_avoided": sum(event.get("tokens_avoided_estimate", 0) or 0 for event in events),
         "invalid_responses": sum(_is_invalid_response(event) for event in events),
         "fallback_invocations": fallback_count,
         "tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in events),
@@ -145,6 +149,10 @@ def format_usage_report(summary: Dict[str, Any]) -> str:
             f"Attempts: {summary['attempts']} | Success: {summary['successes']} | "
             f"Failed: {summary['failed']} | Skipped: {summary['skipped']} | "
             f"Invalid responses: {summary['invalid_responses']}"
+        ),
+        (
+            f"Avoided calls (deterministic paths): {summary['avoided']} | "
+            f"Estimated prompt tokens not sent: {summary['tokens_avoided']}"
         ),
         (
             f"Estimated tokens: {summary['tokens']} "

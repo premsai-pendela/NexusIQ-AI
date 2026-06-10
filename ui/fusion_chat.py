@@ -1276,6 +1276,11 @@ def render_observability_panel(msg: dict):
                 + (llm_usage.get("skipped_attempts", 0) or 0)
                 + (llm_usage.get("avoided_calls", 0) or 0),
             )
+            if llm_usage.get("avoided_estimated_tokens"):
+                st.caption(
+                    "Prompt tokens not sent (deterministic paths): "
+                    f"{_format_token_count(llm_usage.get('avoided_estimated_tokens'))}"
+                )
             if llm_usage.get("measurement_profile"):
                 st.caption(f"Measurement profile: `{llm_usage.get('measurement_profile')}`")
             if llm_usage.get("tasks"):

@@ -162,10 +162,6 @@ class LLMGateway:
 
     def _record_attempt(self, event: Dict[str, Any]) -> None:
         """Append one LLM task attempt without storing prompt contents."""
-        event.setdefault(
-            "measurement_profile",
-            os.getenv("NEXUSIQ_MEASUREMENT_PROFILE", "foundation_before_call_disabling"),
-        )
         context = _llm_call_context.get()
         trace = context.get("trace")
         safe_context = {key: value for key, value in context.items() if key != "trace"}
@@ -187,6 +183,14 @@ class LLMGateway:
             except Exception as exc:
                 logger.warning("Could not attach LLM event to trace: %s", exc)
 
+        self._write_ledger_row(event)
+
+    def _write_ledger_row(self, event: Dict[str, Any]) -> None:
+        """Append one event row to the local JSONL ledger."""
+        event.setdefault(
+            "measurement_profile",
+            os.getenv("NEXUSIQ_MEASUREMENT_PROFILE", "foundation_before_call_disabling"),
+        )
         if not self._ledger_enabled():
             return
 
@@ -197,6 +201,68 @@ class LLMGateway:
                 handle.write(json.dumps(event, default=str) + "\n")
         except Exception as exc:
             logger.warning("Could not write LLM task ledger event: %s", exc)
+
+    def record_avoided_call(
+        self,
+        *,
+        task: str,
+        reason: str,
+        prompt: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Record an LLM call replaced by deterministic logic.
+
+        Savings accounting is conservative: only the prompt tokens that were
+        never sent are counted; the unsent completion is not estimated.
+        """
+        tokens_avoided = _estimate_tokens(prompt) if prompt else 0
+        context = _llm_call_context.get()
+        trace = context.get("trace")
+        safe_context = {key: value for key, value in context.items() if key != "trace"}
+
+        if trace is not None:
+            try:
+                trace.record_event(
+                    "llm.call_skipped",
+                    {
+                        "task": task,
+                        "reason": reason,
+                        "estimated_tokens_avoided": tokens_avoided,
+                        **(metadata or {}),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Could not attach avoided-call event to trace: %s", exc)
+
+        event = {
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "invocation_id": uuid.uuid4().hex[:16],
+            "task": task,
+            "model": "deterministic",
+            "model_type": None,
+            "temperature": None,
+            "status": "avoided",
+            "failure_kind": None,
+            "skip_reason": reason,
+            "error": None,
+            "latency_s": 0.0,
+            "prompt_hash": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16] if prompt else None,
+            "input_tokens_estimate": 0,
+            "output_tokens_estimate": 0,
+            "total_tokens_estimate": 0,
+            "tokens_avoided_estimate": tokens_avoided,
+            "input_tokens_actual": None,
+            "output_tokens_actual": None,
+            "total_tokens_actual": None,
+            "actual_token_source": None,
+            "actual_tokens_available": False,
+            "metadata": {**safe_context, **(metadata or {})},
+        }
+        if safe_context:
+            event.update(safe_context)
+            event["query_context"] = safe_context
+        self._write_ledger_row(event)
+        logger.info("🧮 Avoided LLM call for %s (%s): ~%s prompt tokens not sent", task, reason, tokens_avoided)
 
     def _create_client(self, model_config: Dict[str, Any], temperature: float) -> Any:
         """Create a LangChain chat client from a NexusIQ model config."""

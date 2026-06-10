@@ -10,6 +10,7 @@ Features:
 - Unified answer generation
 """
 
+import contextvars
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -1477,6 +1478,9 @@ ANSWER:"""
                 "failed_attempts": 0,
                 "skipped_attempts": 0,
                 "avoided_calls": len(avoided_events),
+                "avoided_estimated_tokens": sum(
+                    event.get("estimated_tokens_avoided", 0) or 0 for event in avoided_events
+                ),
                 "estimated_tokens": 0,
                 "successful_estimated_tokens": 0,
                 "actual_tokens": 0,
@@ -1505,6 +1509,9 @@ ANSWER:"""
             "failed_attempts": sum(event.get("status") == "failed" for event in llm_events),
             "skipped_attempts": sum(event.get("status") == "skipped" for event in llm_events),
             "avoided_calls": len(avoided_events),
+            "avoided_estimated_tokens": sum(
+                event.get("estimated_tokens_avoided", 0) or 0 for event in avoided_events
+            ),
             "estimated_tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in llm_events),
             "successful_estimated_tokens": sum(event.get("total_tokens_estimate", 0) or 0 for event in successful),
             "actual_tokens": sum(event.get("total_tokens_actual", 0) or 0 for event in llm_events),
@@ -1595,13 +1602,20 @@ ANSWER:"""
         # Map future → source name (clean, no inversion needed)
         future_to_key = {}
 
+        # Worker threads start with an empty contextvars context, which would
+        # detach LLM ledger rows from the active trace/harness task. Run each
+        # agent inside a copy of the caller's context so trace IDs propagate.
+        def submit_in_context(pool, fn, *args):
+            ctx = contextvars.copy_context()
+            return pool.submit(ctx.run, fn, *args)
+
         with ThreadPoolExecutor(max_workers=3) as pool:
             if run_sql:
-                future_to_key[pool.submit(self._run_agent_with_trace, trace, "sql", self._run_sql_query, question)] = "sql"
+                future_to_key[submit_in_context(pool, self._run_agent_with_trace, trace, "sql", self._run_sql_query, question)] = "sql"
             if run_rag:
-                future_to_key[pool.submit(self._run_agent_with_trace, trace, "rag", self._run_rag_query, question)] = "rag"
+                future_to_key[submit_in_context(pool, self._run_agent_with_trace, trace, "rag", self._run_rag_query, question)] = "rag"
             if run_web:
-                future_to_key[pool.submit(self._run_agent_with_trace, trace, "web", self._run_web_query, question)] = "web"
+                future_to_key[submit_in_context(pool, self._run_agent_with_trace, trace, "web", self._run_web_query, question)] = "web"
 
             results = {"sql": None, "rag": None, "web": None}
 

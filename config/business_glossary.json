@@ -1,0 +1,126 @@
+{
+  "company": "NexusIQ Demo Corp",
+  "version": 1,
+  "entries": [
+    {
+      "id": "net_revenue",
+      "term": "net revenue",
+      "aliases": ["net sales", "revenue after refunds", "actual revenue", "revenue net of returns"],
+      "definition": "Net revenue = SUM(sales_transactions.total_amount) minus SUM(returns.refund_amount) for returns with status = 'refunded' in the same period (filter returns by return_date). Compute as two single-row aggregate CTEs, then SELECT (sales.total - refunds.total) FROM both CTEs cross-joined (FROM sales_cte, refunds_cte) with no GROUP BY.",
+      "category": "metric",
+      "tables": ["sales_transactions", "returns"]
+    },
+    {
+      "id": "gross_revenue",
+      "term": "gross revenue",
+      "aliases": ["gross sales"],
+      "definition": "Gross revenue = SUM(sales_transactions.total_amount), before subtracting refunds. Plain 'revenue' means gross revenue unless the question says net.",
+      "category": "metric",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "refunded_amount",
+      "term": "refunded amount",
+      "aliases": ["money refunded", "refund total", "how much refunded", "total refunds paid"],
+      "definition": "Refunded amount counts only returns with status = 'refunded' (statuses pending, received, approved, rejected are not paid out). Refunded amount = SUM(returns.refund_amount) WHERE status = 'refunded', filtered by returns.return_date.",
+      "category": "metric",
+      "tables": ["returns"]
+    },
+    {
+      "id": "return_rate",
+      "term": "return rate",
+      "aliases": ["rate of returns", "percentage returned", "percent of orders returned", "returns percentage"],
+      "definition": "Return rate = (count of returns excluding status 'rejected') * 100.0 / (count of sales_transactions in the same scope). Scope returns by joining returns.transaction_id = sales_transactions.id when filtering by category or region (returns has no region/category columns). Use NULLIF on the denominator.",
+      "category": "metric",
+      "tables": ["returns", "sales_transactions"]
+    },
+    {
+      "id": "active_customer",
+      "term": "active customer",
+      "aliases": ["active customers", "currently active customers", "active users"],
+      "definition": "Active customer = a customer with at least one purchase in the most recent quarter of available data (Q4 2024): COUNT(DISTINCT customer_id) FROM sales_transactions WHERE transaction_date >= '2024-10-01'. Do not count all rows in the customers table.",
+      "category": "metric",
+      "tables": ["sales_transactions", "customers"]
+    },
+    {
+      "id": "churned_customer",
+      "term": "churned customer",
+      "aliases": ["churned customers", "customer churn", "lost customers"],
+      "definition": "Churned customer = a customer who purchased in H1 2024 (before '2024-07-01') but has no purchase on or after '2024-07-01'. Use DISTINCT customer_id sets from sales_transactions (e.g., NOT IN / NOT EXISTS on the second-half purchases).",
+      "category": "metric",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "repeat_customer",
+      "term": "repeat customer",
+      "aliases": ["repeat customers", "returning customers", "repeat buyers"],
+      "definition": "Repeat customer = a customer with 2 or more transactions in the period: GROUP BY customer_id HAVING COUNT(*) >= 2 on sales_transactions.",
+      "category": "metric",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "average_order_value",
+      "term": "average order value",
+      "aliases": ["aov", "avg order value", "average basket size"],
+      "definition": "Average order value (AOV) = SUM(total_amount) / COUNT(*) over sales_transactions in the period (equivalently AVG(total_amount); one row = one order).",
+      "category": "metric",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "case_resolution_time",
+      "term": "case resolution time",
+      "aliases": ["resolution time", "time to resolve", "support resolution time", "how long to resolve cases"],
+      "definition": "Case resolution time = average of (resolved_at - created_at) over support_cases WHERE resolved_at IS NOT NULL. Report in hours: AVG(EXTRACT(EPOCH FROM (resolved_at - created_at)) / 3600). Never cast an interval directly to numeric.",
+      "category": "metric",
+      "tables": ["support_cases"]
+    },
+    {
+      "id": "open_case_backlog",
+      "term": "open case backlog",
+      "aliases": ["open cases", "open support cases", "case backlog", "outstanding cases"],
+      "definition": "Open case backlog counts support_cases with status IN ('open', 'in_progress'). A case is not open once status is 'resolved' or 'closed'.",
+      "category": "metric",
+      "tables": ["support_cases"]
+    },
+    {
+      "id": "region_performance",
+      "term": "best performing region",
+      "aliases": ["region performed best", "top performing region", "worst performing region", "regional performance ranking"],
+      "definition": "Region performance is ranked by NET revenue, not gross: per region, SUM(sales_transactions.total_amount) minus SUM(returns.refund_amount) for status = 'refunded' returns attributed to the region via returns.transaction_id = sales_transactions.id.",
+      "category": "metric",
+      "tables": ["sales_transactions", "returns"]
+    },
+    {
+      "id": "units_sold",
+      "term": "units sold",
+      "aliases": ["how many units", "units we sold", "items sold", "unit sales volume"],
+      "definition": "Units sold = SUM(sales_transactions.quantity), not the count of transaction rows (one transaction can contain multiple units).",
+      "category": "metric",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "fiscal_year",
+      "term": "fiscal year",
+      "aliases": ["fy 2024", "fy2024", "fiscal 2024"],
+      "definition": "The company fiscal year equals the calendar year. FY2024 = 2024-01-01 through 2024-12-31. Fiscal quarters equal calendar quarters.",
+      "category": "policy",
+      "tables": ["sales_transactions"]
+    },
+    {
+      "id": "join_returns_transactions",
+      "term": "returns join",
+      "aliases": ["returns by category", "returns by region", "returned orders join"],
+      "definition": "The returns table has no region or category columns. To scope returns by region, category, or store, join returns.transaction_id = sales_transactions.id and filter on the sales_transactions columns.",
+      "category": "join_hint",
+      "tables": ["returns", "sales_transactions"]
+    },
+    {
+      "id": "join_customers_transactions",
+      "term": "customers join",
+      "aliases": ["customer purchases join", "customer transactions join"],
+      "definition": "Join customers to purchases with customers.customer_id = sales_transactions.customer_id (varchar business key, not the integer id column).",
+      "category": "join_hint",
+      "tables": ["customers", "sales_transactions"]
+    }
+  ]
+}

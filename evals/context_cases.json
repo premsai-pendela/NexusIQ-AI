@@ -1,0 +1,101 @@
+{
+  "description": "Ambiguous business questions where company-specific definitions change correct SQL. Controls verify plain questions stay untouched.",
+  "cases": [
+    {
+      "id": "net_revenue_q4",
+      "question": "What was net revenue in Q4 2024?",
+      "expected_fragments": ["returns", "refund_amount", "refunded"],
+      "expect_context_ids": ["net_revenue"],
+      "control": false,
+      "why": "Net revenue must subtract refunded returns; without context the model sums total_amount only."
+    },
+    {
+      "id": "active_customers",
+      "question": "How many active customers do we have?",
+      "expected_fragments": ["sales_transactions", "2024-10-01", "DISTINCT"],
+      "expect_context_ids": ["active_customer"],
+      "control": false,
+      "why": "Company defines active = purchased in Q4 2024; without context the model guesses."
+    },
+    {
+      "id": "return_rate_q4",
+      "question": "What was the return rate in Q4 2024?",
+      "expected_fragments": ["returns", "sales_transactions", "rejected"],
+      "expect_context_ids": ["return_rate"],
+      "control": false,
+      "why": "Return rate excludes rejected requests and needs both tables."
+    },
+    {
+      "id": "refunded_amount_2024",
+      "question": "How much money did we refund to customers in 2024?",
+      "expected_fragments": ["refund_amount", "refunded"],
+      "expect_context_ids": ["refunded_amount"],
+      "control": false,
+      "why": "Only status='refunded' returns are paid out; summing all statuses overstates refunds."
+    },
+    {
+      "id": "case_resolution_time",
+      "question": "What is our average case resolution time?",
+      "expected_fragments": ["resolved_at", "created_at", "AVG"],
+      "expect_context_ids": ["case_resolution_time"],
+      "control": false,
+      "why": "Resolution time = resolved_at - created_at over resolved cases only."
+    },
+    {
+      "id": "open_case_backlog",
+      "question": "How many open support cases are there?",
+      "expected_fragments": ["in_progress"],
+      "expect_context_ids": ["open_case_backlog"],
+      "control": false,
+      "why": "Company backlog definition includes in_progress, not just status='open'."
+    },
+    {
+      "id": "region_performance",
+      "question": "Which region performed best in 2024?",
+      "expected_fragments": ["refund"],
+      "expect_context_ids": ["region_performance"],
+      "control": false,
+      "why": "Region performance is ranked by net revenue; gross ranking can differ."
+    },
+    {
+      "id": "repeat_customers",
+      "question": "How many repeat customers did we have in 2024?",
+      "expected_fragments": ["HAVING", ">=\\s*2|>\\s*1"],
+      "expect_context_ids": ["repeat_customer"],
+      "control": false,
+      "why": "Repeat = 2+ transactions; needs GROUP BY customer HAVING count threshold."
+    },
+    {
+      "id": "churned_customers",
+      "question": "How many churned customers do we have?",
+      "expected_fragments": ["2024-07-01", "NOT"],
+      "expect_context_ids": ["churned_customer"],
+      "control": false,
+      "why": "Churn = bought in H1 2024 but nothing on/after 2024-07-01."
+    },
+    {
+      "id": "units_sold_december",
+      "question": "How many units did we sell in December 2024?",
+      "expected_fragments": ["SUM\\s*\\(\\s*(s\\.|st\\.)?quantity"],
+      "expect_context_ids": ["units_sold"],
+      "control": false,
+      "why": "Units = SUM(quantity), not transaction row count."
+    },
+    {
+      "id": "control_total_revenue",
+      "question": "What was total revenue in October 2024?",
+      "expected_fragments": ["SUM\\s*\\(\\s*(s\\.|st\\.)?total_amount"],
+      "expect_context_ids": [],
+      "control": true,
+      "why": "Plain revenue question must behave identically with the layer on."
+    },
+    {
+      "id": "control_top_products",
+      "question": "What are the top 5 products by revenue?",
+      "expected_fragments": ["GROUP BY", "LIMIT"],
+      "expect_context_ids": [],
+      "control": true,
+      "why": "Plain ranking question must retrieve no business context."
+    }
+  ]
+}

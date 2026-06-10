@@ -38,7 +38,8 @@ The system routes each question to the right source(s), runs agents in parallel,
 - Cross-validation precision: **0.03% SQL↔PDF delta** on matching facts
 - Multi-source query latency: **5–12 seconds**
 - Repeat queries (cached): **< 100ms**
-- Test coverage: **127 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
+- Test coverage: **164 unit + contract tests**, **12 golden eval cases**, **43-query RAG benchmark**
+- Text-to-SQL business accuracy: **2/10 → 10/10** on ambiguous business-metric questions via deterministic business-context injection
 
 ---
 
@@ -134,6 +135,8 @@ LLM router fallback chain:
 
 **SQL Agent with auto-correction and parser guardrails** — Converts plain English to SQL via Gemini → Groq cascade. Auto-corrects typos ("Wset" → "West"). Resolves ambiguity ("best product" → "best product by revenue"). Generated SQL is parsed with `sqlglot` — only read-only `SELECT`/`WITH` statements execute; `DROP`, `DELETE`, `ALTER`, and multi-statement queries are rejected at the AST level, not keyword matching.
 
+**Business Context Layer for Text-to-SQL** — Enterprise Text-to-SQL fails because models don't know company definitions ("net revenue", "active customer", "open case"). NexusIQ retrieves company-specific metric definitions deterministically (alias + keyword scoring, no embeddings, no extra LLM calls) and injects only the relevant ones into SQL generation. Measured on 10 ambiguous business questions with live SQL generation + execution: **2/10 correct before → 10/10 after**, with 2 control questions proving plain queries stay byte-identical. Retrieved context IDs appear in the ledger, trace, and UI. Kill switch: `NEXUSIQ_BUSINESS_CONTEXT=0`. Details: [docs/business_context_layer.md](docs/business_context_layer.md).
+
 **RAG Agent with hybrid search + reranker** — Combines BM25 keyword + vector embeddings for first-pass retrieval (43 PDFs, 425 chunks). Cross-encoder reranker (`ms-marco-MiniLM-L-6-v2`) re-scores top-20 candidates for precision. Adaptive HyDE: generates a hypothetical answer to improve retrieval only when confidence score falls below threshold (zero LLM cost on normal queries). Agentic comparison mode decomposes "Compare X vs Y" into sub-queries.
 
 **Web Agent with controlled LLM usage** — Exact product prices, ranges, extremes, counts, and discounts are computed deterministically from scraped evidence (no LLM). Interpretive questions use a compact filtered prompt. Named-competitor questions use that competitor's evidence only. Nine live sources across five categories:
@@ -150,7 +153,7 @@ LLM router fallback chain:
 
 **Production agent harness** — Default controlled execution layer with bounded steps, per-step task state, retries on transient failures, LangGraph as the primary workflow engine, native harness fallback, and harness metadata in traces.
 
-**Evaluation system** — 127 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
+**Evaluation system** — 164 unit + contract tests, 7 offline eval cases (no API calls), 12 live golden eval cases with rule-based + optional LLM-judge scoring, 43-query RAG benchmark (97.7% Hit@5). Golden truth auto-refreshes from live Supabase.
 
 **Observability** — Every query produces a local JSON trace (route, agent spans, latency, model, confidence, slow-span warnings). Compact JSONL index for terminal inspection. LLM gateway logs task, model, latency, and estimated tokens for every model call. Langfuse mirrors safe metadata automatically when keys are present. AWS CloudWatch in production.
 
@@ -405,7 +408,7 @@ python scripts/production_smoke_test.py --base-url http://localhost:8000
 ## Testing & Evaluation
 
 ```bash
-# Full deterministic test suite (127 tests)
+# Full deterministic test suite (164 tests)
 python -m unittest discover -s tests -v
 
 # Offline eval harness (no LLM/DB calls)
@@ -425,10 +428,14 @@ python -m evals.rag_eval --quick
 # Refresh golden truth from live Supabase
 python -m evals.refresh_golden_truth --dry-run
 python -m evals.refresh_golden_truth
+
+# Business context layer before/after eval (live SQL generation + execution)
+python -m evals.context_eval --mode both
+python -m evals.context_eval --mode after --ids net_revenue_q4
 ```
 
 **Current results:**
-- Unit + contract tests: **127/127 passing**
+- Unit + contract tests: **164/164 passing**
 - Offline evals: **7/7 passing**
 - RAG benchmark: **97.7% Hit@5 · 0.919 Context Recall · 0.778 MRR**
 

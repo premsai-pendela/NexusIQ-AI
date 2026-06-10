@@ -856,6 +856,12 @@ def render_sql_section(msg_id: str, sql_result: dict, is_latest: bool = False):
         if sql_result.get('query'):
             st.markdown("**📝 Generated SQL Query:**")
             st.code(sql_result['query'], language="sql")
+            business_context = sql_result.get('business_context') or {}
+            if business_context.get('ids'):
+                st.caption(
+                    "📚 Company definitions applied: "
+                    + ", ".join(f"`{context_id}`" for context_id in business_context['ids'])
+                )
         
         # SQL Explanation
         if sql_result.get('explanation'):

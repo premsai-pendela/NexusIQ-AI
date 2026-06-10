@@ -22,6 +22,7 @@ except Exception:  # pragma: no cover - fallback path when optional parser is un
     exp = None
 from config.data_contexts import DataContext, LIVE_CONTEXT
 from config.settings import settings
+from context.business_context import build_context_block, business_context_enabled
 from utils.llm_gateway import get_llm_gateway
 from utils.quota_tracker import get_tracker
 from utils.validators import validate_question
@@ -330,6 +331,7 @@ class SQLAgent:
         prompt: str,
         complexity: str = "simple",
         task: str = "sql_agent",
+        extra_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Invoke LLM with intelligent fallback and quota tracking.
@@ -346,13 +348,16 @@ class SQLAgent:
             }
         """
         
+        metadata = {"agent": "sql", "complexity": complexity}
+        if extra_metadata:
+            metadata.update(extra_metadata)
         return self.llm_gateway.invoke_with_fallback(
             prompt=prompt,
             models=self._models_for_complexity(complexity),
             tracker=self.tracker,
             task=task,
             temperature=0.1,
-            metadata={"agent": "sql", "complexity": complexity},
+            metadata=metadata,
         )
     
     
@@ -362,8 +367,7 @@ class SQLAgent:
         prompt_template = """You are an expert PostgreSQL query generator.
 
 {schema}
-
-USER QUESTION: {question}
+{business_context}USER QUESTION: {question}
 
 RULES:
 1. Generate ONLY valid PostgreSQL query
@@ -385,8 +389,19 @@ RULES:
 
 SQL QUERY:"""
 
+        business_context = {"block": "", "ids": [], "chars": 0}
+        if business_context_enabled():
+            business_context = build_context_block(question)
+        # Stashed for generate_query so context IDs reach ledger/trace metadata.
+        self._last_business_context = business_context
+
+        # Empty context must leave the prompt byte-identical to the
+        # pre-context-layer prompt (single blank line between sections).
+        context_section = f"\n{business_context['block']}\n\n" if business_context["block"] else "\n"
+
         return prompt_template.format(
             schema=self.schema_context,
+            business_context=context_section,
             question=question,
             table_name=self.data_context.sql_table,
         )
@@ -486,10 +501,21 @@ SQL QUERY:"""
         
         complexity = self._detect_query_complexity(question)
         prompt = self._create_sql_prompt(question)
-        
+        context_meta = getattr(self, "_last_business_context", None) or {"ids": [], "chars": 0}
+
         logger.info(f"🤔 Generating SQL for: {question} (Complexity: {complexity})")
-        
-        result = self._invoke_with_fallback(prompt, complexity, task="sql.generate_query")
+        if context_meta.get("ids"):
+            logger.info(f"📚 Business context applied: {', '.join(context_meta['ids'])}")
+
+        extra_metadata = None
+        if context_meta.get("ids"):
+            extra_metadata = {
+                "business_context_ids": context_meta["ids"],
+                "business_context_chars": context_meta.get("chars", 0),
+            }
+        result = self._invoke_with_fallback(
+            prompt, complexity, task="sql.generate_query", extra_metadata=extra_metadata
+        )
         
         if not result["success"]:
             return {
@@ -522,7 +548,8 @@ SQL QUERY:"""
             "question": question,
             "complexity": complexity,
             "model_used": result["model_used"],
-            "models_tried": result["models_tried"]
+            "models_tried": result["models_tried"],
+            "business_context": context_meta if context_meta.get("ids") else None,
         }
     
     def execute_query(self, sql_query: str) -> Dict[str, Any]:
@@ -935,7 +962,8 @@ EXPLANATION:"""
             "model_used": query_result.get("model_used"),
             "models_tried": all_models_tried,
             "execution_time": total_time,
-            "correction_note": correction_note
+            "correction_note": correction_note,
+            "business_context": query_result.get("business_context"),
         }
 
     

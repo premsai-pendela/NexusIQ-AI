@@ -499,6 +499,7 @@ Reply with ONLY this JSON (no extra text):
                 'answer_mode': result.get('answer_mode'),
                 'explanation_mode': result.get('explanation_mode'),
                 'explanation_generated_by_llm': result.get('explanation_generated_by_llm', False),
+                'business_context': result.get('business_context'),
                 'time': round(elapsed, 2),
                 'source': 'SQL Database'
             }

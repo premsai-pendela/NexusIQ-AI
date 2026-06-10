@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     nexusiq_use_production_harness: bool = True
     nexusiq_use_langgraph: bool = True
     nexusiq_langfuse_enabled: bool = True
+    # Business context layer: inject company-specific metric definitions into
+    # SQL generation. Read by context.business_context via os.getenv.
+    nexusiq_business_context: bool = True
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
     langfuse_base_url: str = ""

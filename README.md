@@ -692,13 +692,25 @@ NexusIQ-AI/
 
 ## Future Improvements
 
-- **CSV ingestion** — add CSV files as a first-class data source alongside SQL, PDF, and web
-- **Dynamic company onboarding** — upload files, auto-index, query your own company knowledge base
-- **Eval dashboard** — pass/fail accuracy, confidence trends, source quality, and regression history
-- **Voice input** — speak questions instead of typing (Claude/Codex voice style)
-- **Memory layer** — persist useful previous tasks, preferences, and repeated company context across sessions
-- **Better error recovery** — more graceful degradation when one source fails mid-query
-- **Production deployment polish** — EC2/Docker health checks, monitoring docs, deeper CloudWatch alarms
+These are intentionally scoped around the project's strongest current story:
+production AI reliability for enterprise BI. Each item must improve trust,
+accuracy, source coverage, reliability, cost efficiency, or enterprise
+readiness; demo-only features stay out.
+
+| Priority | Improvement | Why it matters |
+|----------|-------------|----------------|
+| 1 | **Business-context auto-learning** | The current hand-curated glossary proves company semantics can take ambiguous Text-to-SQL from 2/10 to 10/10. Next step: scan schema, query history, and documents for candidate metric definitions, then admit them only through eval gates. |
+| 2 | **Correction feedback loop** | Let users mark answers wrong with scoped reasons ("revenue should exclude refunds"). Store corrections as reviewed retrieval memory, not fine-tuning, so future similar questions improve without blindly changing company-wide behavior. |
+| 3 | **Semantic cross-source validation precision** | Current numeric validation can compare unrelated figures on broad fusion answers. Match facts by label and meaning first (revenue vs revenue, return rate vs return rate), while preserving strict LOW confidence for true conflicts. |
+| 4 | **Observability durability and alerts** | Local JSON traces, LLM ledger, Langfuse, and CloudWatch exist. Next: durable production trace storage plus alerts for slow queries, fallback spikes, invalid structured output, token-budget breaches, quota exhaustion, and Chroma chunk-count drops. |
+| 5 | **Company onboarding and tenant isolation** | Move from one demo company to a lean workspace model: database connection manager, document upload queue, source registry, indexing status, role-based access, secrets handling, and strict isolation of data, context memory, and traces. |
+| 6 | **Multi-format ingestion** | Add CSV, Excel, Word, scanned-PDF/screenshot OCR, and static web-page indexing. Structured sources can become SQL-queryable tables or RAG evidence, but every source keeps a citation path. |
+| 7 | **Route self-check** | Rules-based routing already skips obvious LLM router calls. Add route-confidence scoring and clarification fallback so uncertain questions ask the user instead of running the wrong path. |
+| 8 | **Hierarchical retrieval at scale** | For larger corpora, route to source group, retrieve candidate documents, retrieve chunks, rerank, then merge evidence with map-reduce summarization. This becomes important once source registry and collection routing exist. |
+
+Later platform maturity: Terraform/IaC, Chroma-to-Qdrant/pgvector adapter,
+per-query token budgets with graceful over-budget fallback, load testing with
+published latency percentiles, and optional dbt metrics-layer integration.
 
 ---
 

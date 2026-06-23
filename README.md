@@ -15,8 +15,11 @@
 [![Groq](https://img.shields.io/badge/Groq-Llama_3.3_70B-F55036?style=flat-square)](https://groq.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-336791?style=flat-square&logo=postgresql&logoColor=white)](https://supabase.com)
 [![AWS](https://img.shields.io/badge/AWS-EC2_+_ECR-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
 
-**[🚀 Live Demo](https://nexusiq-ai.com)** · **[📡 REST API](https://nexusiq-ai.com/api/v1/docs)** · **[🎯 Demo Guide](docs/DEMO.md)** · [Quick Start](#quick-start) · [Architecture](#architecture) · [Query Examples](#query-examples)
+**[🚀 Live Demo](https://nexusiq-ai.com)** · **[📡 REST API](https://nexusiq-ai.com/api/v1/docs)** · **[🎯 Demo Guide](docs/DEMO.md)**
+
+[What It Is](#what-is-nexusiq-ai) · [Architecture](#architecture) · [Features](#key-features) · [API & MCP](#api--mcp-server) · [Quick Start](#quick-start) · [Deployment](#production-deployment) · [Testing & Evals](#testing--evaluation) · [Observability](#observability) · [Tech Stack](#tech-stack) · [Engineering Decisions](#key-engineering-decisions) · [Roadmap](#future-improvements)
 
 </div>
 
@@ -33,6 +36,8 @@ NexusIQ AI is a **production-deployed, multi-agent business intelligence system*
 | 🌐 **Live Web** | Competitor pricing across 5 product categories via 9 live scrapers |
 
 The system routes each question to the right source(s), runs agents in parallel, cross-validates numeric facts between SQL answers and PDF text, and returns one answer — with confidence badges showing how well sources agree.
+
+> **Engineering focus: agent reliability — the harness layer.** Routing, parser-level SQL guardrails, cross-source validation, abstain-on-weak-evidence, and an **eval-gated CI pipeline** are what keep a multi-agent system trustworthy in production — not a demo that confidently hallucinates.
 
 **Key metrics:**
 - RAG retrieval: **97.7% Hit@5** · **0.919 Context Recall** · **0.778 MRR**
@@ -711,6 +716,12 @@ readiness; demo-only features stay out.
 Later platform maturity: Terraform/IaC, Chroma-to-Qdrant/pgvector adapter,
 per-query token budgets with graceful over-budget fallback, load testing with
 published latency percentiles, and optional dbt metrics-layer integration.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE). Free to read, run, fork, and learn from.
 
 ---
 
